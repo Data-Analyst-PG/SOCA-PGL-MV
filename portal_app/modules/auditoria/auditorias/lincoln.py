@@ -1,4 +1,4 @@
-from ui.components import page_banner, section_header, alert, divider
+from ui.components import section_header, alert, divider
 """
 portal_app/modules/auditoria/lincoln_auditoria.py
 
@@ -606,7 +606,7 @@ def _seccion(titulo: str, icono: str, df: pd.DataFrame, nota: str, key: str) -> 
 # PUNTO DE ENTRADA
 # ─────────────────────────────────────────────────────────────
 def render() -> None:
-    page_banner("🔍", "Auditoría Lincoln Freight", "Auditoría automatizada de reporte mensual")
+    section_header("🔍", "Auditoría Lincoln Freight", "Auditoría automatizada de reporte mensual")
 
     st.caption(
         "Carga el archivo **Automatización_lincoln.xlsx** (hoja Companies). "
