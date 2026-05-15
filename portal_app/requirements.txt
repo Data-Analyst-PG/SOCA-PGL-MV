@@ -1,0 +1,14 @@
+streamlit>=1.45.0
+pandas>=2.2.0
+numpy>=1.26.4
+supabase>=2.5.0
+python-dateutil>=2.8.0
+openpyxl
+xlrd==2.0.1
+XlsxWriter
+Pillow
+fpdf
+reportlab
+beautifulsoup4
+lxml
+pdfplumber
