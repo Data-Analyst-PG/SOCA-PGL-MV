@@ -1,4 +1,4 @@
-# portal_app/modules/auditoria/prorrateador.py
+# portal_app/modules/auditoria/rentabilidad_clientes.py
 import streamlit as st
 import pandas as pd
 import numpy as np
