@@ -109,36 +109,22 @@ def kpi_row(items: list):
         valor = item.get("valor", 0)
         sub   = item.get("sub", "")
         color = item.get("color", PGL_NAVY)
-        cards_html += f"""
-        <div style="
-            background: {PGL_WHITE};
-            border-radius: 12px;
-            padding: 1rem 1.1rem;
-            border: 1px solid {PGL_BORDER};
-            border-left: 4px solid {color};
-            box-shadow: 0 2px 8px rgba(27,34,102,0.06);
-        ">
-            <div style="font-size:0.7rem; font-weight:600; text-transform:uppercase;
-                        letter-spacing:0.5px; color:{PGL_MUTED}; margin-bottom:4px;">
-                {icono} {label}
-            </div>
-            <div style="font-size:1.9rem; font-weight:800; color:{color}; line-height:1.1;">
-                {valor}
-            </div>
-            <div style="font-size:0.72rem; color:{PGL_MUTED}; margin-top:3px;">{sub}</div>
-        </div>
-        """
-
-    st.markdown(f"""
-    <div class="pgl-kpi-grid" style="
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-        gap: 10px;
-        margin-bottom: 1.5rem;
-    ">
-        {cards_html}
-    </div>
-    """, unsafe_allow_html=True)
+        cards_html += (
+            f'<div style="background:{PGL_WHITE}; border-radius:12px; padding:1rem 1.1rem;'
+            f' border:1px solid {PGL_BORDER}; border-left:4px solid {color};'
+            f' box-shadow:0 2px 8px rgba(27,34,102,0.06);">'
+            f'<div style="font-size:0.7rem; font-weight:600; text-transform:uppercase;'
+            f' letter-spacing:0.5px; color:{PGL_MUTED}; margin-bottom:4px;">{icono} {label}</div>'
+            f'<div style="font-size:1.9rem; font-weight:800; color:{color}; line-height:1.1;">{valor}</div>'
+            f'<div style="font-size:0.72rem; color:{PGL_MUTED}; margin-top:3px;">{sub}</div>'
+            f'</div>'
+        )
+    grid = (
+        f'<div class="pgl-kpi-grid" style="display:grid;'
+        f' grid-template-columns:repeat(auto-fit,minmax(130px,1fr));'
+        f' gap:10px; margin-bottom:1.5rem;">{cards_html}</div>'
+    )
+    st.markdown(grid, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,34 +163,26 @@ def module_card(icono: str, titulo: str, descripcion: str,
     badges_html = ""
     for b in badges:
         bg, fg = _BADGE_COLORS.get(b.get("color", "gray"), _BADGE_COLORS["gray"])
-        badges_html += f"""
-        <span style="display:inline-block; background:{bg}; color:{fg};
-                     font-size:0.72rem; font-weight:700; padding:3px 10px;
-                     border-radius:20px; margin-right:5px; margin-top:4px;">
-            {b.get("texto", "")}
-        </span>
-        """
-
-    st.markdown(f"""
-    <div style="
-        background: {PGL_WHITE};
-        border-radius: 14px;
-        padding: 1.3rem 1.5rem;
-        border: 1px solid {PGL_BORDER};
-        border-left: 5px solid {color_acento};
-        box-shadow: 0 2px 10px rgba(27,34,102,0.07);
-        margin-bottom: 0.75rem;
-    ">
-        <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;">
-            <span style="font-size:1.7rem;">{icono}</span>
-            <div>
-                <div style="font-weight:700; font-size:1rem; color:{PGL_NAVY};">{titulo}</div>
-                <div style="font-size:0.8rem; color:{PGL_MUTED}; line-height:1.3;">{descripcion}</div>
-            </div>
-        </div>
-        <div style="margin-top:0.4rem;">{badges_html}</div>
-    </div>
-    """, unsafe_allow_html=True)
+        texto = b.get("texto", "")
+        badges_html += (
+            f'<span style="display:inline-block; background:{bg}; color:{fg};'
+            f' font-size:0.72rem; font-weight:700; padding:3px 10px;'
+            f' border-radius:20px; margin-right:5px; margin-top:4px;">{texto}</span>'
+        )
+    html = (
+        f'<div style="background:{PGL_WHITE}; border-radius:14px; padding:1.3rem 1.5rem;'
+        f' border:1px solid {PGL_BORDER}; border-left:5px solid {color_acento};'
+        f' box-shadow:0 2px 10px rgba(27,34,102,0.07); margin-bottom:0.75rem;">'
+        f'<div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;">'
+        f'<span style="font-size:1.7rem;">{icono}</span>'
+        f'<div>'
+        f'<div style="font-weight:700; font-size:1rem; color:{PGL_NAVY};">{titulo}</div>'
+        f'<div style="font-size:0.8rem; color:{PGL_MUTED}; line-height:1.3;">{descripcion}</div>'
+        f'</div></div>'
+        f'<div style="margin-top:0.4rem;">{badges_html}</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
