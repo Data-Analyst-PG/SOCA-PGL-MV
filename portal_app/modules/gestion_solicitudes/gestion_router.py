@@ -13,7 +13,6 @@ from services.supabase_client import current_user
 # ── Importar los sub-módulos de gestión ──────────────────────────────────────
 from . import complementarias as gestion_comp
 from . import tickets as gestion_tickets
-from . import viaticos as gestion_viaticos
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CATÁLOGO DE TIPOS DE SEGUIMIENTO
@@ -40,15 +39,6 @@ TIPOS_SEGUIMIENTO = [
         "descripcion": "Gestión de tickets de soporte y desarrollo",
         "permiso": "tickets:manage",
         "modulo": gestion_tickets,
-    },
-    {
-        "slug": "viaticos",
-        "titulo": "Viáticos",
-        "icono": "💰",
-        "color": "#B45309",
-        "descripcion": "Gestión de solicitudes de viáticos",
-        "permiso": "viaticos:manage",
-        "modulo": gestion_viaticos,
     },
 ]
 
