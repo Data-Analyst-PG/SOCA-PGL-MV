@@ -182,7 +182,7 @@ def render():
 
     supabase = get_supabase_client()
 
-section_header("🛡️", "Gestión Complementarias")
+    section_header("🛡️", "Gestión Complementarias")
     st.caption("Panel de segumiento de solicitudes de complementarias y desconclusiones")
 
     auditor_pwd = st.text_input("Contraseña auditor", type="password")
