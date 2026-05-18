@@ -8,6 +8,11 @@ gatherUsageStats = false
 
 [client]
 toolbarMode = "minimal"
+showErrorDetails = true
+
+[runner]
+enforceSerializableSessionState = false
+postScriptGC = false
 
 [theme]
 base = "light"
