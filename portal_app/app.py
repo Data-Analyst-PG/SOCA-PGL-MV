@@ -129,7 +129,7 @@ def construir_navegacion() -> dict:
 # ── Ejecutar navegación ───────────────────────────────────────────────────────
 nav = construir_navegacion()
 if nav:
-    pg = st.navigation(nav, position="top")
+    pg = st.navigation(nav, position="sidebar")
     pg.run()
 else:
     st.error("Tu usuario no tiene módulos asignados. Contacta al administrador.")
