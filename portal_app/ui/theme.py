@@ -128,30 +128,42 @@ def aplicar_tema():
 
 def user_header(nombre: str, rol: str = ""):
     """Barra superior: logo izquierda | nombre + rol derecha."""
-    color_texto, color_bg = colores_rol.get((rol or "").lower(), ("#6B7280", "#F3F4F6"))
+    _colores_rol = {
+        "admin":        ("#CC1E1E", "#FFF0F0"),
+        "data_analyst": ("#1B2266", "#EEF0FF"),
+        "auditor":      ("#0077B6", "#E8F4FC"),
+        "user":         ("#2E7D32", "#E8F5E9"),
+        "operaciones":  ("#E65100", "#FFF3E0"),
+    }
+    rol_limpio = (rol or "").lower()
+    color_texto, color_bg = _colores_rol.get(rol_limpio, ("#6B7280", "#F3F4F6"))
+
     col_logo, col_right = st.columns([3, 9])
 
     with col_logo:
-        st.markdown(
-            '<div style="display:flex; align-items:center; gap:0.6rem; padding:0.3rem 0 0 0;">'
-            '<span style="font-size:1.4rem;">&#x1F69A;</span>'
-            '<div>'
-            '<div style="font-weight:800; font-size:0.85rem; color:' + PGL_NAVY + '; line-height:1.1;">PALOS GARZA</div>'
-            '<div style="font-weight:600; font-size:0.68rem; color:' + PGL_RED + '; letter-spacing:1px; text-transform:uppercase;">Logistics</div>'
-            '</div></div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f"""
+        <div style="display:flex; align-items:center; gap:0.6rem; padding:0.3rem 0 0 0;">
+            <span style="font-size:1.4rem;">🚚</span>
+            <div>
+                <div style="font-weight:800; font-size:0.85rem; color:{PGL_NAVY}; line-height:1.1;">PALOS GARZA</div>
+                <div style="font-weight:600; font-size:0.68rem; color:{PGL_RED}; letter-spacing:1px; text-transform:uppercase;">Logistics</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with col_right:
-        st.markdown(
-            '<div style="display:flex; justify-content:flex-end; align-items:center; gap:0.8rem; padding:0.3rem 0 0.6rem 0;">'
-            '<div style="text-align:right; line-height:1.4;">'
-            '<div style="font-weight:600; font-size:0.85rem; color:' + PGL_NAVY + '; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
-            '&#x1F464; ' + nombre +
-            '</div>'
-            '<span style="display:inline-block; padding:2px 10px; border-radius:20px; font-size:0.7rem; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; color:' + color_texto + '; background:' + color_bg + ';">'
-            + (rol or "usuario") +
-            '</span>'
-            '</div></div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f"""
+        <div style="display:flex; justify-content:flex-end; align-items:center; gap:0.8rem; padding:0.3rem 0 0.6rem 0;">
+            <div style="text-align:right; line-height:1.4;">
+                <div style="font-weight:600; font-size:0.85rem; color:{PGL_NAVY};
+                            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    👤 {nombre}
+                </div>
+                <span style="display:inline-block; padding:2px 10px; border-radius:20px;
+                             font-size:0.7rem; font-weight:700; letter-spacing:0.5px;
+                             text-transform:uppercase; color:{color_texto}; background:{color_bg};">
+                    {rol or "usuario"}
+                </span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
