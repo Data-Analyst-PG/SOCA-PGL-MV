@@ -12,8 +12,6 @@ from .complementarias import captura as comp_captura
 from .complementarias import consulta as comp_consulta
 from .tickets import crear as ticket_crear
 from .tickets import consultar as ticket_consultar
-from .viaticos import crear as viatico_crear
-from .viaticos import consultar as viatico_consultar
 
 
 TIPOS_SOLICITUD = [
@@ -37,17 +35,6 @@ TIPOS_SOLICITUD = [
         "tabs": [
             ("➕ Crear Ticket",      "tickets:create", ticket_crear),
             ("🔍 Consultar Estatus", "tickets:read",   ticket_consultar),
-        ],
-    },
-    {
-        "slug": "viaticos",
-        "titulo": "Viáticos",
-        "icono": "💼",
-        "color": "#B45309",
-        "descripcion": "Solicitudes de viáticos de viaje",
-        "tabs": [
-            ("➕ Nueva Solicitud",   "viaticos:create", viatico_crear),
-            ("🔍 Consultar Estatus", "viaticos:read",   viatico_consultar),
         ],
     },
 ]
