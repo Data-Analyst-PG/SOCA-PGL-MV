@@ -18,9 +18,44 @@ from services.supabase_client import (
 from services.authz import ensure_auth_loaded
 from ui.theme import PGL_NAVY, PGL_RED, PGL_NAVY_LT
 
+# ── Inyectar CSS del login una sola vez ──────────────────────────────────────
+def _inject_login_css():
+    st.markdown(f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] {{
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        background: linear-gradient(145deg, {PGL_NAVY} 0%, #252D80 60%, #1a1f5e 100%) !important;
+        min-height: 100vh;
+    }}
+    [data-testid="stSidebar"], [data-testid="collapsedControl"] {{ display: none !important; }}
+    [data-testid="stHeader"] {{ display: none !important; }}
+    #MainMenu, footer {{ visibility: hidden; }}
+    .block-container {{
+        padding: 2rem 1rem !important;
+        max-width: 480px !important;
+        margin: 0 auto !important;
+    }}
+    div[data-testid="stForm"] {{ border: none !important; padding: 0 !important; background: transparent !important; }}
+    div[data-testid="stFormSubmitButton"] button {{
+        width: 100% !important;
+        background: linear-gradient(135deg, {PGL_RED}, #E02424) !important;
+        color: white !important; font-weight: 700 !important;
+        font-size: 0.95rem !important; border-radius: 10px !important;
+        border: none !important; padding: 0.65rem !important;
+        margin-top: 0.5rem !important;
+    }}
+    .stButton > button {{
+        width: 100% !important; border-radius: 10px !important;
+        font-weight: 600 !important; font-size: 0.88rem !important;
+        color: {PGL_NAVY} !important; background: transparent !important;
+        border: 1.5px solid #D1D8E8 !important; padding: 0.55rem !important;
+    }}
+    .stButton > button:hover {{ background: #F0F2FA !important; border-color: {PGL_NAVY} !important; }}
+    </style>
+    """, unsafe_allow_html=True)
 
-# ── CSS exclusivo de la pantalla de login ─────────────────────────────────────
-_CSS = f"""
+
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
@@ -178,7 +213,7 @@ def _logo_html() -> str:
 # PANTALLA: LOGIN NORMAL
 # ═════════════════════════════════════════════════════════════════════════════
 def render_login_page() -> None:
-    st.markdown(_CSS, unsafe_allow_html=True)
+    _inject_login_css()
 
     # Enrutar a recuperación si está activo
     if st.session_state.get("mostrar_forgot"):
