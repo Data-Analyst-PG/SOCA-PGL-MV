@@ -1,252 +1,188 @@
 # portal_app/modules/gestion_solicitudes/gestion_router.py
 # ─────────────────────────────────────────────────────────────────────────────
-# Módulo de Seguimiento — gestión de tickets y complementarias para managers
-# Permisos requeridos: tickets:manage | complementarias:manage | viaticos:manage
+# Router estilo "cotizadores" para el módulo de Seguimiento.
+# Muestra tarjetas para elegir entre gestionar Complementarias o Tickets,
+# y dentro de cada uno muestra la pantalla de gestión correspondiente.
 # ─────────────────────────────────────────────────────────────────────────────
 import streamlit as st
 
-from services.supabase_client import current_user, get_authed_client
 from services.access import check_access
-from ui.components import page_banner, section_header, alert, kpi_row, divider
+from services.supabase_client import current_user
+
+# ── Importar los sub-módulos de gestión ──────────────────────────────────────
+from . import complementarias as gestion_comp
+from . import tickets as gestion_tickets
+from . import viaticos as gestion_viaticos
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CATÁLOGO DE TIPOS DE SEGUIMIENTO
+# ═══════════════════════════════════════════════════════════════════════════════
+# Cada entrada define un tipo con su permiso y módulo de gestión.
+# Para agregar un nuevo tipo (ej. Reembolsos) solo agrega otra entrada.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+TIPOS_SEGUIMIENTO = [
+    {
+        "slug": "complementarias",
+        "titulo": "Complementarias",
+        "icono": "🛡️",
+        "color": "#6C3FC5",
+        "descripcion": "Gestión y auditoría de solicitudes complementarias",
+        "permiso": "complementarias:manage",
+        "modulo": gestion_comp,
+    },
+    {
+        "slug": "tickets",
+        "titulo": "Tickets",
+        "icono": "⚙️",
+        "color": "#0E7C61",
+        "descripcion": "Gestión de tickets de soporte y desarrollo",
+        "permiso": "tickets:manage",
+        "modulo": gestion_tickets,
+    },
+    {
+        "slug": "viaticos",
+        "titulo": "Viáticos",
+        "icono": "💰",
+        "color": "#B45309",
+        "descripcion": "Gestión de solicitudes de viáticos",
+        "permiso": "viaticos:manage",
+        "modulo": gestion_viaticos,
+    },
+]
 
 
-# ── Helpers Supabase ──────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# TARJETA VISUAL
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def _get_tickets():
-    try:
-        sb = get_authed_client()
-        res = sb.table("tickets").select("*").order("created_at", desc=True).limit(500).execute()
-        return res.data or []
-    except Exception:
-        return []
-
-def _get_complementarias():
-    try:
-        sb = get_authed_client()
-        res = (
-            sb.table("solicitudes_complementarias")
-            .select("*")
-            .order("fecha_captura", desc=True)
-            .limit(500)
-            .execute()
-        )
-        return res.data or []
-    except Exception:
-        return []
-
-def _update_ticket(ticket_id, changes: dict):
-    sb = get_authed_client()
-    sb.table("tickets").update(changes).eq("id", ticket_id).execute()
-
-def _update_complementaria(folio, changes: dict):
-    sb = get_authed_client()
-    sb.table("solicitudes_complementarias").update(changes).eq("folio", folio).execute()
+def _render_card(titulo: str, icono: str, color: str, descripcion: str):
+    """Dibuja una tarjeta visual con gradiente."""
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(135deg, {color}15 0%, {color}08 100%);
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 14px;
+        padding: 1.5rem;
+        text-align: center;
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
+    ">
+        <span style="font-size: 2.2rem;">{icono}</span>
+        <div style="font-size: 1.1rem; font-weight: 700; color: {color};">{titulo}</div>
+        <div style="font-size: 0.8rem; color: #666; line-height: 1.3;">{descripcion}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-# ── Sección Tickets ───────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# ENCABEZADO
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def _render_tickets():
-    section_header("🎫", "Gestión de Tickets", "Administra y actualiza el estatus de los tickets")
-
-    tickets = _get_tickets()
-    if not tickets:
-        alert("info", "No hay tickets registrados.")
-        return
-
-    # KPIs
-    from collections import Counter
-    conteo = Counter(t.get("estatus", "Nuevo") for t in tickets)
-    kpi_row([
-        dict(icono="🆕", label="Nuevos",     valor=conteo.get("Nuevo", 0),      color="#1D4ED8"),
-        dict(icono="⏳", label="En Proceso",  valor=conteo.get("En Proceso", 0), color="#D97706"),
-        dict(icono="✅", label="Concluidos",  valor=conteo.get("Concluido", 0),  color="#059669"),
-        dict(icono="🚫", label="Cancelados",  valor=conteo.get("Cancelado", 0),  color="#DC2626"),
-    ])
-
-    # Filtros
-    col1, col2 = st.columns(2)
-    with col1:
-        filtro_estatus = st.selectbox(
-            "Filtrar por estatus",
-            ["Todos", "Nuevo", "En Proceso", "Concluido", "Cancelado"],
-            key="gest_ticket_estatus"
-        )
-    with col2:
-        filtro_buscar = st.text_input("Buscar por título o solicitante", key="gest_ticket_buscar")
-
-    filtrados = tickets
-    if filtro_estatus != "Todos":
-        filtrados = [t for t in filtrados if t.get("estatus") == filtro_estatus]
-    if filtro_buscar.strip():
-        q = filtro_buscar.strip().lower()
-        filtrados = [
-            t for t in filtrados
-            if q in str(t.get("titulo", "")).lower()
-            or q in str(t.get("solicitante", "")).lower()
-        ]
-
-    st.write(f"**{len(filtrados)} tickets**")
-
-    for t in filtrados:
-        tid   = t.get("id")
-        titulo = t.get("titulo") or "(Sin título)"
-        est   = t.get("estatus") or "Nuevo"
-        solic = t.get("solicitante") or ""
-        prio  = t.get("prioridad") or ""
-        cat   = t.get("categoria") or ""
-
-        with st.expander(f"#{tid} — {titulo} | {est} | {solic}"):
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.write(f"**Prioridad:** {prio}")
-                st.write(f"**Categoría:** {cat}")
-            with col_b:
-                st.write(f"**Empresa:** {t.get('empresa','')}")
-                st.write(f"**Departamento:** {t.get('departamento','')}")
-            with col_c:
-                st.write(f"**Correo:** {t.get('correo','')}")
-                st.write(f"**Creado:** {str(t.get('created_at',''))[:10]}")
-
-            st.write(f"**Descripción:** {t.get('descripcion','')}")
-
-            nuevo_est = st.selectbox(
-                "Cambiar estatus",
-                ["Nuevo", "En Proceso", "Concluido", "Cancelado"],
-                index=["Nuevo", "En Proceso", "Concluido", "Cancelado"].index(est) if est in ["Nuevo", "En Proceso", "Concluido", "Cancelado"] else 0,
-                key=f"est_ticket_{tid}"
-            )
-            asignado = st.text_input("Asignado a", value=t.get("assigned_to") or "", key=f"asig_ticket_{tid}")
-            comentario = st.text_area("Comentario interno", value=t.get("comentarios") or "", key=f"com_ticket_{tid}")
-
-            if st.button("💾 Guardar cambios", key=f"save_ticket_{tid}"):
-                try:
-                    _update_ticket(tid, {
-                        "estatus": nuevo_est,
-                        "assigned_to": asignado,
-                        "comentarios": comentario,
-                    })
-                    st.success("✅ Ticket actualizado.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al actualizar: {e}")
+def _render_header():
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #1B2266 0%, #252D80 100%);
+        color: white;
+        padding: 1.25rem 1.75rem;
+        border-radius: 14px;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        border-left: 5px solid #CC1E1E;
+    ">
+        <span style="font-size: 2rem;">📊</span>
+        <div>
+            <h2 style="margin:0; color:white; font-weight:700;">Seguimiento</h2>
+            <p style="margin:0; opacity:0.75; font-size:0.88rem;">
+                Gestión y seguimiento de solicitudes, tickets y auditorías
+            </p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
-# ── Sección Complementarias ───────────────────────────────────────────────────
-
-def _render_complementarias():
-    section_header("📋", "Gestión de Complementarias", "Revisa y actualiza solicitudes de complementarias")
-
-    comps = _get_complementarias()
-    if not comps:
-        alert("info", "No hay solicitudes de complementarias registradas.")
-        return
-
-    from collections import Counter
-    conteo = Counter(c.get("estatus", "Pendiente") for c in comps)
-    kpi_row([
-        dict(icono="⏳", label="Pendientes",  valor=conteo.get("Pendiente", 0),   color="#1D4ED8"),
-        dict(icono="🔍", label="En Revisión", valor=conteo.get("En revisión", 0), color="#D97706"),
-        dict(icono="✅", label="Resueltas",   valor=conteo.get("Resuelto", 0),    color="#059669"),
-        dict(icono="🚫", label="Canceladas",  valor=conteo.get("Cancelado", 0),   color="#DC2626"),
-    ])
-
-    col1, col2 = st.columns(2)
-    with col1:
-        filtro_est = st.selectbox(
-            "Filtrar por estatus",
-            ["Todos", "Pendiente", "En revisión", "Resuelto", "Cancelado"],
-            key="gest_comp_estatus"
-        )
-    with col2:
-        filtro_q = st.text_input("Buscar por tráfico o solicitante", key="gest_comp_buscar")
-
-    filtrados = comps
-    if filtro_est != "Todos":
-        filtrados = [c for c in filtrados if c.get("estatus") == filtro_est]
-    if filtro_q.strip():
-        q = filtro_q.strip().lower()
-        filtrados = [
-            c for c in filtrados
-            if q in str(c.get("numero_trafico", "")).lower()
-            or q in str(c.get("solicitante", "")).lower()
-        ]
-
-    st.write(f"**{len(filtrados)} solicitudes**")
-
-    ESTATUSES_COMP = ["Pendiente", "En revisión", "Resuelto", "Cancelado"]
-
-    for c in filtrados:
-        folio  = c.get("folio")
-        trafico = c.get("numero_trafico") or ""
-        est    = c.get("estatus") or "Pendiente"
-        solic  = c.get("solicitante") or ""
-        emp    = c.get("empresa") or ""
-
-        with st.expander(f"#{folio} — {trafico} | {emp} | {est} | {solic}"):
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.write(f"**Empresa:** {emp}")
-                st.write(f"**Plataforma:** {c.get('plataforma','')}")
-                st.write(f"**Tipo:** {c.get('tipo_complementaria','')}")
-            with col_b:
-                st.write(f"**Correo:** {c.get('correo','')}")
-                st.write(f"**Fecha:** {str(c.get('fecha_captura',''))[:10]}")
-
-            st.write(f"**Motivo:** {c.get('motivo_solicitud','')}")
-
-            nuevo_est = st.selectbox(
-                "Cambiar estatus",
-                ESTATUSES_COMP,
-                index=ESTATUSES_COMP.index(est) if est in ESTATUSES_COMP else 0,
-                key=f"est_comp_{folio}"
-            )
-            comentario = st.text_area("Comentario", value=c.get("comentarios_auditoria") or "", key=f"com_comp_{folio}")
-
-            if st.button("💾 Guardar cambios", key=f"save_comp_{folio}"):
-                try:
-                    _update_complementaria(folio, {
-                        "estatus": nuevo_est,
-                        "comentarios_auditoria": comentario,
-                    })
-                    st.success("✅ Solicitud actualizada.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al actualizar: {e}")
-
-
-# ── Render principal ──────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# FUNCIÓN PRINCIPAL render()
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def render():
-    page_banner("📊", "Seguimiento", "Gestión de tickets y solicitudes — vista de manager")
+    _render_header()
 
+    # ── Obtener usuario logueado ─────────────────────────────────────────────
     u = current_user() or {}
     user_id = u.get("id") or u.get("sub") or ""
 
     if not user_id:
-        alert("error", "Debes iniciar sesión.")
+        st.error("⚠️ Debes iniciar sesión para acceder a Seguimiento.")
         return
 
-    tiene_tickets = check_access(user_id, None, "tickets:manage")
-    tiene_comp    = check_access(user_id, None, "complementarias:manage")
+    # ── Filtrar tipos según permisos ─────────────────────────────────────────
+    tipos_visibles = [
+        t for t in TIPOS_SEGUIMIENTO
+        if check_access(user_id, None, t["permiso"])
+    ]
 
-    if not tiene_tickets and not tiene_comp:
-        alert("error", "No tienes permisos de gestión. Contacta al administrador.")
+    if not tipos_visibles:
+        st.error("🚫 No tienes acceso a ningún módulo de seguimiento.")
+        st.caption("Contacta al administrador para solicitar acceso.")
         return
 
-    tabs_labels = []
-    if tiene_tickets:
-        tabs_labels.append("🎫 Tickets")
-    if tiene_comp:
-        tabs_labels.append("📋 Complementarias")
+    # ── Si solo hay un tipo, entrar directo ──────────────────────────────────
+    tipo_activo = st.session_state.get("_seguimiento_tipo")
 
-    tabs = st.tabs(tabs_labels)
-    idx = 0
+    if len(tipos_visibles) == 1 and not tipo_activo:
+        st.session_state["_seguimiento_tipo"] = tipos_visibles[0]["slug"]
+        st.rerun()
 
-    if tiene_tickets:
-        with tabs[idx]:
-            _render_tickets()
-        idx += 1
+    # ── Mostrar tarjetas si no hay tipo activo ───────────────────────────────
+    if not tipo_activo:
+        st.markdown(
+            "<p style='text-align:center; color:#888; margin-bottom:1rem;'>"
+            "Selecciona el tipo de seguimiento que deseas gestionar</p>",
+            unsafe_allow_html=True,
+        )
 
-    if tiene_comp:
-        with tabs[idx]:
-            _render_complementarias()
+        cols = st.columns(len(tipos_visibles))
+        for i, tipo in enumerate(tipos_visibles):
+            with cols[i]:
+                _render_card(
+                    tipo["titulo"],
+                    tipo["icono"],
+                    tipo["color"],
+                    tipo["descripcion"],
+                )
+                if st.button(
+                    f"Abrir {tipo['titulo']}",
+                    key=f"seg_btn_{tipo['slug']}",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    st.session_state["_seguimiento_tipo"] = tipo["slug"]
+                    st.rerun()
+        return
+
+    # ── Verificar acceso ─────────────────────────────────────────────────────
+    slugs_accesibles = [t["slug"] for t in tipos_visibles]
+    if tipo_activo not in slugs_accesibles:
+        st.session_state.pop("_seguimiento_tipo", None)
+        st.error("🚫 Ya no tienes acceso a ese módulo.")
+        st.rerun()
+        return
+
+    # ── Botón para regresar ──────────────────────────────────────────────────
+    if len(tipos_visibles) > 1:
+        if st.button("← Cambiar tipo de seguimiento", key="seg_cambiar"):
+            st.session_state.pop("_seguimiento_tipo", None)
+            st.rerun()
+
+    # ── Renderizar el módulo de gestión correspondiente ──────────────────────
+    tipo_obj = next(t for t in tipos_visibles if t["slug"] == tipo_activo)
+
+    st.markdown("---")
+    tipo_obj["modulo"].render()
