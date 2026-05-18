@@ -65,6 +65,11 @@ def construir_navegacion() -> dict:
     if sol_pages:
         secciones["Solicitudes"] = sol_pages
 
+    if _tiene("complementarias:manage", "tickets:manage", "viaticos:manage"):
+    secciones["Seguimiento"] = [
+        st.Page("pages/pg_gestion_solicitudes.py", title="📊 Seguimiento", url_path="seguimiento"),
+    ]
+
     aud_pages = []
     _AUD = [
         ("auditoria:reporte_auxiliares",     "pages/pg_aud_auxiliares.py",             "📊 Reporte Auxiliares",    "aud-auxiliares"),
