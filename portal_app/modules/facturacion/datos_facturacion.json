@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "version": "1.1-beta",
+    "nota": "Datos de prueba con los 4 perfiles de riesgo."
+  },
+  "clientes": [
+    {
+      "id": "CLI-001", "codigo": "CLI-001",
+      "nombre": "Camas y Muebles Monterrey", "razon_social": "SA de CV",
+      "limite_credito": 500000, "condiciones_pago": "30 Días",
+      "banco": "IBC – International Bank of Commerce",
+      "banco_empresa": "Palos Garza Logistics LLC.",
+      "cuenta_bancaria": "2160913366", "swift": "IDLCUS44",
+      "telefono": "+52 867 193 3686", "email_contacto": "cobranza@camasymuebles.com",
+      "notas_pago": "Envíe comprobante al departamento de Cuentas por Cobrar.",
+      "activo": true
+    },
+    {
+      "id": "CLI-002", "codigo": "CLI-002",
+      "nombre": "Transportes Norteños", "razon_social": "S.A. de C.V.",
+      "limite_credito": 250000, "condiciones_pago": "15 Días",
+      "banco": "Banorte", "banco_empresa": "Palos Garza Logistics LLC.",
+      "cuenta_bancaria": "1234567890", "swift": "MENOMXMT",
+      "telefono": "+52 867 100 2200", "email_contacto": "pagos@transportesnortenos.mx",
+      "notas_pago": "Contactar a cobranza para aclaraciones.",
+      "activo": true
+    },
+    {
+      "id": "CLI-003", "codigo": "CLI-003",
+      "nombre": "Distribuidora del Norte", "razon_social": "S. de R.L.",
+      "limite_credito": 150000, "condiciones_pago": "45 Días",
+      "banco": "HSBC México", "banco_empresa": "Palos Garza Logistics LLC.",
+      "cuenta_bancaria": "9876543210", "swift": "BIMEMXMM",
+      "telefono": "+52 818 200 4400", "email_contacto": "cxp@distribuidoradelnorte.com",
+      "notas_pago": "Enviar comprobantes a cuentasporcobrar@palosgarza.com",
+      "activo": true
+    },
+    {
+      "id": "CLI-004", "codigo": "CLI-004",
+      "nombre": "Logística Frontera", "razon_social": "S.A. de C.V.",
+      "limite_credito": 120000, "condiciones_pago": "30 Días",
+      "banco": "Banamex", "banco_empresa": "Palos Garza Logistics LLC.",
+      "cuenta_bancaria": "5544332211", "swift": "BNMXMXMM",
+      "telefono": "+52 664 300 5500", "email_contacto": "finanzas@logisticafrontera.com",
+      "notas_pago": "Referencia obligatoria en transferencia.",
+      "activo": true
+    }
+  ],
+  "facturas": [
+    {"id":"FAC-001","folio":"A-73637","cliente_id":"CLI-001","fecha_emision":"2026-02-10","fecha_vencimiento":"2026-03-11","viaje_referencia":"SET00693/26","importe":21020,"moneda":"USD","estatus":"vencida","dias_vencido":2,"fecha_pago":null,"notas":""},
+    {"id":"FAC-002","folio":"A-74216","cliente_id":"CLI-001","fecha_emision":"2026-02-15","fecha_vencimiento":"2026-03-20","viaje_referencia":"SET00825/26","importe":3495,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-003","folio":"A-74917","cliente_id":"CLI-001","fecha_emision":"2026-02-26","fecha_vencimiento":"2026-03-26","viaje_referencia":"SET01191/26","importe":3495,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-004","folio":"A-74918","cliente_id":"CLI-001","fecha_emision":"2026-02-26","fecha_vencimiento":"2026-03-26","viaje_referencia":"SET01186/26","importe":3545,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-005","folio":"A-74919","cliente_id":"CLI-001","fecha_emision":"2026-02-26","fecha_vencimiento":"2026-03-26","viaje_referencia":"SET01182/26","importe":3495,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-006","folio":"B-10021","cliente_id":"CLI-002","fecha_emision":"2026-03-01","fecha_vencimiento":"2026-03-16","viaje_referencia":"SET00910/26","importe":8750,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-007","folio":"B-10022","cliente_id":"CLI-002","fecha_emision":"2026-03-05","fecha_vencimiento":"2026-03-20","viaje_referencia":"SET00870/26","importe":7200,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-008","folio":"B-10023","cliente_id":"CLI-002","fecha_emision":"2026-03-08","fecha_vencimiento":"2026-03-23","viaje_referencia":"SET00905/26","importe":5100,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-009","folio":"C-30045","cliente_id":"CLI-003","fecha_emision":"2026-02-01","fecha_vencimiento":"2026-03-05","viaje_referencia":"SET00750/26","importe":52000,"moneda":"USD","estatus":"vencida","dias_vencido":7,"fecha_pago":null,"notas":"Cliente notificado 10-Mar"},
+    {"id":"FAC-010","folio":"C-30046","cliente_id":"CLI-003","fecha_emision":"2026-02-15","fecha_vencimiento":"2026-04-01","viaje_referencia":"SET00800/26","importe":30000,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-011","folio":"C-30047","cliente_id":"CLI-003","fecha_emision":"2026-03-01","fecha_vencimiento":"2026-04-15","viaje_referencia":"SET00820/26","importe":50000,"moneda":"USD","estatus":"pendiente","dias_vencido":0,"fecha_pago":null,"notas":""},
+    {"id":"FAC-012","folio":"D-50100","cliente_id":"CLI-004","fecha_emision":"2026-01-15","fecha_vencimiento":"2026-02-14","viaje_referencia":"SET01250/26","importe":48000,"moneda":"USD","estatus":"vencida","dias_vencido":25,"fecha_pago":null,"notas":"Segunda notificacion enviada"},
+    {"id":"FAC-013","folio":"D-50101","cliente_id":"CLI-004","fecha_emision":"2026-01-20","fecha_vencimiento":"2026-02-19","viaje_referencia":"SET01260/26","importe":39000,"moneda":"USD","estatus":"vencida","dias_vencido":19,"fecha_pago":null,"notas":""},
+    {"id":"FAC-014","folio":"D-50102","cliente_id":"CLI-004","fecha_emision":"2026-02-10","fecha_vencimiento":"2026-03-11","viaje_referencia":"SET01290/26","importe":35000,"moneda":"USD","estatus":"vencida","dias_vencido":1,"fecha_pago":null,"notas":""}
+  ]
+}
