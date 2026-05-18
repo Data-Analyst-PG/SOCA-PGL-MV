@@ -55,7 +55,32 @@ def aplicar_tema():
             letter-spacing: 0.5px !important;
         }}
         [data-testid="collapsedControl"] {{ display: flex !important; }}
-        [data-testid="collapsedControl"] svg {{ color: white !important; fill: white !important; }}
+        [data-testid="collapsedControl"] {{
+            background: rgba(204,30,30,0.25) !important;
+            border-radius: 0 8px 8px 0 !important;
+            width: 32px !important;
+            height: 32px !important;
+            align-items: center !important;
+            justify-content: center !important;
+            margin-top: 8px !important;
+        }}
+        [data-testid="stSidebarCollapseButton"] button,
+        [data-testid="stSidebar"] [data-testid="collapsedControl"] button {{
+            background: rgba(255,255,255,0.15) !important;
+            border-radius: 8px !important;
+            color: white !important;
+        }}
+        [data-testid="stSidebarCollapseButton"] svg,
+        [data-testid="stSidebar"] button svg {{
+            color: white !important;
+            fill: white !important;
+        }}
+        [data-testid="collapsedControl"] svg {{
+            color: white !important;
+            fill: white !important;
+            width: 18px !important;
+            height: 18px !important;
+        }}
     }}
     #MainMenu {{ visibility: hidden; }}
     footer    {{ visibility: hidden; }}
