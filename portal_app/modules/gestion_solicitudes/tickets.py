@@ -122,7 +122,7 @@ def render():
         alert("error", "No tienes permisos para gestionar tickets.")
         st.stop()
 
-section_header("🛠️", "Gestión de Tickets")
+    section_header("🛠️", "Gestión de Tickets")
     st.caption("Asignación, estatus y seguimiento interno")
 
     admin_pwd = st.text_input("Contraseña equipo", type="password")
