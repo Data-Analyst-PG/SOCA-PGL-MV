@@ -128,8 +128,7 @@ def aplicar_tema():
 
 def user_header(nombre: str, rol: str = ""):
     """Barra superior: logo izquierda | nombre + rol derecha."""
-    color_texto, color_bg = _COLORES_ROL.get(rol.lower(), ("#6B7280", "#F3F4F6"))
-
+    color_texto, color_bg = colores_rol.get((rol or "").lower(), ("#6B7280", "#F3F4F6"))
     col_logo, col_right = st.columns([3, 9])
 
     with col_logo:
