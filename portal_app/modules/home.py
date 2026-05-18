@@ -203,7 +203,7 @@ def render():
         ))
 
     if tiene_ventas:
-        cards_izq.append(dict(
+        cards_der.append(dict(
             icono="📈",
             titulo="Ventas",
             descripcion="Buscador de rutas y subastas de tarifas",
