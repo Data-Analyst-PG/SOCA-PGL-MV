@@ -17,7 +17,6 @@ from services.access import check_access, get_user_permissions
 from modules.auth import render_login_page
 from ui.theme import aplicar_tema, user_header
 
-aplicar_tema()
 
 # ── Sesión ────────────────────────────────────────────────────────────────────
 u = current_user()
@@ -28,6 +27,8 @@ if not u:
 if not ensure_auth_loaded():
     render_login_page()
     st.stop()
+
+aplicar_tema()
 
 p              = profile() or {}
 nombre_usuario = p.get("full_name") or u.get("email", "Usuario")
