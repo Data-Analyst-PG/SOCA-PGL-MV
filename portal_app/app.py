@@ -77,7 +77,6 @@ def construir_navegacion() -> dict:
         ("auditoria:rutas_frecuentes",         "pages/pg_aud_rutas.py",                 "🗺️ Rutas Frecuentes",         "aud-rutas"),
         ("auditoria:rentabilidad",             "pages/pg_aud_rentabilidad.py",          "💹 Rentabilidad Clientes",    "aud-rentabilidad"),
         ("auditoria:prorrateador",             "pages/pg_aud_prorrateador.py",          "🧮 Prorrateador",             "aud-prorrateador"),
-        ("auditoria:lincoln_auditoria",        "pages/pg_aud_lincoln.py",               "🔍 Auditoría Lincoln",        "aud-lincoln"),
         ("auditoria:sac_ventas",               "pages/pg_aud_sac_ventas.py",            "📈 SAC Ventas",               "aud-sac-ventas"),
         ("auditoria:cartera_proveedores",      "pages/pg_aud_cartera_proveedores.py",   "🫱🏽‍🫲🏼 Cartera Proveedores",    "aud-cartera-proveedores"),
         ("auditoria:reporte_balanza_mensual",  "pages/pg_aud_reporte_balanza_mensual.py","📚 Reporte Balanza",          "aud-reporte-balanza"),
@@ -86,6 +85,19 @@ def construir_navegacion() -> dict:
     for perm, path, titulo, url in _AUD:
         if _tiene(perm):
             aud_pages.append(st.Page(path, title=titulo, url_path=url))
+
+    # Auditorías por empresa — aparece si tiene acceso a AL MENOS UNA empresa
+    _PERMS_AUDITORIAS = [
+        "auditoria:lincoln_auditoria",
+        "auditoria:igloo_auditoria",
+        "auditoria:picus_auditoria",
+        "auditoria:set_freight_auditoria",
+        "auditoria:set_logis_auditoria",
+    ]
+    if _tiene(*_PERMS_AUDITORIAS):
+        aud_pages.append(st.Page("pages/pg_aud_auditorias.py",
+                                 title="🔍 Auditorías", url_path="aud-auditorias"))
+
     if aud_pages:
         secciones["Auditoría"] = aud_pages
 
