@@ -1,3 +1,4 @@
+from ui.components import page_banner, section_header, alert, divider
 # portal_app/modules/gestion_solicitudes/gestion_router.py
 # ─────────────────────────────────────────────────────────────────────────────
 # Router estilo "cotizadores" para el módulo de Seguimiento.
@@ -58,25 +59,7 @@ TIPOS_SEGUIMIENTO = [
 
 def _render_card(titulo: str, icono: str, color: str, descripcion: str):
     """Dibuja una tarjeta visual con gradiente."""
-    st.markdown(f"""
-    <div style="
-        background: linear-gradient(135deg, {color}15 0%, {color}08 100%);
-        border: 1px solid rgba(0,0,0,0.08);
-        border-radius: 14px;
-        padding: 1.5rem;
-        text-align: center;
-        min-height: 120px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        gap: 0.5rem;
-    ">
-        <span style="font-size: 2.2rem;">{icono}</span>
-        <div style="font-size: 1.1rem; font-weight: 700; color: {color};">{titulo}</div>
-        <div style="font-size: 0.8rem; color: #666; line-height: 1.3;">{descripcion}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    page_banner("📋", "Módulo", "")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -84,27 +67,7 @@ def _render_card(titulo: str, icono: str, color: str, descripcion: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _render_header():
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, #1B2266 0%, #252D80 100%);
-        color: white;
-        padding: 1.25rem 1.75rem;
-        border-radius: 14px;
-        margin-bottom: 1.5rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        border-left: 5px solid #CC1E1E;
-    ">
-        <span style="font-size: 2rem;">📊</span>
-        <div>
-            <h2 style="margin:0; color:white; font-weight:700;">Seguimiento</h2>
-            <p style="margin:0; opacity:0.75; font-size:0.88rem;">
-                Gestión y seguimiento de solicitudes, tickets y auditorías
-            </p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    page_banner("📋", "Seguimiento", "Gestión y seguimiento de solicitudes, tickets y auditorías")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -119,7 +82,7 @@ def render():
     user_id = u.get("id") or u.get("sub") or ""
 
     if not user_id:
-        st.error("⚠️ Debes iniciar sesión para acceder a Seguimiento.")
+        alert("error", "⚠️ Debes iniciar sesión para acceder a Seguimiento.")
         return
 
     # ── Filtrar tipos según permisos ─────────────────────────────────────────
@@ -129,7 +92,7 @@ def render():
     ]
 
     if not tipos_visibles:
-        st.error("🚫 No tienes acceso a ningún módulo de seguimiento.")
+        alert("error", "🚫 No tienes acceso a ningún módulo de seguimiento.")
         st.caption("Contacta al administrador para solicitar acceso.")
         return
 
@@ -171,7 +134,7 @@ def render():
     slugs_accesibles = [t["slug"] for t in tipos_visibles]
     if tipo_activo not in slugs_accesibles:
         st.session_state.pop("_seguimiento_tipo", None)
-        st.error("🚫 Ya no tienes acceso a ese módulo.")
+        alert("error", "🚫 Ya no tienes acceso a ese módulo.")
         st.rerun()
         return
 
@@ -184,5 +147,5 @@ def render():
     # ── Renderizar el módulo de gestión correspondiente ──────────────────────
     tipo_obj = next(t for t in tipos_visibles if t["slug"] == tipo_activo)
 
-    st.markdown("---")
+    divider()
     tipo_obj["modulo"].render()
