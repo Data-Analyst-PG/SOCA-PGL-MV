@@ -23,6 +23,40 @@ def aplicar_tema():
     }}
     [data-testid="stSidebar"]        {{ display: none !important; }}
     [data-testid="collapsedControl"] {{ display: none !important; }}
+    @media (max-width: 768px) {{
+        [data-testid="stSidebar"] {{ display: block !important; }}
+        [data-testid="stSidebar"] > div:first-child {{
+            background: linear-gradient(135deg, {PGL_NAVY} 0%, {PGL_NAVY_LT} 100%) !important;
+            padding-top: 1rem !important;
+        }}
+        [data-testid="stSidebarNav"] a,
+        [data-testid="stSidebarNav"] span,
+        [data-testid="stSidebarNav"] p {{
+            color: rgba(255,255,255,0.85) !important;
+            font-weight: 500 !important;
+        }}
+        [data-testid="stSidebarNav"] a:hover {{
+            color: white !important;
+            background: rgba(204,30,30,0.18) !important;
+            border-radius: 6px !important;
+        }}
+        [data-testid="stSidebarNav"] [aria-selected="true"] a,
+        [data-testid="stSidebarNav"] [aria-current] {{
+            color: white !important;
+            background: rgba(204,30,30,0.15) !important;
+            border-radius: 6px !important;
+            font-weight: 700 !important;
+        }}
+        [data-testid="stSidebarNav"] .st-emotion-cache-1egp75f {{
+            color: rgba(255,255,255,0.5) !important;
+            font-size: 0.72rem !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+        }}
+        [data-testid="collapsedControl"] {{ display: flex !important; }}
+        [data-testid="collapsedControl"] svg {{ color: white !important; fill: white !important; }}
+    }}
     #MainMenu {{ visibility: hidden; }}
     footer    {{ visibility: hidden; }}
     [data-testid="stHeader"] {{
