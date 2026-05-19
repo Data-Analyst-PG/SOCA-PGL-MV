@@ -112,7 +112,7 @@ def render():
     # =========================
     # Tabla general
     # =========================
-section_header("📋", "Rutas Registradas")
+    section_header("📋", "Rutas Registradas")
     st.dataframe(df, use_container_width=True)
     st.markdown(f"**Total de rutas registradas:** {len(df)}")
 
@@ -123,7 +123,7 @@ section_header("📋", "Rutas Registradas")
     # =========================
     # Eliminar
     # =========================
-section_header("🗑️", "Eliminar rutas")
+    section_header("🗑️", "Eliminar rutas")
     ids_a_eliminar = st.multiselect("Selecciona los ID de ruta a eliminar", ids_disponibles, key="picus_del_ids")
 
     if st.button("Eliminar rutas seleccionadas", key="picus_del_btn", disabled=(len(ids_a_eliminar) == 0)):
@@ -142,7 +142,7 @@ section_header("🗑️", "Eliminar rutas")
     # =========================
     # Editar
     # =========================
-section_header("✏️", "Editar Ruta Existente")
+    section_header("✏️", "Editar Ruta Existente")
 
     id_editar = st.selectbox("Selecciona el ID de Ruta a editar", ids_disponibles, key="picus_edit_id")
     ruta = df[df["ID_Ruta"].astype(str) == str(id_editar)].iloc[0]
