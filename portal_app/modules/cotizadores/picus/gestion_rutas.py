@@ -241,7 +241,7 @@ def render():
                                       value=float(safe_number(ruta.get("Casetas"))))
 
         divider()
-    section_header("🧾", "Costos Extras")
+        section_header("🧾", "Costos Extras")
         col3, col4 = st.columns(2)
         with col3:
             pistas_extra = st.number_input("Pistas Extra (MXP)", min_value=0.0,
