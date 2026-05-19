@@ -247,7 +247,7 @@ def render():
     ]
 
     if ids_seleccionados:
-    section_header("⚙️", "Configuración de Conceptos")
+        section_header("⚙️", "Configuración de Conceptos")
         
         # 🆕 Usar expander para cada ruta (más limpio)
         for ruta_sel in ids_seleccionados:
