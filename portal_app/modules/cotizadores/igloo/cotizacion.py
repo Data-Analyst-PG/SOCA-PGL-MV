@@ -219,7 +219,7 @@ def render():
         if id_ruta_0 in df.index:
             moneda_default = df.loc[id_ruta_0].get("Moneda", "MXP") or "MXP"
 
-section_header("💱", "Moneda y Tipo de Cambio")
+    section_header("💱", "Moneda y Tipo de Cambio")
     col_moneda, col_tc = st.columns(2)
     
     with col_moneda:
@@ -278,7 +278,7 @@ section_header("💱", "Moneda y Tipo de Cambio")
     # ---------------------------
     # NOTAS / CONDICIONES
     # ---------------------------
-section_header("📝", "Notas o Condiciones")
+    section_header("📝", "Notas o Condiciones")
     texto_default = (
         "Esta cotización es válida por 15 días. "
         "No aplica IVA y Retenciones en el caso de las importaciones y exportaciones. "
