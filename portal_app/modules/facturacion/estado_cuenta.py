@@ -13,8 +13,6 @@ from ui.components import (
 
 
 def render():
-    page_banner("💳", "Facturación y Cobranza", "Estado de cuenta por cliente — Beta")
-
     clientes = get_clientes()
     nombres  = [c["nombre"] for c in clientes]
 
