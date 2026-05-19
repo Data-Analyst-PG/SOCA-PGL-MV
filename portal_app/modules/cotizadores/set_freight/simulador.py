@@ -51,7 +51,7 @@ def render():
     r_base   = calcular_ruta(row_base, pct_indirecto=pct_base)
 
     divider()
-section_header("▸", "Ajusta los valores (simulación — no se guarda)")
+    section_header("▸", "Ajusta los valores (simulación — no se guarda)")
 
     col_ing, col_cst = st.columns(2)
 
@@ -81,7 +81,7 @@ section_header("▸", "Ajusta los valores (simulación — no se guarda)")
     r_sim   = calcular_ruta(row_sim, pct_indirecto=pct_sim)
 
     divider()
-section_header("📊", "Comparativa base vs simulado")
+    section_header("📊", "Comparativa base vs simulado")
 
     metricas = [
         ("Ingreso total",   "ingreso_total"),
