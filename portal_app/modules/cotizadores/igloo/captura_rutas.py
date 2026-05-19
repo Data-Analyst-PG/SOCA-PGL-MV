@@ -112,7 +112,7 @@ def render():
             st.caption(f"Archivo: `{_datos_generales_path()}`")
 
     divider()
-section_header("🛣️", "Nueva Ruta")
+    section_header("🛣️", "Nueva Ruta")
 
     # ── Formulario ───────────────────────────────────────────────
     with st.form("igloo_captura_ruta"):
@@ -155,7 +155,7 @@ section_header("🛣️", "Nueva Ruta")
                 modo_pago_dom = "km"
 
         divider()
-    section_header("🧾", "Otros costos")
+        section_header("🧾", "Otros costos")
 
         col3, col4 = st.columns(2)
         with col3:
