@@ -208,7 +208,7 @@ def generar_pdf_estado_cuenta(cliente: dict, facturas: list,
     """Genera bytes del PDF del estado de cuenta para st.download_button()."""
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.lib.units import inch, pt
+    from reportlab.lib.units import inch
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         HRFlowable, KeepTogether,
