@@ -252,7 +252,7 @@ def render():
     # ══════════════════════════════════════════════════════════════
     # TABLA DE RUTAS
     # ══════════════════════════════════════════════════════════════
-section_header("📋", "Rutas Registradas")
+    section_header("📋", "Rutas Registradas")
 
     df_filtrado_tabla = _filtrar_rutas(df, "gestion_tabla")
 
@@ -293,7 +293,7 @@ section_header("📋", "Rutas Registradas")
     # EDITAR RUTA
     # ══════════════════════════════════════════════════════════════
     divider()
-section_header("✏️", "Editar Ruta Existente")
+    section_header("✏️", "Editar Ruta Existente")
 
     df_filtrado_edicion = _filtrar_rutas(df, "gestion_edicion")
     
@@ -548,7 +548,7 @@ section_header("✏️", "Editar Ruta Existente")
         r = st.session_state.get("lincoln_calc_edicion", {})
         
         divider()
-    section_header("📊", "Resumen de Cambios")
+        section_header("📊", "Resumen de Cambios")
         
         # Resumen tipo Igloo
         col1, col2 = st.columns(2)
@@ -678,7 +678,7 @@ section_header("✏️", "Editar Ruta Existente")
     # ══════════════════════════════════════════════════════════════
     if ruta_seleccionada:
         divider()
-    section_header("📝", "Historial de modificaciones")
+        section_header("📝", "Historial de modificaciones")
         
         historial = ruta.get("historial", [])
         
@@ -729,7 +729,7 @@ section_header("✏️", "Editar Ruta Existente")
     # ELIMINAR RUTA
     # ══════════════════════════════════════════════════════════════
     divider()
-section_header("🗑️", "Eliminar Ruta")
+    section_header("🗑️", "Eliminar Ruta")
     
     with st.expander("⚠️ Zona de Peligro - Eliminar Ruta", expanded=False):
         alert("warn", "⚠️ **ADVERTENCIA:** Esta acción es permanente y no se puede deshacer.")
