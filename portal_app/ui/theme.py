@@ -1,28 +1,51 @@
 # portal_app/ui/theme.py
 import streamlit as st
 
-PGL_NAVY    = "#1B2266"
-PGL_RED     = "#CC1E1E"
-PGL_NAVY_LT = "#252D80"
-PGL_RED_LT  = "#E02424"
-PGL_BG      = "#F4F6FB"
-PGL_WHITE   = "#FFFFFF"
-PGL_TEXT    = "#1B2266"
-PGL_MUTED   = "#6B7280"
-PGL_BORDER  = "#E5E9F0"
+# ─────────────────────────────────────────────────────────────────────────────
+# PALETA DE COLORES PGL
+# Usa estas variables en cualquier componente para mantener consistencia.
+# ─────────────────────────────────────────────────────────────────────────────
+PGL_NAVY    = "#1B2266"   # Azul marino principal
+PGL_RED     = "#CC1E1E"   # Rojo acento
+PGL_NAVY_LT = "#252D80"   # Azul marino claro (gradientes)
+PGL_RED_LT  = "#E02424"   # Rojo claro (gradientes)
+PGL_BG      = "#F4F6FB"   # Fondo general de la app
+PGL_WHITE   = "#FFFFFF"   # Blanco puro
+PGL_TEXT    = "#1B2266"   # Color de texto principal
+PGL_MUTED   = "#6B7280"   # Texto secundario / subtítulos
+PGL_BORDER  = "#E5E9F0"   # Bordes de tarjetas e inputs
 
 
 def aplicar_tema():
+    """Inyecta el CSS global de Palos Garza Logistics.
+    Se llama UNA SOLA VEZ en app.py al inicio de la app.
+    Afecta a TODOS los módulos y páginas.
+    """
     st.markdown(f"""
     <style>
+
+    /* ═══════════════════════════════════════════════════════════
+       1. FUENTE Y FONDO GLOBAL
+       Aplica la fuente Plus Jakarta Sans y el color de fondo
+       a toda la aplicación.
+    ═══════════════════════════════════════════════════════════ */
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
     html, body, [class*="css"], .stApp {{
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         background-color: {PGL_BG} !important;
         color: {PGL_TEXT} !important;
     }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       2. SIDEBAR
+       Oculto en escritorio. En móvil se muestra con fondo
+       azul marino para mantener la identidad visual.
+    ═══════════════════════════════════════════════════════════ */
     [data-testid="stSidebar"]        {{ display: none !important; }}
     [data-testid="collapsedControl"] {{ display: none !important; }}
+
     @media (max-width: 768px) {{
         [data-testid="stSidebar"] {{ display: block !important; }}
         [data-testid="stSidebar"] > div:first-child {{
@@ -71,10 +94,7 @@ def aplicar_tema():
             color: white !important;
         }}
         [data-testid="stSidebarCollapseButton"] svg,
-        [data-testid="stSidebar"] button svg {{
-            color: white !important;
-            fill: white !important;
-        }}
+        [data-testid="stSidebar"] button svg,
         [data-testid="collapsedControl"] svg {{
             color: white !important;
             fill: white !important;
@@ -82,13 +102,32 @@ def aplicar_tema():
             height: 18px !important;
         }}
     }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       3. ELEMENTOS OCULTOS DE STREAMLIT
+       Oculta el menú hamburguesa y el footer de Streamlit.
+    ═══════════════════════════════════════════════════════════ */
     #MainMenu {{ visibility: hidden; }}
     footer    {{ visibility: hidden; }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       4. HEADER SUPERIOR
+       Barra azul marino en la parte superior con línea roja.
+    ═══════════════════════════════════════════════════════════ */
     [data-testid="stHeader"] {{
         background: linear-gradient(135deg, {PGL_NAVY} 0%, {PGL_NAVY_LT} 100%) !important;
         border-bottom: 3px solid {PGL_RED} !important;
     }}
     [data-testid="stHeader"] * {{ color: white !important; }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       5. BARRA DE NAVEGACIÓN (menú superior con páginas)
+       Fondo azul marino, links blancos, activo con línea roja.
+       El submenú desplegable tiene fondo blanco con texto azul.
+    ═══════════════════════════════════════════════════════════ */
     [data-testid="stNavigation"] {{
         background: linear-gradient(135deg, {PGL_NAVY} 0%, {PGL_NAVY_LT} 100%) !important;
         border-bottom: 3px solid {PGL_RED} !important;
@@ -99,6 +138,8 @@ def aplicar_tema():
         scrollbar-width: none !important;
     }}
     [data-testid="stNavigation"]::-webkit-scrollbar {{ display: none !important; }}
+
+    /* Links del menú principal */
     [data-testid="stNavigation"] a,
     [data-testid="stNavigation"] button {{
         color: rgba(255,255,255,0.85) !important;
@@ -122,6 +163,8 @@ def aplicar_tema():
         background: rgba(204,30,30,0.12) !important;
         font-weight: 700 !important;
     }}
+
+    /* Submenú desplegable (dropdown) */
     [data-testid="stNavigation"] ul,
     [data-testid="stNavigation"] [role="menu"] {{
         background: white !important;
@@ -143,10 +186,28 @@ def aplicar_tema():
         background: rgba(27,34,102,0.08) !important;
         color: {PGL_NAVY} !important;
     }}
-    .block-container {{ padding: 4rem 1.5rem 2rem 1.5rem !important; max-width: 1200px; }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       6. CONTENEDOR PRINCIPAL DE PÁGINA
+       Controla el padding y ancho máximo del contenido.
+    ═══════════════════════════════════════════════════════════ */
+    .block-container {{
+        padding: 4rem 1.5rem 2rem 1.5rem !important;
+        max-width: 1200px;
+    }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       7. BOTONES
+       Primario: rojo con gradiente.
+       Secundario: borde azul marino, fondo blanco.
+    ═══════════════════════════════════════════════════════════ */
     .stButton > button[kind="primary"] {{
         background: linear-gradient(135deg, {PGL_RED}, {PGL_RED_LT}) !important;
-        border: none !important; color: white !important; font-weight: 600 !important;
+        border: none !important;
+        color: white !important;
+        font-weight: 600 !important;
         border-radius: 8px !important;
     }}
     .stButton > button[kind="primary"]:hover {{
@@ -155,23 +216,73 @@ def aplicar_tema():
     }}
     .stButton > button:not([kind="primary"]) {{
         border: 1.5px solid {PGL_NAVY} !important;
-        color: {PGL_NAVY} !important; border-radius: 8px !important;
-        font-weight: 500 !important; background: white !important;
+        color: {PGL_NAVY} !important;
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        background: white !important;
     }}
     .stButton > button:not([kind="primary"]):hover {{
-        background: {PGL_NAVY} !important; color: white !important;
+        background: {PGL_NAVY} !important;
+        color: white !important;
     }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       8. MÉTRICAS (st.metric)
+       Tarjeta blanca con borde izquierdo rojo y sombra suave.
+    ═══════════════════════════════════════════════════════════ */
     [data-testid="stMetric"] {{
-        background: {PGL_WHITE}; border-radius: 12px; padding: 1rem 1.2rem;
-        border: 1px solid {PGL_BORDER}; border-left: 4px solid {PGL_RED};
+        background: {PGL_WHITE};
+        border-radius: 12px;
+        padding: 1rem 1.2rem;
+        border: 1px solid {PGL_BORDER};
+        border-left: 4px solid {PGL_RED};
         box-shadow: 0 2px 8px rgba(27,34,102,0.07);
     }}
-    [data-testid="stMetricValue"] {{ font-weight: 700; color: {PGL_NAVY} !important; }}
-    [data-testid="stDataFrame"] {{ border-radius: 10px; overflow: hidden; }}
+    [data-testid="stMetricValue"] {{
+        font-weight: 700;
+        color: {PGL_NAVY} !important;
+    }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       9. DATAFRAMES (st.dataframe)
+       Bordes redondeados y sombra sutil.
+    ═══════════════════════════════════════════════════════════ */
+    [data-testid="stDataFrame"] {{
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(27,34,102,0.06);
+    }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       10. FILE UPLOADER (st.file_uploader)
+       Borde punteado azul marino, fondo muy suave.
+       Al pasar el mouse cambia a rojo para indicar interacción.
+    ═══════════════════════════════════════════════════════════ */
+    [data-testid="stFileUploader"] {{
+        border-radius: 14px !important;
+        border: 2px dashed {PGL_NAVY} !important;
+        background: rgba(27,34,102,0.03) !important;
+        padding: 0.5rem !important;
+        transition: border-color 0.2s, background 0.2s !important;
+    }}
+    [data-testid="stFileUploader"]:hover {{
+        border-color: {PGL_RED} !important;
+        background: rgba(204,30,30,0.03) !important;
+    }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       11. INPUTS DE TEXTO Y NÚMERO (st.text_input, st.number_input)
+       Borde redondeado gris, azul marino al enfocar.
+    ═══════════════════════════════════════════════════════════ */
     [data-testid="stTextInput"] input,
     [data-testid="stNumberInput"] input,
     [data-testid="stTextArea"] textarea {{
-        border-radius: 8px !important; border: 1.5px solid #D1D8E8 !important;
+        border-radius: 8px !important;
+        border: 1.5px solid #D1D8E8 !important;
     }}
     [data-testid="stTextInput"] input:focus,
     [data-testid="stNumberInput"] input:focus,
@@ -179,30 +290,86 @@ def aplicar_tema():
         border-color: {PGL_NAVY} !important;
         box-shadow: 0 0 0 3px rgba(27,34,102,0.12) !important;
     }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       12. SELECTBOX (st.selectbox)
+       Borde redondeado gris, consistente con inputs de texto.
+    ═══════════════════════════════════════════════════════════ */
     [data-testid="stSelectbox"] > div > div {{
-        border-radius: 8px !important; border: 1.5px solid #D1D8E8 !important;
+        border-radius: 8px !important;
+        border: 1.5px solid #D1D8E8 !important;
     }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       13. TABS (st.tabs)
+       Tab inactivo en gris, activo en azul marino con
+       línea roja inferior. Sin fondo especial en el tab activo.
+    ═══════════════════════════════════════════════════════════ */
     [data-testid="stTabs"] [role="tab"] {{
-        font-weight: 600; color: {PGL_MUTED};
+        font-weight: 600;
+        color: {PGL_MUTED};
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
     }}
     [data-testid="stTabs"] [role="tab"][aria-selected="true"] {{
-        color: {PGL_NAVY} !important; border-bottom: 3px solid {PGL_RED} !important;
+        color: {PGL_NAVY} !important;
+        border-bottom: 3px solid {PGL_RED} !important;
     }}
-    [data-testid="stExpander"] summary {{ font-weight: 600; color: {PGL_NAVY}; }}
+    [data-testid="stTabs"] [role="tab"]:hover {{
+        color: {PGL_NAVY} !important;
+        background: rgba(27,34,102,0.04) !important;
+    }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       14. EXPANDERS (st.expander)
+       Título en azul marino y negrita.
+    ═══════════════════════════════════════════════════════════ */
+    [data-testid="stExpander"] summary {{
+        font-weight: 600;
+        color: {PGL_NAVY};
+    }}
+
+
+    /* ═══════════════════════════════════════════════════════════
+       15. RESPONSIVE MÓVIL
+       Ajustes de padding y grillas para pantallas pequeñas.
+       Las clases pgl-kpi-grid y pgl-card-grid se usan en
+       los componentes de components.py.
+    ═══════════════════════════════════════════════════════════ */
     @media (max-width: 768px) {{
-        .block-container {{ padding: 3.5rem 0.75rem 1.5rem 0.75rem !important; }}
-        .pgl-kpi-grid {{ grid-template-columns: repeat(2, 1fr) !important; }}
-        .pgl-card-grid {{ grid-template-columns: 1fr !important; }}
-        .pgl-btn-row {{ flex-direction: column; }}
-        .pgl-btn-row .stButton > button {{ width: 100% !important; }}
+        .block-container {{
+            padding: 3.5rem 0.75rem 1.5rem 0.75rem !important;
+        }}
+        .pgl-kpi-grid {{
+            grid-template-columns: repeat(2, 1fr) !important;
+        }}
+        .pgl-card-grid {{
+            grid-template-columns: 1fr !important;
+        }}
+        .pgl-btn-row {{
+            flex-direction: column;
+        }}
+        .pgl-btn-row .stButton > button {{
+            width: 100% !important;
+        }}
     }}
     @media (max-width: 480px) {{
-        .pgl-kpi-grid {{ grid-template-columns: 1fr !important; }}
+        .pgl-kpi-grid {{
+            grid-template-columns: 1fr !important;
+        }}
     }}
+
     </style>
     """, unsafe_allow_html=True)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# USER HEADER
+# Barra superior con logo PGL a la izquierda y nombre + rol a la derecha.
+# Se llama en app.py después de aplicar_tema().
+# ─────────────────────────────────────────────────────────────────────────────
 def user_header(nombre: str, rol: str = ""):
     _colores_rol = {
         "admin":        ("#CC1E1E", "#FFF0F0"),
