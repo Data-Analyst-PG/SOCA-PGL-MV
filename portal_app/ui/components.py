@@ -13,6 +13,7 @@
 #   alert(tipo, mensaje)        → info | warn | error | success
 #   status_badge(texto, tipo)   → devuelve HTML de un badge
 #   divider()                   → separador visual
+#   welcome_banner(nombre, rol, area)
 # ─────────────────────────────────────────────────────────────────────────────
 import streamlit as st
 from ui.theme import PGL_NAVY, PGL_RED, PGL_NAVY_LT, PGL_MUTED, PGL_BORDER, PGL_WHITE
@@ -20,49 +21,37 @@ from ui.theme import PGL_NAVY, PGL_RED, PGL_NAVY_LT, PGL_MUTED, PGL_BORDER, PGL_
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. BANNER DE PÁGINA
-#    Banda azul marino con ícono, título y subtítulo.
-#    Úsalo al inicio de cada módulo/página.
-#
-#    Ejemplo:
-#        page_banner("📋", "Solicitudes", "Crea y consulta tus solicitudes")
 # ─────────────────────────────────────────────────────────────────────────────
 def page_banner(icono: str, titulo: str, subtitulo: str = ""):
-    sub_html = f'<div style="font-size:0.82rem; color:rgba(255,255,255,0.65); margin-top:0.3rem;">{subtitulo}</div>' if subtitulo else ""
-    st.markdown(f"""
-    <div style="
-        background: linear-gradient(135deg, {PGL_NAVY} 0%, {PGL_NAVY_LT} 100%);
-        border-radius: 14px;
-        padding: 1.3rem 1.8rem;
-        margin-bottom: 1.5rem;
-        border-left: 5px solid {PGL_RED};
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        position: relative;
-        overflow: hidden;
-    ">
-        <div style="position:absolute; right:-10px; top:-10px; font-size:6rem; opacity:0.06; line-height:1; pointer-events:none;">
-            {icono}
-        </div>
-        <span style="font-size:2rem; flex-shrink:0;">{icono}</span>
-        <div>
-            <div style="font-size:1.25rem; font-weight:700; color:white; line-height:1.2;">{titulo}</div>
-            {sub_html}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    sub_html = (
+        f'<div style="font-size:0.82rem;color:rgba(255,255,255,0.65);margin-top:0.3rem;">'
+        f'{subtitulo}</div>'
+    ) if subtitulo else ""
+    html = (
+        f'<div style="background:linear-gradient(135deg,{PGL_NAVY} 0%,{PGL_NAVY_LT} 100%);'
+        f'border-radius:14px;padding:1.3rem 1.8rem;margin-bottom:1.5rem;'
+        f'border-left:5px solid {PGL_RED};display:flex;align-items:center;'
+        f'gap:1rem;position:relative;overflow:hidden;">'
+        f'<div style="position:absolute;right:-10px;top:-10px;font-size:6rem;'
+        f'opacity:0.06;line-height:1;pointer-events:none;">{icono}</div>'
+        f'<span style="font-size:2rem;flex-shrink:0;">{icono}</span>'
+        f'<div>'
+        f'<div style="font-size:1.25rem;font-weight:700;color:white;line-height:1.2;">{titulo}</div>'
+        f'{sub_html}'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. ENCABEZADO DE SECCIÓN
-#    Más compacto que page_banner. Úsalo para dividir secciones dentro de
-#    una misma página.
-#
-#    Ejemplo:
-#        section_header("📊", "Resumen de rutas", "Últimos 30 días")
 # ─────────────────────────────────────────────────────────────────────────────
 def section_header(icono: str, titulo: str, subtitulo: str = ""):
-    sub_html = f'<div style="font-size:0.75rem;color:{PGL_MUTED};margin-top:1px;">{subtitulo}</div>' if subtitulo else ""
+    sub_html = (
+        f'<div style="font-size:0.75rem;color:{PGL_MUTED};margin-top:1px;">'
+        f'{subtitulo}</div>'
+    ) if subtitulo else ""
     html = (
         f'<div style="display:flex;align-items:center;gap:0.65rem;padding:0.7rem 1rem;'
         f'background:rgba(27,34,102,0.06);border-radius:10px;'
@@ -79,21 +68,6 @@ def section_header(icono: str, titulo: str, subtitulo: str = ""):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. FILA DE KPIs
-#    Muestra una fila de tarjetas con número grande.
-#    Se adapta a 2 columnas en móvil automáticamente.
-#
-#    items = lista de dicts con claves:
-#        icono   → emoji o texto corto
-#        label   → nombre del KPI
-#        valor   → número o texto a mostrar
-#        sub     → texto pequeño debajo del número
-#        color   → color hex del acento izquierdo y del número
-#
-#    Ejemplo:
-#        kpi_row([
-#            dict(icono="🎫", label="Tickets", valor=24, sub="6 abiertos", color="#1D4ED8"),
-#            dict(icono="✅", label="Resueltos", valor=5, sub="históricas", color="#059669"),
-#        ])
 # ─────────────────────────────────────────────────────────────────────────────
 def kpi_row(items: list):
     cards_html = ""
@@ -104,43 +78,29 @@ def kpi_row(items: list):
         sub   = item.get("sub", "")
         color = item.get("color", PGL_NAVY)
         cards_html += (
-            f'<div style="background:{PGL_WHITE}; border-radius:12px; padding:1rem 1.1rem;'
-            f' border:1px solid {PGL_BORDER}; border-left:4px solid {color};'
-            f' box-shadow:0 2px 8px rgba(27,34,102,0.06);">'
-            f'<div style="font-size:0.7rem; font-weight:600; text-transform:uppercase;'
-            f' letter-spacing:0.5px; color:{PGL_MUTED}; margin-bottom:4px;">{icono} {label}</div>'
-            f'<div style="font-size:1.9rem; font-weight:800; color:{color}; line-height:1.1;">{valor}</div>'
-            f'<div style="font-size:0.72rem; color:{PGL_MUTED}; margin-top:3px;">{sub}</div>'
+            f'<div style="background:{PGL_WHITE};border-radius:12px;padding:1rem 1.1rem;'
+            f'border:1px solid {PGL_BORDER};border-left:4px solid {color};'
+            f'box-shadow:0 2px 8px rgba(27,34,102,0.06);">'
+            f'<div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+            f'letter-spacing:0.5px;color:{PGL_MUTED};margin-bottom:4px;">'
+            f'{icono} {label}</div>'
+            f'<div style="font-size:1.9rem;font-weight:800;color:{color};line-height:1.1;">'
+            f'{valor}</div>'
+            f'<div style="font-size:0.72rem;color:{PGL_MUTED};margin-top:3px;">{sub}</div>'
             f'</div>'
         )
-    grid = (
-        f'<div class="pgl-kpi-grid" style="display:grid;'
-        f' grid-template-columns:repeat(auto-fit,minmax(130px,1fr));'
-        f' gap:10px; margin-bottom:1.5rem;">{cards_html}</div>'
+    html = (
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));'
+        f'gap:10px;margin-bottom:1.5rem;">'
+        f'{cards_html}'
+        f'</div>'
     )
-    st.markdown(grid, unsafe_allow_html=True)
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. TARJETA DE MÓDULO
-#    Card con ícono, título, descripción y badges de conteo.
-#    Úsala en el home y en páginas de selección de sub-módulos.
-#
-#    badges = lista de dicts:
-#        texto → texto del badge
-#        color → "blue" | "yellow" | "green" | "red" | "gray" | "purple"
-#
-#    Ejemplo:
-#        module_card(
-#            icono="🎫", titulo="Tickets", color_acento="#1D4ED8",
-#            descripcion="Crea y consulta solicitudes",
-#            badges=[
-#                dict(texto="3 Nuevos", color="blue"),
-#                dict(texto="1 En proceso", color="yellow"),
-#            ]
-#        )
 # ─────────────────────────────────────────────────────────────────────────────
-
 _BADGE_COLORS = {
     "blue":   ("#DBEAFE", "#1E40AF"),
     "yellow": ("#FEF9C3", "#92400E"),
@@ -157,22 +117,23 @@ def module_card(icono: str, titulo: str, descripcion: str,
     badges_html = ""
     for b in badges:
         bg, fg = _BADGE_COLORS.get(b.get("color", "gray"), _BADGE_COLORS["gray"])
-        texto = b.get("texto", "")
         badges_html += (
-            f'<span style="display:inline-block; background:{bg}; color:{fg};'
-            f' font-size:0.72rem; font-weight:700; padding:3px 10px;'
-            f' border-radius:20px; margin-right:5px; margin-top:4px;">{texto}</span>'
+            f'<span style="display:inline-block;background:{bg};color:{fg};'
+            f'font-size:0.72rem;font-weight:700;padding:3px 10px;'
+            f'border-radius:20px;margin-right:5px;margin-top:4px;">'
+            f'{b.get("texto", "")}</span>'
         )
     html = (
-        f'<div style="background:{PGL_WHITE}; border-radius:14px; padding:1.3rem 1.5rem;'
-        f' border:1px solid {PGL_BORDER}; border-left:5px solid {color_acento};'
-        f' box-shadow:0 2px 10px rgba(27,34,102,0.07); margin-bottom:0.75rem;">'
-        f'<div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;">'
+        f'<div style="background:{PGL_WHITE};border-radius:14px;padding:1.3rem 1.5rem;'
+        f'border:1px solid {PGL_BORDER};border-left:5px solid {color_acento};'
+        f'box-shadow:0 2px 10px rgba(27,34,102,0.07);margin-bottom:0.75rem;">'
+        f'<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">'
         f'<span style="font-size:1.7rem;">{icono}</span>'
         f'<div>'
-        f'<div style="font-weight:700; font-size:1rem; color:{PGL_NAVY};">{titulo}</div>'
-        f'<div style="font-size:0.8rem; color:{PGL_MUTED}; line-height:1.3;">{descripcion}</div>'
-        f'</div></div>'
+        f'<div style="font-weight:700;font-size:1rem;color:{PGL_NAVY};">{titulo}</div>'
+        f'<div style="font-size:0.8rem;color:{PGL_MUTED};line-height:1.3;">{descripcion}</div>'
+        f'</div>'
+        f'</div>'
         f'<div style="margin-top:0.4rem;">{badges_html}</div>'
         f'</div>'
     )
@@ -181,53 +142,29 @@ def module_card(icono: str, titulo: str, descripcion: str,
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. ALERTAS
-#    Caja de mensaje con color según tipo.
-#
-#    tipo → "info" | "warn" | "error" | "success"
-#
-#    Ejemplo:
-#        alert("success", "Solicitud enviada correctamente. Folio: #00142")
-#        alert("warn", "Esta cotización tiene más de 30 días.")
-#        alert("error", "No tienes permiso para editar este registro.")
-#        alert("info", "Los datos se actualizan cada 24 horas.")
 # ─────────────────────────────────────────────────────────────────────────────
-
 _ALERT_STYLES = {
-    "info":    ("rgba(27,34,102,0.07)", PGL_NAVY,    "ℹ️"),
-    "warn":    ("#FFF8E1",              "#B45309",   "⚠️"),
-    "error":   ("#FEE2E2",              "#991B1B",   "❌"),
-    "success": ("#D1FAE5",              "#065F46",   "✅"),
+    "info":    ("rgba(27,34,102,0.07)", PGL_NAVY,  "ℹ️"),
+    "warn":    ("#FFF8E1",              "#B45309",  "⚠️"),
+    "error":   ("#FEE2E2",              "#991B1B",  "❌"),
+    "success": ("#D1FAE5",              "#065F46",  "✅"),
 }
 
 def alert(tipo: str, mensaje: str):
     bg, border_color, emoji = _ALERT_STYLES.get(tipo, _ALERT_STYLES["info"])
-    st.markdown(f"""
-    <div style="
-        background: {bg};
-        border-left: 4px solid {border_color};
-        border-radius: 0 8px 8px 0;
-        padding: 0.7rem 1rem;
-        font-size: 0.88rem;
-        color: {border_color};
-        margin: 0.5rem 0;
-        line-height: 1.4;
-    ">
-        {emoji} {mensaje}
-    </div>
-    """, unsafe_allow_html=True)
+    html = (
+        f'<div style="background:{bg};border-left:4px solid {border_color};'
+        f'border-radius:0 8px 8px 0;padding:0.7rem 1rem;font-size:0.88rem;'
+        f'color:{border_color};margin:0.5rem 0;line-height:1.4;">'
+        f'{emoji} {mensaje}'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. BADGE DE ESTATUS (devuelve HTML — úsalo dentro de st.markdown)
-#    Para usar en tablas HTML o textos con unsafe_allow_html=True.
-#
-#    tipo → "nuevo" | "en_proceso" | "concluido" | "cancelado"
-#          "pendiente" | "revision" | "resuelto"
-#
-#    Ejemplo:
-#        st.markdown(status_badge("Nuevo", "nuevo"), unsafe_allow_html=True)
+# 6. BADGE DE ESTATUS (devuelve HTML)
 # ─────────────────────────────────────────────────────────────────────────────
-
 _STATUS_COLORS = {
     "nuevo":      ("#DBEAFE", "#1E40AF"),
     "en_proceso": ("#FEF9C3", "#92400E"),
@@ -243,33 +180,23 @@ _STATUS_COLORS = {
 def status_badge(texto: str, tipo: str) -> str:
     bg, fg = _STATUS_COLORS.get(tipo.lower(), ("#F3F4F6", "#374151"))
     return (
-        f'<span style="display:inline-block; background:{bg}; color:{fg}; '
-        f'font-size:0.72rem; font-weight:700; padding:3px 10px; '
+        f'<span style="display:inline-block;background:{bg};color:{fg};'
+        f'font-size:0.72rem;font-weight:700;padding:3px 10px;'
         f'border-radius:20px;">{texto}</span>'
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. DIVISOR VISUAL
-#    Línea separadora con espaciado correcto.
-#
-#    Ejemplo:
-#        divider()
 # ─────────────────────────────────────────────────────────────────────────────
 def divider():
-    st.markdown(f"""
-    <hr style="border:none; border-top:1.5px solid {PGL_BORDER}; margin:1.5rem 0;">
-    """, unsafe_allow_html=True)
+    html = f'<hr style="border:none;border-top:1.5px solid {PGL_BORDER};margin:1.5rem 0;">'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. BANNER DE BIENVENIDA (para el home)
-#    Banner personalizado con nombre y rol del usuario.
-#
-#    Ejemplo:
-#        welcome_banner("Heidi Rodriguez", "data_analyst", "Análisis de Datos")
+# 8. BANNER DE BIENVENIDA
 # ─────────────────────────────────────────────────────────────────────────────
-
 _ROL_COLORS = {
     "admin":        ("#CC1E1E", "#FFF0F0"),
     "data_analyst": ("#1B2266", "#EEF0FF"),
@@ -281,31 +208,21 @@ _ROL_COLORS = {
 def welcome_banner(nombre: str, rol: str, area: str = ""):
     c_texto, c_bg = _ROL_COLORS.get(rol.lower(), ("#6B7280", "#F3F4F6"))
     subtitulo = f"Portal de Palos Garza Logistics · {area}" if area else "Portal de Palos Garza Logistics"
-    st.markdown(f"""
-    <div style="
-        background: linear-gradient(135deg, {PGL_NAVY} 0%, {PGL_NAVY_LT} 100%);
-        border-radius: 16px;
-        padding: 2rem 2.5rem;
-        margin-bottom: 2rem;
-        border-left: 5px solid {PGL_RED};
-        position: relative;
-        overflow: hidden;
-    ">
-        <div style="position:absolute; right:-20px; top:-20px; font-size:8rem;
-                    opacity:0.06; line-height:1; pointer-events:none;">🚚</div>
-        <div style="font-size:0.85rem; color:rgba(255,255,255,0.65);
-                    font-weight:500; margin-bottom:0.3rem;">Bienvenido de vuelta</div>
-        <div style="font-size:1.8rem; font-weight:800; color:white;
-                    margin-bottom:0.4rem; line-height:1.2;">{nombre}</div>
-        <span style="
-            background:{c_bg}; color:{c_texto};
-            font-size:0.75rem; font-weight:700;
-            padding:3px 12px; border-radius:20px;
-            text-transform:uppercase; letter-spacing:0.5px;
-            display:inline-block;
-        ">{rol}</span>
-        <div style="color:rgba(255,255,255,0.5); font-size:0.8rem; margin-top:0.8rem;">
-            {subtitulo}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    html = (
+        f'<div style="background:linear-gradient(135deg,{PGL_NAVY} 0%,{PGL_NAVY_LT} 100%);'
+        f'border-radius:16px;padding:2rem 2.5rem;margin-bottom:2rem;'
+        f'border-left:5px solid {PGL_RED};position:relative;overflow:hidden;">'
+        f'<div style="position:absolute;right:-20px;top:-20px;font-size:8rem;'
+        f'opacity:0.06;line-height:1;pointer-events:none;">🚚</div>'
+        f'<div style="font-size:0.85rem;color:rgba(255,255,255,0.65);'
+        f'font-weight:500;margin-bottom:0.3rem;">Bienvenido de vuelta</div>'
+        f'<div style="font-size:1.8rem;font-weight:800;color:white;'
+        f'margin-bottom:0.4rem;line-height:1.2;">{nombre}</div>'
+        f'<span style="background:{c_bg};color:{c_texto};font-size:0.75rem;font-weight:700;'
+        f'padding:3px 12px;border-radius:20px;text-transform:uppercase;'
+        f'letter-spacing:0.5px;display:inline-block;">{rol}</span>'
+        f'<div style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin-top:0.8rem;">'
+        f'{subtitulo}</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
