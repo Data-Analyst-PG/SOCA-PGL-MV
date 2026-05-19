@@ -22,8 +22,6 @@ TAB_NAMES = [
     "🗂️ Gestión de Rutas",
     "🔁 Simulador VR",
     "🗒️ Cotización",
-    "📅 Programación",
-    "🗳️ Viajes Concluidos",
 ]
 
 TAB_MODULES = [
@@ -32,8 +30,6 @@ TAB_MODULES = [
     gestion_rutas,
     simulador,
     cotizacion,
-    programacion_viajes,
-    viajes_concluidos,
 ]
 
 
