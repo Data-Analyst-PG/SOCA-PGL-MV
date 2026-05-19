@@ -12,8 +12,6 @@ from .set_logis import (
     gestion_rutas,
     simulador,
     cotizacion,
-    programacion_viajes,
-    viajes_concluidos,
 )
 
 TAB_NAMES = [
