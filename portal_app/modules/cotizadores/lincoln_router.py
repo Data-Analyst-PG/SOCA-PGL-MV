@@ -13,8 +13,6 @@ from .lincoln import (
     gestion_rutas,
     simulador,
     cotizacion,
-    programacion_viajes,
-    viajes_concluidos,
 )
 
 
@@ -27,8 +25,6 @@ def render():
         "🗂️ Gestión de Rutas",
         "🔁 Simulador VR",
         "🗒️ Cotización",
-        "📅 Programación",
-        "🗳️ Viajes Concluidos",
     ])
 
     with tabs[0]: captura_rutas.render()
