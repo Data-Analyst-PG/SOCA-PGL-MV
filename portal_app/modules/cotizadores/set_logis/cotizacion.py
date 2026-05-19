@@ -416,7 +416,7 @@ def render():
 
     valores = cargar_datos_generales()
 
-section_header("👤", "Cliente y Empresa")
+    section_header("👤", "Cliente y Empresa")
 
     col1, col2 = st.columns(2)
 
@@ -484,7 +484,7 @@ section_header("👤", "Cliente y Empresa")
     tc     = mc2.number_input("TC USD/MXP", value=float(valores.get("Tipo de Cambio USD/MXP", 18.0)), step=0.1, key="sl_cot_tc")
 
     divider()
-section_header("🛣️", "Rutas a cotizar")
+    section_header("🛣️", "Rutas a cotizar")
 
     opciones = (
         df["ID_Ruta"].astype(str) + " | " +
