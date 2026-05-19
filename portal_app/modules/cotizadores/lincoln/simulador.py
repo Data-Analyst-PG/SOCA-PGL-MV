@@ -320,7 +320,7 @@ def render():
     # ══════════════════════════════════════════════════════════════
     # PASO 1: SELECCIONAR RUTA DE IDA
     # ══════════════════════════════════════════════════════════════
-section_header("1️⃣", "Selecciona la Ruta de Ida")
+    section_header("1️⃣", "Selecciona la Ruta de Ida")
     
     # Filtrar solo rutas que tienen regreso compatible
     tipos_validos = ["NB", "D2DNB", "SB", "D2DSB"]
@@ -360,7 +360,7 @@ section_header("1️⃣", "Selecciona la Ruta de Ida")
     # PASO 2: PARÁMETROS DE SIMULACIÓN
     # ══════════════════════════════════════════════════════════════
     divider()
-section_header("2️⃣", "Ajustar Parámetros de Simulación (Opcional)")
+    section_header("2️⃣", "Ajustar Parámetros de Simulación (Opcional)")
     
     col_sim1, col_sim2, col_sim3 = st.columns(3)
     
@@ -407,7 +407,7 @@ section_header("2️⃣", "Ajustar Parámetros de Simulación (Opcional)")
     # PASO 3: ENCONTRAR MEJORES RUTAS DE REGRESO
     # ══════════════════════════════════════════════════════════════
     divider()
-section_header("3️⃣", "Mejores Opciones de Regreso")
+    section_header("3️⃣", "Mejores Opciones de Regreso")
     
     tipos_compatibles = obtener_tipos_compatibles(tipo_ida)
     
