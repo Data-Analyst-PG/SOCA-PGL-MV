@@ -4,7 +4,7 @@ import streamlit as st
 from datetime import date
 
 from modules.facturacion.data_source import get_clientes, get_facturas_cliente
-from modules.facturacion.facturacion import perfil_riesgo, generar_pdf_estado_cuenta, LOGO_B64
+from modules.facturacion._shared import perfil_riesgo, generar_pdf_estado_cuenta, LOGO_B64
 from ui.components import (
     page_banner, section_header, divider,
     kpi_card, client_header, gauge_riesgo,
