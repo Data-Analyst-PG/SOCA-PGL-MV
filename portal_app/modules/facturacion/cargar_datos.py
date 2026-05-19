@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 
-from modules.facturacion.facturacion import leer_json, guardar_json
+from modules.facturacion._shared import leer_json, guardar_json
 from ui.components import page_banner, section_header, alert, divider
 
 
