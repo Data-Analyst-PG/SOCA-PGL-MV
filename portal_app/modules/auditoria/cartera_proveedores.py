@@ -724,106 +724,9 @@ def _exportar_excel(cartera_df, catalogo_df):
 # =====================================================
 
 def render():
-    from ui.components import section_header, alert, divider
-    """Renderiza el módulo con diseño mejorado Streamlit 2026"""
-    
-    # CSS personalizado
-    st.markdown("""
-        <style>
-        .banner-cartera {
-            background: linear-gradient(135deg, #1B2266 0%, #252D80 100%);
-            color: white;
-            padding: 1.5rem 2rem;
-            border-radius: 16px;
-            margin-bottom: 2rem;
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-            border-left: 6px solid #CC1E1E;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        
-        .banner-icon { font-size: 2.5rem; }
-        
-        .banner-content h2 {
-            margin: 0;
-            color: white !important;
-            font-weight: 700;
-            font-size: 1.8rem;
-        }
-        
-        .banner-content p {
-            margin: 0.5rem 0 0 0;
-            opacity: 0.9;
-            font-size: 0.95rem;
-        }
-        
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 12px;
-            background: transparent;
-        }
-        
-        .stTabs [data-baseweb="tab"] {
-            border-radius: 10px 10px 0 0;
-            padding: 14px 28px;
-            font-weight: 600;
-            background: rgba(102, 126, 234, 0.1);
-        }
-        
-        .stTabs [aria-selected="true"] {
-            background: linear-gradient(135deg, #1B2266 0%, #252D80 100%);
-            color: white !important;
-        }
-        
-        .stButton>button {
-            border-radius: 10px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.12);
-        }
-        
-        .stButton>button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-        }
-        
-        .stButton>button[kind="primary"] {
-            background: linear-gradient(135deg, #1B2266 0%, #252D80 100%);
-        }
-        
-        [data-testid="stMetricValue"] {
-            font-size: 2rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #1B2266 0%, #252D80 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        
-        [data-testid="stFileUploader"] {
-            border-radius: 14px;
-            border: 2px dashed #667eea;
-            background: rgba(102, 126, 234, 0.05);
-            padding: 1.5rem;
-        }
-        
-        .dataframe {
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # Banner
-    st.markdown("""
-    <div class="banner-cartera">
-        <div class="banner-icon">📊</div>
-        <div class="banner-content">
-            <h2>Cartera de Proveedores</h2>
-            <p>Convierte archivos SAC a formato Cartera con clasificación automática</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    from ui.components import page_banner, section_header, alert, divider
+
+    page_banner("📊", "Cartera de Proveedores", "Convierte archivos SAC a formato Cartera con clasificación automática")
     
     # Inicializar Supabase
     if 'supabase' not in st.session_state:
@@ -841,19 +744,17 @@ def render():
     
     # TAB 1: PROCESAR SAC
     with tab1:
-        st.markdown("### 📂 Paso 1: Cargar Archivo SAC")
+        section_header("📂", "Paso 1: Cargar Archivo SAC")
         
         empresa = st.selectbox(
             "🏢 Empresa",
             options=list(EMPRESAS.keys()),
             format_func=lambda x: EMPRESAS[x]['nombre'],
-            help="Selecciona la empresa para procesar"
         )
         
         archivo = st.file_uploader(
             "📎 Sube tu archivo SAC (.xls o .xlsx)",
             type=['xls', 'xlsx'],
-            help="El formato se detectará automáticamente (Excel o HTML)"
         )
         
         if archivo:
@@ -884,7 +785,7 @@ def render():
             st.markdown("---")
             
             # PASO 2: VERIFICAR CATÁLOGO
-            st.markdown("### 📋 Paso 2: Verificar Catálogo de Proveedores")
+            section_header("📋", "Paso 2: Verificar Catálogo de Proveedores")
             
             catalogo_existente = _cargar_catalogo(empresa)
             proveedores_archivo = _extraer_proveedores_del_archivo(archivo_bytes, formato_detectado)
@@ -1075,7 +976,7 @@ def render():
     
     # TAB 2: CATÁLOGOS
     with tab2:
-        st.markdown("### 📋 Gestión de Catálogos")
+        section_header("📋", "Gestión de Catálogos")
         
         empresa_cat = st.selectbox(
             "🏢 Empresa",
