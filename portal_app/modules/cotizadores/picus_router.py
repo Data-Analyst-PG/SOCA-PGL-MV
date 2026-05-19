@@ -10,8 +10,6 @@ from .picus import (
     gestion_rutas,
     simulador,
     cotizacion,
-    programacion_viajes,
-    viajes_concluidos,
 )
 
 # Empresa de este router
@@ -24,8 +22,6 @@ TABS = [
     ("🗂️ Gestión de Rutas",   "cotizador_picus:gestion",      gestion_rutas),
     ("🔁 Simulador VR",        "cotizador_picus:simulador",    simulador),
     ("🗒️ Cotización",          "cotizador_picus:cotizacion",   cotizacion),
-    ("📅 Programación",        "cotizador_picus:programacion", programacion_viajes),
-    ("🗳️ Viajes Concluidos",  "cotizador_picus:concluidos",   viajes_concluidos),
 ]
 
 
