@@ -1,4 +1,4 @@
-from ui.components import section_header, alert, divider
+from __future__ import annotations
 """
 portal_app/modules/auditoria/lincoln_auditoria.py
 
@@ -6,7 +6,6 @@ Submódulo: Auditoría de viajes Lincoln Freight.
 Aplica reglas de servicio, detecta anomalías por conceptos I→C,
 valida utilidades y audita operadores logísticos autorizados por sucursal.
 """
-from __future__ import annotations
 
 import io
 from typing import Optional
@@ -14,6 +13,7 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
+from ui.components import section_header, alert, divider
 # ─────────────────────────────────────────────────────────────
 # CONSTANTES — equivalencias I → C ACTUALIZADAS
 # Según hoja "Nuevo mapeo" de Actualización data.xlsx.
