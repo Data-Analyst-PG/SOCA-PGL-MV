@@ -181,7 +181,7 @@ def render():
             st.error(f"No pude leer el archivo. Error: {e}")
             st.stop()
 
-        section_header("▸", "Vista previa")
+        section_header("👁️", "Vista previa")
         st.dataframe(df.head(50), use_container_width=True)
 
         guessed = {
@@ -195,7 +195,7 @@ def render():
             "Fecha": find_col(df, ["Fecha Despacho", "Fecha", "Bill Date..", "Fecha Entrega", "Fecha Concluido"]),
         }
 
-        section_header("▸", "Mapeo de columnas (ajusta si hace falta)")
+        section_header("🗂️", "Mapeo de columnas (ajusta si hace falta)")
         cols = ["(Selecciona)"] + list(df.columns)
 
         c1, c2, c3, c4 = st.columns(4)
@@ -247,7 +247,7 @@ def render():
 
             st.success(f"Listo. Filas generadas: {len(df_report):,}")
 
-            section_header("▸", "Reporte")
+            section_header("📊", "Reporte")
             st.dataframe(df_report, use_container_width=True)
 
             excel_bytes = to_excel_bytes(df_report, sheet_name="Rutas Comunes")
