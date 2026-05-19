@@ -375,7 +375,7 @@ def render():
     valores = _panel_datos_generales(valores)
     
     divider()
-section_header("🛣️", "Nueva Ruta")
+    section_header("🛣️", "Nueva Ruta")
     
     with st.form("ln_captura_ruta", clear_on_submit=False):
         
