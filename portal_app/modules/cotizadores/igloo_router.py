@@ -25,8 +25,6 @@ TABS = [
     ("🗂️ Gestión de Rutas",   "cotizador_igloo:gestion",      gestion_rutas),
     ("🔁 Simulador VR",        "cotizador_igloo:simulador",    simulador),
     ("🗒️ Cotización",          "cotizador_igloo:cotizacion",   cotizacion),
-    ("📅 Programación",        "cotizador_igloo:programacion", programacion_viajes),
-    ("🗳️ Viajes Concluidos",  "cotizador_igloo:concluidos",   viajes_concluidos),
 ]
 
 
