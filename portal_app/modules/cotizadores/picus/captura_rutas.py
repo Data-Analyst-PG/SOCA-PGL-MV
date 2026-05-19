@@ -112,7 +112,7 @@ def render():
             st.caption(f"Archivo: `{_datos_generales_path()}`")
 
     divider()
-section_header("🛣️", "Nueva Ruta")
+    section_header("🛣️", "Nueva Ruta")
 
     # =========================
     # Helper: generar ID
@@ -172,7 +172,7 @@ section_header("🛣️", "Nueva Ruta")
             casetas = st.number_input("Casetas (MXP)", min_value=0.0)
 
         divider()
-    section_header("🧾", "Costos Extras")
+        section_header("🧾", "Costos Extras")
         col3, col4 = st.columns(2)
         with col3:
             pistas_extra = st.number_input("Pistas Extra (MXP)", min_value=0.0)
@@ -316,7 +316,7 @@ section_header("🛣️", "Nueva Ruta")
                 return f"<strong>{label}:</strong> <span style='color:{color}; font-weight:bold'>{value}</span>"
 
             divider()
-        section_header("📊", "Ingresos y Utilidades")
+            section_header("📊", "Ingresos y Utilidades")
 
             st.write(f"**Ingreso Total:** ${ingreso_total:,.2f}")
             st.write(f"**Costo Total:** ${costo_total:,.2f}")
