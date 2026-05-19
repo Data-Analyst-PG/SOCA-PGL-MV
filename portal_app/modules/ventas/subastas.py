@@ -79,7 +79,7 @@ TIPOS = ["NB", "SB", "D2D SB", "D2D NB", "PPNB", "PPSB", "DOMUSA"]
 def _vista_vendedor():
     sb  = get_supabase_client()
     uid = _uid()
-section_header("📢", "Mis subastas")
+    section_header("📢", "Mis subastas")
 
     df = _cargar_subastas(uid)
     mis = df[df["creado_por"] == uid] if not df.empty else pd.DataFrame()
@@ -185,7 +185,7 @@ def _vista_gerente():
     uid = _uid()
     suc_id = _sucursal_id()
 
-section_header("📥", "Subastas disponibles para ofertar")
+    section_header("📥", "Subastas disponibles para ofertar")
     alert("info", "Tu identidad es anónima para el vendedor mientras la subasta esté abierta.")
 
     df = _cargar_subastas(uid)
