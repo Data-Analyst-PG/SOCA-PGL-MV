@@ -515,7 +515,7 @@ def render():
 
     # ── Ajustes simulación ──
     divider()
-section_header("⚙️", "Ajustes para Simulación")
+    section_header("⚙️", "Ajustes para Simulación")
     costo_diesel_input = st.number_input("Costo del Diesel ($/L)", value=float(valores.get("Costo Diesel", 24.0)), key="igloo_cons_diesel")
     st.markdown(f"> Rendimiento Camión **registrado**: **{rend_reg:.2f} km/L** (solo consulta)")
     rendimiento_input = st.number_input(
@@ -605,7 +605,7 @@ section_header("⚙️", "Ajustes para Simulación")
 
     # ── Detalles y costos ──
     divider()
-section_header("📋", "Detalles y Costos de la Ruta")
+    section_header("📋", "Detalles y Costos de la Ruta")
 
     col1, col2, col3 = st.columns(3)
 
@@ -655,7 +655,7 @@ section_header("📋", "Detalles y Costos de la Ruta")
 
     # ── PDF Profesional ──
     divider()
-section_header("📥", "Descargar PDF de la Consulta")
+    section_header("📥", "Descargar PDF de la Consulta")
 
     simulando = st.session_state.get("igloo_simular", False)
 
