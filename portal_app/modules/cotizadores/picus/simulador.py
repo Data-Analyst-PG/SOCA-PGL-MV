@@ -71,7 +71,7 @@ def render():
     # -------------------------
     # Paso 1: Ruta principal
     # -------------------------
-section_header("📌", "Ruta Principal")
+    section_header("📌", "Ruta Principal")
 
     if "Ruta_Tipo" not in df.columns or "Tipo" not in df.columns:
         alert("error", "La tabla debe contener columnas Ruta_Tipo y Tipo.")
@@ -127,7 +127,7 @@ section_header("📌", "Ruta Principal")
     # Paso 2: sugerencias regreso
     # -------------------------
     divider()
-section_header("🔁", "Rutas sugeridas (combinaciones con o sin vacío)")
+    section_header("🔁", "Rutas sugeridas (combinaciones con o sin vacío)")
 
     tipo_principal = str(ruta_1.get("Tipo", "")).strip().upper()
     destino_origen = str(ruta_1.get("Destino", "")).strip().upper()
@@ -229,7 +229,7 @@ section_header("🔁", "Rutas sugeridas (combinaciones con o sin vacío)")
             st.markdown(f"- Costo Total Ruta: ${safe_number(r.get('Costo_Total_Ruta')):,.2f}")
 
         divider()
-    section_header("📊", "Resultado General")
+        section_header("📊", "Resultado General")
 
         def colored_bold(label, value, ok, thr_ok=True):
             color = "green" if ok else "red"
@@ -256,7 +256,7 @@ section_header("🔁", "Rutas sugeridas (combinaciones con o sin vacío)")
     # -------------------------
     # PDF
     # -------------------------
-section_header("📥", "Generar PDF de la Simulación")
+    section_header("📥", "Generar PDF de la Simulación")
 
     if not st.session_state.simulacion_realizada:
         alert("info", "ℹ️ Ejecuta primero la simulación para poder generar el PDF.")
