@@ -139,7 +139,7 @@ def render():
     # ══════════════════════════════════════════════════════════════
     # TABLA DE RUTAS REGISTRADAS
     # ══════════════════════════════════════════════════════════════
-section_header("📋", "Rutas Registradas")
+    section_header("📋", "Rutas Registradas")
 
     df_filtrado_tabla = _filtrar_rutas(df, "gestion_tabla")
 
@@ -187,7 +187,7 @@ section_header("📋", "Rutas Registradas")
     # ELIMINAR RUTAS
     # ══════════════════════════════════════════════════════════════
     divider()
-section_header("🗑️", "Eliminar rutas")
+    section_header("🗑️", "Eliminar rutas")
 
     # FILTROS PARA ELIMINAR
     with st.expander("🔍 Filtros de búsqueda (opcional)", expanded=False):
@@ -277,7 +277,7 @@ section_header("🗑️", "Eliminar rutas")
     # EDITAR RUTAS
     # ══════════════════════════════════════════════════════════════
     divider()
-section_header("✏️", "Editar ruta")
+    section_header("✏️", "Editar ruta")
 
     # FILTROS PARA EDITAR
     with st.expander("🔍 Filtros de búsqueda (opcional)", expanded=False):
@@ -430,7 +430,7 @@ section_header("✏️", "Editar ruta")
                 modo_pago_dom = "km"
 
         divider()
-    section_header("🧾", "Otros costos")
+        section_header("🧾", "Otros costos")
 
         col3, col4 = st.columns(2)
         with col3:
@@ -670,7 +670,7 @@ section_header("✏️", "Editar ruta")
     # ── Mostrar historial de modificaciones ──────────────────────
     if ruta_seleccionada:
         divider()
-    section_header("📝", "Historial de modificaciones de esta ruta")
+        section_header("📝", "Historial de modificaciones de esta ruta")
         
         historial = ruta.get("historial", [])
         
