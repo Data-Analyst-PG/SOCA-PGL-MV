@@ -620,7 +620,7 @@ def render() -> None:
         help="Debe contener la hoja 'Companies' con los viajes del periodo.",
     )
 
-    if not uploaded:
+    with st.expander("📖 Ver guía de uso y reglas de auditoría", expanded=not uploaded):
         c1, c2, c3 = st.columns(3)
         c1.info("**📥 1. Carga el Excel**\n\nSube el archivo. Debe contener la hoja 'Companies'.")
         c2.info("**🔍 2. Auditoría automática**\n\nSe aplican reglas de negocio, mapeos I→C y operadores.")
@@ -630,6 +630,8 @@ def render() -> None:
         c2.info("**R2** Broker + unidad\n\nSin costo USA. MX siempre con costo.")
         c3.warning("**R3** Broker + sin unidad\n\nTercero. I39+Fuel40 ≈ C77 (±$200).")
         alert("warn", "**Operadores**: valida que cada operador logístico esté autorizado para su sucursal.")
+
+    if not uploaded:
         return
 
     file_bytes = uploaded.getvalue()
