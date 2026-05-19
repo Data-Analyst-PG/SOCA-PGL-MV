@@ -8,4 +8,10 @@ from ui.components import (
     status_badge,
     divider,
     welcome_banner,
+    client_header,
+    kpi_card,
+    gauge_riesgo,
+    credit_bar,
+    facturas_table,
+    payment_info,
 )
