@@ -55,7 +55,7 @@ def render():
                               min_value=0.0, max_value=1.0, step=0.005, format="%.3f", key="sf_pct_ci")
 
     # ── Identificación de ruta ─────────────────
-section_header("▸", "Datos de la ruta")
+    section_header("▸", "Datos de la ruta")
     c1, c2, c3 = st.columns(3)
     tipo    = c1.selectbox("Tipo de servicio", TIPOS_SERVICIO, key="sf_tipo")
     origen  = c2.text_input("Origen",  placeholder="ej. HOUSTON, TX",     key="sf_origen")
@@ -67,7 +67,7 @@ section_header("▸", "Datos de la ruta")
     viajes_mes  = c6.number_input("Viajes/mes",     min_value=1,   step=1,   key="sf_viajes", value=1)
 
     # ── Ingresos ──────────────────────────────
-section_header("▸", "Ingresos (USD)")
+    section_header("▸", "Ingresos (USD)")
     ing_vals = {}
     cols_ing = st.columns(len(CONCEPTOS_INGRESO))
     for i, (label, campo) in enumerate(CONCEPTOS_INGRESO.items()):
@@ -75,7 +75,7 @@ section_header("▸", "Ingresos (USD)")
                                                     format="%.2f", key=f"sf_ing_{campo}")
 
     # ── Costos directos ───────────────────────
-section_header("▸", "Costos directos (USD)")
+    section_header("▸", "Costos directos (USD)")
     cst_vals = {}
     cols_c = st.columns(4)
     for i, (label, campo) in enumerate(CONCEPTOS_COSTO.items()):
@@ -87,7 +87,7 @@ section_header("▸", "Costos directos (USD)")
     r = calcular_ruta(row_preview, pct_indirecto=pct)
 
     divider()
-section_header("📊", "Resultado")
+    section_header("📊", "Resultado")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Ingreso total",    f"${r['ingreso_total']:,.2f}")
     m1.metric("Costo directo",    f"${r['costo_directo']:,.2f}")
