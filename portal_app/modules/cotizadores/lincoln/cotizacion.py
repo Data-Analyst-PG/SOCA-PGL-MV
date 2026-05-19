@@ -198,7 +198,7 @@ def render():
     valores = cargar_datos_generales()
 
     # ── Datos del cliente y empresa ──
-section_header("👤", "Cliente & Empresa")
+    section_header("👤", "Cliente & Empresa")
     cc1, cc2 = st.columns(2)
     with cc1:
         st.markdown("**Cliente**")
@@ -214,7 +214,7 @@ section_header("👤", "Cliente & Empresa")
     divider()
 
     # ── Moneda ──
-section_header("💵", "Moneda")
+    section_header("💵", "Moneda")
     mc1, mc2 = st.columns(2)
     moneda_cot = mc1.selectbox("Moneda de Cotización", ["USD", "MXP"], key="ln_cot_moneda")
     tc_cot     = mc2.number_input("Tipo de Cambio USD/MXP", value=float(valores.get("Tipo de Cambio USD/MXP", 18.0)),
@@ -223,7 +223,7 @@ section_header("💵", "Moneda")
     divider()
 
     # ── Selección de rutas ──
-section_header("🛣️", "Rutas a cotizar")
+    section_header("🛣️", "Rutas a cotizar")
 
     opciones_df = (
         df["ID_Ruta"].astype(str) + " | " +
