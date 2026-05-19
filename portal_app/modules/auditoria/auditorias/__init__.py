@@ -36,7 +36,7 @@ EMPRESAS = [
         "icono":      "🚛",
         "permiso":    "auditoria:igloo_auditoria",
         "modulo":     igloo,
-        "disponible": False,   # ← cambiar a True cuando esté desarrollado
+        "disponible": True,   # ← cambiar a True cuando esté desarrollado
     },
     {
         "slug":       "picus",
