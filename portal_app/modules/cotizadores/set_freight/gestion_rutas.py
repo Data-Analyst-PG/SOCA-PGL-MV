@@ -88,7 +88,7 @@ def render():
 
     # ── Editar / Archivar ─────────────────────
     divider()
-section_header("✏️", "Editar ruta")
+    section_header("✏️", "Editar ruta")
     if "id_ruta" not in dff.columns or dff.empty:
         return
 
