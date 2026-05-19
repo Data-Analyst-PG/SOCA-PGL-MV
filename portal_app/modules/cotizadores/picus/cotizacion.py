@@ -120,7 +120,7 @@ def render():
     # ---------------------------
     col1, col2 = st.columns(2)
     with col1:
-    section_header("▸", "Datos del Cliente")
+        section_header("▸", "Datos del Cliente")
         cliente_nombre = st.text_input("Nombre del Cliente")
         cliente_direccion = st.text_input("Dirección del Cliente")
         cliente_mail = st.text_input("Email del Cliente")
@@ -128,7 +128,7 @@ def render():
         cliente_ext = st.text_input("Ext Cliente")
 
     with col2:
-    section_header("▸", "Datos de la Empresa")
+        section_header("▸", "Datos de la Empresa")
         empresa_nombre = st.text_input("Nombre de tu Empresa", "PICUS SA DE CV")
         empresa_direccion = st.text_input("Dirección de la Empresa")
         empresa_mail = st.text_input("Email de la Empresa")
