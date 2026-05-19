@@ -138,7 +138,7 @@ def render():
                     df.get("ruta_destino","").fillna(""))
 
     # ── Selección de rutas a cotizar ──────────
-section_header("1.", "Selecciona rutas a incluir")
+    section_header("1.", "Selecciona rutas a incluir")
     rutas_sel = st.multiselect("Rutas", df["_label"].tolist(), key="sf_cot_rutas")
     if not rutas_sel:
         alert("info", "Selecciona al menos una ruta.")
@@ -146,13 +146,13 @@ section_header("1.", "Selecciona rutas a incluir")
 
     rows_sel = df[df["_label"].isin(rutas_sel)]
 
-section_header("2.", "Datos del cliente")
+    section_header("2.", "Datos del cliente")
     c1, c2 = st.columns(2)
     cli_nombre = c1.text_input("Nombre del cliente",    key="sf_cot_cli")
     cli_mail   = c2.text_input("Email del cliente",     key="sf_cot_mail")
     cli_dir    = c1.text_input("Dirección (opcional)",  key="sf_cot_dir")
 
-section_header("3.", "Datos del emisor y moneda")
+    section_header("3.", "Datos del emisor y moneda")
     d1, d2, d3 = st.columns(3)
     emp_nombre = d1.text_input("Empresa emisora", value="Set Freight LLC", key="sf_cot_emp")
     emp_mail   = d2.text_input("Email empresa",   key="sf_cot_emp_mail")
