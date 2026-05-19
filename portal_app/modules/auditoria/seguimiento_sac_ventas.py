@@ -309,7 +309,7 @@ def build_output_workbook(result: ParseResult) -> bytes:
 # ─────────────────────────────────────────────────────────────
 # PUNTO DE ENTRADA
 # ─────────────────────────────────────────────────────────────
-def render()
+def render():
     page_banner("📈", "Seguimiento SAC Ventas", "Generador automático de reporte de ventas")
     
     st.caption(
