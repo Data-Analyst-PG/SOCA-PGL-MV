@@ -10,8 +10,6 @@ from .igloo import (
     gestion_rutas,
     simulador,
     cotizacion,
-    programacion_viajes,
-    viajes_concluidos,
 )
 
 # Empresa de este router
