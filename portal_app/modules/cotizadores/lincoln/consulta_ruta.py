@@ -176,7 +176,7 @@ def calcular_ruta_lincoln_consulta(ruta, valores):
 def _mostrar_resultados_utilidad(r: dict):
     """Muestra resumen de utilidades tipo Igloo"""
     divider()
-section_header("📊", "Resumen de Utilidades")
+    section_header("📊", "Resumen de Utilidades")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -385,7 +385,7 @@ def render():
     valores = cargar_datos_generales()
 
     # Filtros y selección
-section_header("📋", "Seleccionar Ruta")
+    section_header("📋", "Seleccionar Ruta")
     
     df_filtrado = _filtrar_rutas(df, "consulta")
     
@@ -406,7 +406,7 @@ section_header("📋", "Seleccionar Ruta")
 
     # Simulador de parámetros
     divider()
-section_header("⚙️", "Simulador de Parámetros")
+    section_header("⚙️", "Simulador de Parámetros")
     
     st.session_state.setdefault("lincoln_consulta_simular", False)
     
@@ -469,7 +469,7 @@ section_header("⚙️", "Simulador de Parámetros")
 
     # Detalles de la ruta
     divider()
-section_header("📋", "Detalle de la Ruta")
+    section_header("📋", "Detalle de la Ruta")
     
     tab1, tab2, tab3 = st.tabs(["🇺🇸 Ruta Americana", "🛃 Cruce", "🇲🇽 Ruta Mexicana"])
     
@@ -512,7 +512,7 @@ section_header("📋", "Detalle de la Ruta")
 
     # Generar PDF
     divider()
-section_header("📥", "Descargar Reporte PDF")
+    section_header("📥", "Descargar Reporte PDF")
     
     if st.button("📄 Generar PDF Profesional", key="lincoln_gen_pdf", type="primary"):
         pdf_path = generar_pdf_lincoln(ruta, r, simulando, params_sim)
