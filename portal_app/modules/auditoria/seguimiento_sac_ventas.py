@@ -24,6 +24,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from ui.components import page_banner, section_header, alert, divider
 
 # ─────────────────────────────────────────────────────────────
 # CONSTANTES
@@ -309,7 +310,6 @@ def build_output_workbook(result: ParseResult) -> bytes:
 # PUNTO DE ENTRADA
 # ─────────────────────────────────────────────────────────────
 def render()
-    from ui.components import page_banner, section_header, alert, divider
     page_banner("📈", "Seguimiento SAC Ventas", "Generador automático de reporte de ventas")
     
     st.caption(
