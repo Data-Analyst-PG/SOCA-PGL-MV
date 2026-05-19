@@ -226,3 +226,230 @@ def welcome_banner(nombre: str, rol: str, area: str = ""):
         f'</div>'
     )
     st.markdown(html, unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# COMPONENTES FACTURACIÓN
+# Estos componentes centralizan el HTML de las páginas de facturación.
+# Úsalos así:
+#   from ui.components import client_header, kpi_card, gauge_riesgo, credit_bar, facturas_table, payment_info
+# ═════════════════════════════════════════════════════════════════════════════
+from datetime import date as _date
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. ENCABEZADO DE CLIENTE
+# ─────────────────────────────────────────────────────────────────────────────
+def client_header(cliente: dict, estado: str, color_r: str, logo_b64: str = ""):
+    """
+    Encabezado con logo, nombre, razón social, condiciones y badge de riesgo.
+ 
+    Uso:
+        client_header(cliente, estado, color_r, LOGO_B64)
+    """
+    logo_html = (
+        f'<img src="data:image/png;base64,{logo_b64}" '
+        f'style="height:44px;width:auto;object-fit:contain;">'
+    ) if logo_b64 else ""
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:1rem;'
+        f'padding:0.8rem 0.2rem 0.6rem 0.2rem;'
+        f'border-bottom:2px solid #E5E9F0;margin-bottom:1rem;">'
+        f'{logo_html}'
+        f'<div style="flex:1;">'
+        f'<div style="font-size:1.5rem;font-weight:800;color:#1B2266;line-height:1.1;">'
+        f'{cliente["nombre"]}</div>'
+        f'<div style="font-size:0.8rem;color:#9CA3AF;margin-top:0.1rem;">'
+        f'{cliente["razon_social"]} &nbsp;·&nbsp; '
+        f'<span style="color:{color_r};font-weight:700;">{cliente["condiciones_pago"]}</span>'
+        f' &nbsp;·&nbsp; Emitido: {_date.today().strftime("%d de %B, %Y")}</div>'
+        f'</div>'
+        f'<span style="background:{color_r}22;color:{color_r};font-size:0.75rem;'
+        f'font-weight:700;padding:5px 14px;border-radius:20px;'
+        f'border:1.5px solid {color_r};text-transform:uppercase;white-space:nowrap;">'
+        f'● {estado}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. KPI CARD INDIVIDUAL
+# ─────────────────────────────────────────────────────────────────────────────
+def kpi_card(col, label: str, valor: str, color: str = "#1B2266"):
+    """
+    Tarjeta KPI con borde superior de color. Se usa dentro de columnas st.columns().
+ 
+    Uso:
+        k1, k2 = st.columns(2)
+        kpi_card(k1, "Total Balance", "$120,000 USD", "#DC2626")
+    """
+    col.markdown(
+        f'<div style="background:white;border-radius:10px;padding:0.9rem 1rem;'
+        f'border:1px solid #E5E9F0;border-top:3px solid {color};">'
+        f'<div style="font-size:0.63rem;color:#9CA3AF;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.5px;">{label}</div>'
+        f'<div style="font-size:1.1rem;font-weight:800;color:{color};margin-top:0.2rem;">'
+        f'{valor}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. VELOCÍMETRO DE RIESGO
+# ─────────────────────────────────────────────────────────────────────────────
+def gauge_riesgo(estado: str, color: str, angulo: int):
+    """
+    SVG velocímetro con aguja y badge de estatus.
+    angulo: -75=RIESGO | -25=VIGILANCIA | 25=CLIENTE SANO | 75=EXCELENTE
+ 
+    Uso:
+        gauge_riesgo(estado, color_r, angulo)
+    """
+    rot = f"rotate({angulo})"
+    st.markdown(
+        f'<div style="text-align:center;padding:0.5rem 0;">'
+        f'<svg viewBox="0 0 200 130" width="190" style="display:block;margin:auto;">'
+        f'<path d="M 25 105 A 80 80 0 0 1 75 30" fill="none" stroke="#DC2626" stroke-width="14" stroke-linecap="round"/>'
+        f'<path d="M 75 30 A 80 80 0 0 1 125 30" fill="none" stroke="#D97706" stroke-width="14" stroke-linecap="round"/>'
+        f'<path d="M 125 30 A 80 80 0 0 1 175 105" fill="none" stroke="#059669" stroke-width="14" stroke-linecap="round"/>'
+        f'<g transform="translate(100,105)">'
+        f'<line x1="0" y1="0" x2="0" y2="-60" stroke="#1B2266" stroke-width="3.5" stroke-linecap="round" transform="{rot}"/>'
+        f'<circle cx="0" cy="0" r="7" fill="#1B2266"/>'
+        f'<circle cx="0" cy="0" r="3.5" fill="white"/>'
+        f'</g></svg>'
+        f'<div style="margin-top:-0.3rem;">'
+        f'<span style="background:{color};color:white;font-size:0.75rem;font-weight:700;'
+        f'padding:4px 18px;border-radius:20px;text-transform:uppercase;letter-spacing:0.5px;">'
+        f'● {estado}</span>'
+        f'</div>'
+        f'<div style="display:flex;justify-content:space-between;padding:0 0.5rem;'
+        f'font-size:0.65rem;margin-top:0.5rem;">'
+        f'<span style="color:#DC2626;font-weight:600;">Riesgo</span>'
+        f'<span style="color:#D97706;font-weight:600;">Vigilancia</span>'
+        f'<span style="color:#059669;font-weight:600;">Excelente</span>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. BARRA DE CRÉDITO
+# ─────────────────────────────────────────────────────────────────────────────
+def credit_bar(usado: float, limite: float, color_perfil: str):
+    """
+    Barra de porcentaje de crédito utilizado con métricas de usado/disponible.
+ 
+    Uso:
+        credit_bar(total, cliente["limite_credito"], color_r)
+    """
+    pct = min(usado / limite * 100, 100) if limite else 0
+    st.markdown(
+        f'<div style="padding:0.2rem 0;">'
+        f'<div style="display:flex;justify-content:space-between;margin-bottom:0.4rem;">'
+        f'<div><div style="font-size:1.5rem;font-weight:800;color:{color_perfil};">{pct:.0f}%</div>'
+        f'<div style="font-size:0.65rem;color:#9CA3AF;text-transform:uppercase;">UTILIZADO</div></div>'
+        f'<div style="text-align:right;">'
+        f'<div style="font-size:1.5rem;font-weight:800;color:#059669;">{100-pct:.0f}%</div>'
+        f'<div style="font-size:0.65rem;color:#9CA3AF;text-transform:uppercase;">DISPONIBLE</div></div>'
+        f'</div>'
+        f'<div style="background:#E5E9F0;border-radius:8px;height:10px;overflow:hidden;">'
+        f'<div style="background:{color_perfil};width:{pct}%;height:100%;border-radius:8px;"></div></div>'
+        f'<div style="display:flex;justify-content:space-between;margin-top:0.4rem;'
+        f'font-size:0.76rem;color:#6B7280;">'
+        f'<span>Usado: <b style="color:{color_perfil};">${usado:,.0f}</b></span>'
+        f'<span>Límite: <b style="color:#1B2266;">${limite:,.0f}</b></span>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. TABLA DE FACTURAS
+# ─────────────────────────────────────────────────────────────────────────────
+def facturas_table(facturas: list, filtro: str = "Todas"):
+    """
+    Tabla HTML de facturas con colores según vencimiento.
+    filtro: "Todas" | "Vencidas" | "Al corriente"
+ 
+    Uso:
+        facturas_table(facturas, filtro)
+    """
+    filas = ""
+    for f in facturas:
+        dias    = f["dias_vencido"]
+        vencida = dias > 0
+        if filtro == "Vencidas"     and not vencida: continue
+        if filtro == "Al corriente" and vencida:     continue
+        cf = "#DC2626" if vencida else "#1B2266"
+        cd = "#DC2626" if vencida else "#059669"
+        bd = "#FEE2E2" if vencida else "#D1FAE5"
+        ci = "#DC2626" if vencida else "#1B2266"
+        td = "padding:0.7rem 0.8rem;"
+        filas += (
+            f'<tr style="border-bottom:1px solid #F1F5F9;">'
+            f'<td style="{td}font-weight:700;color:{cf};">{f["folio"]}</td>'
+            f'<td style="{td}color:#6B7280;font-size:0.85rem;">{f["fecha_emision"].strftime("%d %b %Y")}</td>'
+            f'<td style="{td}color:#6B7280;font-size:0.85rem;">{f["fecha_vencimiento"].strftime("%d %b %Y")}</td>'
+            f'<td style="{td}"><span style="background:#EEF0FF;color:#1B2266;font-size:0.78rem;'
+            f'font-weight:600;padding:3px 10px;border-radius:6px;font-family:monospace;">'
+            f'{f["viaje_referencia"]}</span></td>'
+            f'<td style="{td}text-align:center;">'
+            f'<span style="background:{bd};color:{cd};font-weight:700;font-size:0.82rem;'
+            f'padding:3px 10px;border-radius:20px;min-width:32px;display:inline-block;text-align:center;">'
+            f'{dias}</span></td>'
+            f'<td style="{td}text-align:right;font-weight:700;font-size:1rem;color:{ci};">'
+            f'${f["importe"]:,.0f}</td>'
+            f'</tr>'
+        )
+    if not filas:
+        filas = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:#9CA3AF;">Sin facturas con este filtro</td></tr>'
+    th = "padding:0.7rem 0.8rem;font-size:0.72rem;color:#9CA3AF;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;"
+    st.markdown(
+        f'<div style="background:white;border-radius:14px;overflow:hidden;'
+        f'border:1px solid #E5E9F0;box-shadow:0 2px 12px rgba(27,34,102,0.07);">'
+        f'<table style="width:100%;border-collapse:collapse;">'
+        f'<thead><tr style="background:#F8FAFF;border-bottom:2px solid #E5E9F0;">'
+        f'<th style="{th}text-align:left;">FACTURA</th>'
+        f'<th style="{th}text-align:left;">FECHA</th>'
+        f'<th style="{th}text-align:left;">VENCIMIENTO</th>'
+        f'<th style="{th}text-align:left;">VIAJE</th>'
+        f'<th style="{th}text-align:center;">DÍAS VENCIDO</th>'
+        f'<th style="{th}text-align:right;">IMPORTE USD</th>'
+        f'</tr></thead>'
+        f'<tbody>{filas}</tbody>'
+        f'</table></div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. PANEL DE INFORMACIÓN DE PAGO
+# ─────────────────────────────────────────────────────────────────────────────
+def payment_info(cliente: dict):
+    """
+    Panel con banco, cuenta, SWIFT, teléfono y notas de pago del cliente.
+ 
+    Uso:
+        payment_info(cliente)
+    """
+    st.markdown(
+        f'<div style="background:white;border-radius:12px;padding:1rem 1.1rem;border:1px solid #E5E9F0;">'
+        f'<div style="font-weight:700;font-size:0.9rem;color:#1B2266;margin-bottom:0.15rem;">{cliente["banco"]}</div>'
+        f'<div style="font-size:0.75rem;color:#9CA3AF;margin-bottom:0.8rem;">{cliente["banco_empresa"]}</div>'
+        f'<div style="display:flex;justify-content:space-between;padding:0.4rem 0;'
+        f'border-bottom:1px solid #F1F5F9;font-size:0.8rem;">'
+        f'<span style="color:#9CA3AF;">Cuenta</span>'
+        f'<span style="font-weight:700;color:#1B2266;font-family:monospace;">{cliente["cuenta_bancaria"]}</span></div>'
+        f'<div style="display:flex;justify-content:space-between;padding:0.4rem 0;'
+        f'border-bottom:1px solid #F1F5F9;font-size:0.8rem;">'
+        f'<span style="color:#9CA3AF;">SWIFT</span>'
+        f'<span style="font-weight:700;color:#1B2266;font-family:monospace;">{cliente["swift"]}</span></div>'
+        f'<div style="margin-top:0.8rem;padding:0.5rem 0.8rem;background:#EEF0FF;'
+        f'border-radius:8px;text-align:center;">'
+        f'<span style="color:#CC1E1E;font-weight:700;font-size:0.83rem;">📞 {cliente["telefono"]}</span></div>'
+        f'<div style="font-size:0.70rem;color:#9CA3AF;margin-top:0.7rem;line-height:1.4;text-align:center;">'
+        f'{cliente.get("notas_pago","")}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
