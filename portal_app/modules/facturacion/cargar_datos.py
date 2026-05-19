@@ -8,8 +8,6 @@ from ui.components import page_banner, section_header, alert, divider
 
 
 def render():
-    page_banner("📤", "Cargar Datos — Facturación", "Importa clientes o facturas desde Excel/CSV")
-
     data                = leer_json()
     clientes_existentes = {c["id"]: c for c in data.get("clientes", [])}
     facturas_existentes = {f["folio"]: f for f in data.get("facturas", [])}
