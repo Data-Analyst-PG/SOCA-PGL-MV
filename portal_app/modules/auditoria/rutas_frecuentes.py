@@ -6,6 +6,7 @@ from typing import Optional, Tuple, List
 import pandas as pd
 import streamlit as st
 
+from ui.components import page_banner, section_header, alert, divider
 
 # -----------------------------
 # Helpers (igual que tu script)
@@ -145,8 +146,6 @@ def to_excel_bytes(df_report: pd.DataFrame, sheet_name: str = "Rutas Comunes") -
 # UI (encapsulada)
 # -----------------------------
 def render():
-    # OJO: NO usar st.set_page_config aquí (eso es para páginas sueltas).
-    from ui.components import page_banner, section_header, alert, divider
     page_banner("🗺️", "Rutas Frecuentes", "Análisis de rutas comunes por cliente")
 
 
