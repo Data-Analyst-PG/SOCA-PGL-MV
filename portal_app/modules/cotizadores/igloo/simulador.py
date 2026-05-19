@@ -335,7 +335,7 @@ def render():
     # PASO 1: SELECCIONA LA RUTA PRINCIPAL
     # ═══════════════════════════════════════════════
     divider()
-section_header("📌", "Selecciona la Ruta Principal")
+    section_header("📌", "Selecciona la Ruta Principal")
 
     st.write("**Paso 1:** Filtra las rutas (opcional)")
     df_filtrado_principal = _filtrar_rutas(df, "principal")
@@ -375,7 +375,7 @@ section_header("📌", "Selecciona la Ruta Principal")
     # PASO 2: SUGERIR COMBINACIONES
     # ═══════════════════════════════════════════════
     divider()
-section_header("🔄", "Rutas sugeridas (combinaciones con o sin vacío)")
+    section_header("🔄", "Rutas sugeridas (combinaciones con o sin vacío)")
 
     tipo_principal = str(ruta_principal["Tipo"]).strip().upper()
     destino_principal = str(ruta_principal["Destino"]).strip().upper()
@@ -524,7 +524,7 @@ section_header("🔄", "Rutas sugeridas (combinaciones con o sin vacío)")
         divider()
         
         # RESUMEN DE VUELTA REDONDA (antes era "Detalle de Rutas")
-    section_header("📊", "Resumen de Vuelta Redonda")
+        section_header("📊", "Resumen de Vuelta Redonda")
         
         for i, r in enumerate(st.session_state.rutas_seleccionadas, 1):
             with st.expander(f"{i}. {r['Tipo']} — {r.get('Cliente', 'N/A')}", expanded=True):
@@ -561,7 +561,7 @@ section_header("🔄", "Rutas sugeridas (combinaciones con o sin vacío)")
         # DETALLE DE RUTAS (antes era "Resumen de Rutas")
         # ═══════════════════════════════════════════════
         divider()
-    section_header("📋", "Detalle de Rutas")
+        section_header("📋", "Detalle de Rutas")
 
         tipos_orden = ["IMPORTACION", "VACIO", "EXPORTACION", "DOM MEX"]
         cols = st.columns(len([t for t in tipos_orden if any(r["Tipo"] == t for r in st.session_state.rutas_seleccionadas)]))
@@ -596,7 +596,7 @@ section_header("🔄", "Rutas sugeridas (combinaciones con o sin vacío)")
         # GENERAR PDF PROFESIONAL
         # ═══════════════════════════════════════════════
         divider()
-    section_header("📥", "Generar PDF de la Simulación")
+        section_header("📥", "Generar PDF de la Simulación")
         
         col_pdf1, col_pdf2, col_pdf3 = st.columns([1, 2, 1])
         with col_pdf2:
