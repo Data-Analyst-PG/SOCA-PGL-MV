@@ -44,7 +44,7 @@ EMPRESAS = [
         "icono":      "🚚",
         "permiso":    "auditoria:picus_auditoria",
         "modulo":     picus,
-        "disponible": False,
+        "disponible": True,
     },
     {
         "slug":       "set_freight",
@@ -52,7 +52,7 @@ EMPRESAS = [
         "icono":      "📦",
         "permiso":    "auditoria:set_freight_auditoria",
         "modulo":     set_freight,
-        "disponible": False,
+        "disponible": True,
     },
     {
         "slug":       "set_logis",
@@ -60,7 +60,7 @@ EMPRESAS = [
         "icono":      "🚚",
         "permiso":    "auditoria:set_logis_auditoria",
         "modulo":     set_logis,
-        "disponible": False,
+        "disponible": True,
     },
 ]
 
