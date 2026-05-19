@@ -46,7 +46,7 @@ def safe_text(texto):
 
 def mostrar_resultados(ingreso_total, costo_total, utilidad_bruta, costos_indirectos, utilidad_neta, porcentaje_bruta, porcentaje_neta):
     divider()
-section_header("📊", "Ingresos y Utilidades")
+    section_header("📊", "Ingresos y Utilidades")
 
     def colored_bold(label, value, condition):
         color = "green" if condition else "red"
@@ -100,7 +100,7 @@ def render():
     if "Costo_Total_Ruta" in df.columns:
         df["Costo_Total_Ruta"] = pd.to_numeric(df["Costo_Total_Ruta"], errors="coerce").fillna(0)
 
-section_header("📌", "Selección de Ruta")
+    section_header("📌", "Selección de Ruta")
 
     # 1) Ruta Tipo
     if "Ruta_Tipo" not in df.columns:
@@ -134,7 +134,7 @@ section_header("📌", "Selección de Ruta")
         return
 
     # 4) Cliente (selección por índice real del DF)
-section_header("📌", "Selecciona Cliente")
+    section_header("📌", "Selecciona Cliente")
     opciones = df_filtrada.index.tolist()
     index_sel = st.selectbox(
         "Cliente",
@@ -148,7 +148,7 @@ section_header("📌", "Selecciona Cliente")
     # Simulación
     # =========================
     divider()
-section_header("⚙️", "Ajustes para Simulación")
+    section_header("⚙️", "Ajustes para Simulación")
 
     costo_diesel_input = st.number_input("Costo del Diesel ($/L)", value=float(valores.get("Costo Diesel", 24.0)))
     rendimiento_input = st.number_input("Rendimiento Camión (km/L)", value=float(valores.get("Rendimiento Camion", 2.5)))
@@ -220,7 +220,7 @@ section_header("⚙️", "Ajustes para Simulación")
     # Detalles
     # =====================
     divider()
-section_header("📋", "Detalles y Costos de la Ruta")
+    section_header("📋", "Detalles y Costos de la Ruta")
 
     col1, col2, col3 = st.columns(3)
 
@@ -271,7 +271,7 @@ section_header("📋", "Detalles y Costos de la Ruta")
     # PDF
     # =====================
     divider()
-section_header("📥", "Generar PDF de esta Ruta")
+    section_header("📥", "Generar PDF de esta Ruta")
 
     if st.button("📄 Generar PDF", key="picus_generar_pdf"):
         pdf = FPDF()
