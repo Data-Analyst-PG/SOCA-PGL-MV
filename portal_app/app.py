@@ -115,9 +115,14 @@ def construir_navegacion() -> dict:
         secciones["Cotizadores"] = cot_pages
 
     if _tiene("facturacion:estado_cuenta") and _existe("pages/pg_fact_estado_cuenta.py"):
-        secciones["Facturación"] = [
+        fact_pages = [
             st.Page("pages/pg_fact_estado_cuenta.py", title="💳 Estado de Cuenta", url_path="fact-estado-cuenta"),
         ]
+        if _tiene("facturacion:cargar_datos") and _existe("pages/pg_fact_cargar_datos.py"):
+            fact_pages.append(
+                st.Page("pages/pg_fact_cargar_datos.py", title="📤 Cargar Datos", url_path="fact-cargar-datos")
+            )
+        secciones["Facturación"] = fact_pages
 
     ventas_pages = []
     if _tiene("ventas:buscador") and _existe("pages/pg_ventas_buscador.py"):
