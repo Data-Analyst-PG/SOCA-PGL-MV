@@ -108,7 +108,7 @@ def render():
     val_sim["CXM Indirecto ($/mi)"]              = cxm
 
     # ── SUBIDA ──
-section_header("⬆️", "Tramo Subida (hacia USA)")
+    section_header("⬆️", "Tramo Subida (hacia USA)")
     df_sub = df[df["Tipo_Viaje"].isin(TIPOS_SUBIDA)].copy() if "Tipo_Viaje" in df.columns else pd.DataFrame()
     if df_sub.empty:
         alert("warn", "No hay rutas de SUBIDA guardadas.")
@@ -124,7 +124,7 @@ section_header("⬆️", "Tramo Subida (hacia USA)")
         _tarjeta("Tramo Subida", ruta_s, r_s)
 
     # ── BAJADA ──
-section_header("⬇️", "Tramo Bajada (hacia México)")
+    section_header("⬇️", "Tramo Bajada (hacia México)")
     df_baj = df[df["Tipo_Viaje"].isin(TIPOS_BAJADA)].copy() if "Tipo_Viaje" in df.columns else pd.DataFrame()
     if df_baj.empty:
         alert("warn", "No hay rutas de BAJADA guardadas.")
@@ -142,7 +142,7 @@ section_header("⬇️", "Tramo Bajada (hacia México)")
     # ── Resultado combinado ──
     if not df_sub.empty and not df_baj.empty:
         divider()
-    section_header("🏁", "Vuelta Redonda Combinada")
+        section_header("🏁", "Vuelta Redonda Combinada")
 
         ing_vr  = r_s["ingreso_global"] + r_b["ingreso_global"]
         cd_vr   = r_s["total_cd"]       + r_b["total_cd"]
