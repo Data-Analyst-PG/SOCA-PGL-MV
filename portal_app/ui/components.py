@@ -62,25 +62,19 @@ def page_banner(icono: str, titulo: str, subtitulo: str = ""):
 #        section_header("📊", "Resumen de rutas", "Últimos 30 días")
 # ─────────────────────────────────────────────────────────────────────────────
 def section_header(icono: str, titulo: str, subtitulo: str = ""):
-    sub_html = f'<div style="font-size:0.75rem; color:{PGL_MUTED}; margin-top:1px;">{subtitulo}</div>' if subtitulo else ""
-    st.markdown(f"""
-    <div style="
-        display: flex;
-        align-items: center;
-        gap: 0.65rem;
-        padding: 0.7rem 1rem;
-        background: rgba(27,34,102,0.06);
-        border-radius: 10px;
-        border-left: 4px solid {PGL_RED};
-        margin-bottom: 1rem;
-    ">
-        <span style="font-size:1.1rem; flex-shrink:0;">{icono}</span>
-        <div>
-            <div style="font-size:0.95rem; font-weight:700; color:{PGL_NAVY}; line-height:1.2;">{titulo}</div>
-            {sub_html}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    sub_html = f'<div style="font-size:0.75rem;color:{PGL_MUTED};margin-top:1px;">{subtitulo}</div>' if subtitulo else ""
+    html = (
+        f'<div style="display:flex;align-items:center;gap:0.65rem;padding:0.7rem 1rem;'
+        f'background:rgba(27,34,102,0.06);border-radius:10px;'
+        f'border-left:4px solid {PGL_RED};margin-bottom:1rem;">'
+        f'<span style="font-size:1.1rem;flex-shrink:0;">{icono}</span>'
+        f'<div>'
+        f'<div style="font-size:0.95rem;font-weight:700;color:{PGL_NAVY};line-height:1.2;">{titulo}</div>'
+        f'{sub_html}'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
