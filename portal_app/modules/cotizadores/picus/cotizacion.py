@@ -158,7 +158,7 @@ def render():
         if id_ruta_0 in df.index:
             moneda_default = df.loc[id_ruta_0].get("Moneda", "MXP") or "MXP"
 
-section_header("▸", "Moneda y Tipo de Cambio para la Cotización")
+    section_header("▸", "Moneda y Tipo de Cambio para la Cotización")
     moneda_cotizacion = st.selectbox(
         "Moneda Principal de la Cotización",
         ["MXP", "USD"],
@@ -214,7 +214,7 @@ section_header("▸", "Moneda y Tipo de Cambio para la Cotización")
     # ---------------------------
     # NOTAS / CONDICIONES
     # ---------------------------
-section_header("▸", "Notas o Condiciones de la Cotización")
+    section_header("▸", "Notas o Condiciones de la Cotización")
     texto_default = (
         "Esta cotización es válida por 15 días. "
         "No aplica IVA y Retenciones en el caso de las importaciones y exportaciones. "
