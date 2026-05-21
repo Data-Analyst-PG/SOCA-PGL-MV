@@ -69,7 +69,7 @@ def render():
     p       = profile() or {}
     user_id = u.get("id") or u.get("sub") or ""
     nombre  = p.get("full_name") or (u.get("email", "").split("@")[0] if u else "Usuario")
-    rol     = get_role() or "usuario"
+    rol     = p.get("job_title") or get_role() or "usuario"
     area    = p.get("area_name") or ""
 
     # ── Banner de bienvenida ──────────────────────────────────────────────────
