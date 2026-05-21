@@ -197,12 +197,16 @@ def divider():
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. BANNER DE BIENVENIDA
 # ─────────────────────────────────────────────────────────────────────────────
-_ROL_COLORS = {
-    "contralor":        ("#CC1E1E", "#FFF0F0"),
+ROL_COLORS = {
+    "admin":        ("#CC1E1E", "#FFF0F0"),
     "data_analyst": ("#1B2266", "#EEF0FF"),
     "auditor":      ("#0077B6", "#E8F4FC"),
     "user":         ("#2E7D32", "#E8F5E9"),
-    "coordinador":  ("#E65100", "#FFF3E0"),
+    "operaciones":  ("#E65100", "#FFF3E0"),
+    "gerente":      ("#6D28D9", "#EDE9FE"),
+    "contralor":    ("#B45309", "#FEF3C7"),
+    "coordinador":  ("#0E7490", "#CFFAFE"),
+    "ejecutivo":    ("#1D4ED8", "#DBEAFE"),
 }
 
 def welcome_banner(nombre: str, rol: str, area: str = ""):
