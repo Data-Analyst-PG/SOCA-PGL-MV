@@ -29,7 +29,7 @@ if not ensure_auth_loaded():
 
 p              = profile() or {}
 nombre_usuario = p.get("full_name") or u.get("email", "Usuario")
-rol_usuario    = p.get("role") or ""
+rol_usuario    = p.get("job_title") or p.get("role") or ""
 user_id        = u.get("id") or u.get("sub") or ""
 
 user_header(nombre_usuario, rol_usuario)
