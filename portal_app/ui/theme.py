@@ -377,6 +377,10 @@ def user_header(nombre: str, rol: str = ""):
         "auditor":      ("#0077B6", "#E8F4FC"),
         "user":         ("#2E7D32", "#E8F5E9"),
         "operaciones":  ("#E65100", "#FFF3E0"),
+        "gerente":      ("#6D28D9", "#EDE9FE"),   # morado
+        "contralor":    ("#B45309", "#FEF3C7"),   # ámbar
+        "coordinador":  ("#0E7490", "#CFFAFE"),   # cyan
+        "ejecutivo":    ("#1D4ED8", "#DBEAFE"),   # azul
     }
     rol_limpio = (rol or "").lower()
     color_texto, color_bg = _colores_rol.get(rol_limpio, ("#6B7280", "#F3F4F6"))
