@@ -185,21 +185,27 @@ def calcular_diesel(km: float, horas_termo: float, valores: dict):
     return diesel_camion, diesel_termo
 
 
-def calcular_extras(lavado_termo, movimiento_local, puntualidad_val,
-                    pension, estancia, fianza_termo, renta_termo,
-                    pistas_extra, stop, falso, gatas, accesorios, guias):
+def calcular_costos_fijos(lavado_termo, movimiento_local, puntualidad_val,
+                          pension, estancia, fianza_termo, renta_termo, casetas):
     """
-    Suma los costos extras COBRABLES al cliente.
-
-    IMPORTANTE: lavado_termo se recibe pero NO se incluye aquí porque
-    es un costo interno de operación — nunca se cobra al cliente ni
-    debe sumarse al ingreso. Se suma directamente al costo_total en
-    captura_rutas.py y gestion_rutas.py.
+    Costos internos de operación — siempre van al costo, NUNCA al ingreso.
+    Incluye: lavado_termo, movimiento_local, puntualidad, pension,
+             estancia, fianza_termo, renta_termo, casetas.
     """
     return sum(map(safe_number, [
-        movimiento_local, puntualidad_val, pension, estancia,
-        fianza_termo, renta_termo, pistas_extra, stop, falso,
-        gatas, accesorios, guias,
+        lavado_termo, movimiento_local, puntualidad_val,
+        pension, estancia, fianza_termo, renta_termo, casetas,
+    ]))
+
+
+def calcular_extras(pistas_extra, stop, falso, gatas, accesorios, guias):
+    """
+    Costos extras COBRABLES al cliente (pistas, stop, falso, gatas,
+    accesorios, guias). Siempre se suman al costo; también al ingreso
+    si costos_extras_cobrados=True.
+    """
+    return sum(map(safe_number, [
+        pistas_extra, stop, falso, gatas, accesorios, guias,
     ]))
 
 
