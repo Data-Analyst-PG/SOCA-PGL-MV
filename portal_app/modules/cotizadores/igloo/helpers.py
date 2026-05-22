@@ -256,63 +256,105 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
                                  utilidad_neta, pct_bruta, pct_neta,
                                  tipo: str = ""):
     """Muestra las métricas de utilidad con formato visual mejorado."""
-    import streamlit as _st  # import local para que el helper no dependa de st a nivel módulo
 
-    _st.markdown("---")
+    # ── Tarifa sugerida (costo = 50% del ingreso → ingreso = costo × 2) ──
+    tarifa_sugerida = costo_total * 2.0
 
-    # ── Encabezado con métricas modernas ──
-    _st.markdown("""
-    <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-                padding: 1rem 1.25rem; border-radius: 10px; margin-bottom: 1rem;
-                border-left: 4px solid #1B2266;">
-        <h4 style="margin:0; color:#1B2266;">📊 Resumen de Utilidades</h4>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── Etiqueta de tarifa con moneda ─────────────────────────────────────
+    if tarifa_sugerida > 0:
+        if ingreso_total == 0:
+            # Sin ingreso capturado: mostrar sugerencia prominente
+            st_module.warning(
+                f"💡 **Tarifa sugerida:** ${tarifa_sugerida:,.2f} MXP  "
+                f"*(basada en que el costo directo represente el 50% del ingreso)*"
+            )
+        else:
+            # Con ingreso capturado: mostrar como referencia discreta
+            diff = ingreso_total - tarifa_sugerida
+            diff_pct = (diff / tarifa_sugerida * 100) if tarifa_sugerida else 0
+            color = "green" if diff >= 0 else "red"
+            signo = "+" if diff >= 0 else ""
+            st_module.info(
+                f"📊 **Tarifa sugerida (50% margen):** ${tarifa_sugerida:,.2f} MXP &nbsp;|&nbsp; "
+                f"Tu tarifa está :{color}[**{signo}{diff_pct:.1f}%** ({signo}${diff:,.2f})] vs la sugerida"
+            )
 
-    # Calcular porcentaje de costo directo
-    pct_costo = (costo_total / ingreso_total * 100) if ingreso_total else 0
-    
-    # ✅ REGLA: Costo Directo VERDE si ≤50%, ROJO si >50%
-    delta_color_costo = "normal" if pct_costo <= 50 else "inverse"
-    
-    # ✅ REGLA: Utilidad Bruta VERDE si ≥50%, ROJO si <50%
-    delta_color_bruta = "normal" if pct_bruta >= 50 else "inverse"
-    
-    # ✅ REGLA: Utilidad Neta VERDE si ≥25%, ROJO si <25%
-    color_neta = "#28a745" if pct_neta >= 15 else "#dc3545"
-    color_bg = "#d4edda" if pct_neta >= 15 else "#f8d7da"
+    section_header("📊", "Resumen de Utilidades")
 
-    col1, col2 = _st.columns(2)
+    col1, col2 = st_module.columns(2)
+
     with col1:
-        _st.metric("💰 Ingreso Total", f"${ingreso_total:,.2f}")
-        _st.metric("📦 Costo Directo", f"${costo_total:,.2f}",
-                   delta=f"{pct_costo:.1f}%",
-                   delta_color=delta_color_costo)
-    with col2:
-        delta_bruta = f"{pct_bruta:.1f}%"
-        delta_neta = f"{pct_neta:.1f}%"
-        _st.metric("📈 Utilidad Bruta", f"${utilidad_bruta:,.2f}",
-                    delta=delta_bruta,
-                    delta_color=delta_color_bruta)
-        label_ind = "Costos Indirectos (35%)" if costos_indirectos > 0 else "Costos Indirectos (0% — VACÍO)"
-        _st.metric(f"🏢 {label_ind}", f"${costos_indirectos:,.2f}")
-
-    # Tarjeta de utilidad neta destacada
-    _st.markdown(f"""
-    <div style="background:{color_bg}; border-left:5px solid {color_neta};
-                padding:1rem 1.25rem; border-radius:8px; margin-top:0.5rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <span style="font-size:0.85rem; color:#555;">Utilidad Neta</span><br>
-                <span style="font-size:1.5rem; font-weight:700; color:{color_neta};">
-                    ${utilidad_neta:,.2f}
-                </span>
+        st_module.markdown(f"""
+        <div style='border-left: 4px solid #059669; padding: 12px 16px; border-radius: 8px;
+                    background: #f0fdf4; margin-bottom: 12px;'>
+            <div style='font-size: 0.8rem; color: #6b7280;'>💰 Ingreso Total</div>
+            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
+                ${ingreso_total:,.2f}
             </div>
-            <div style="text-align:right;">
-                <span style="font-size:0.85rem; color:#555;">% Utilidad Neta</span><br>
-                <span style="font-size:1.3rem; font-weight:700; color:{color_neta};">
-                    {pct_neta:.2f}%
-                </span>
+            {"<div style='font-size: 0.75rem; color: #f59e0b; margin-top: 4px;'>⚠️ Sin ingreso capturado — sugerida: $" + f"{tarifa_sugerida:,.2f}</div>" if ingreso_total == 0 and tarifa_sugerida > 0 else ""}
+        </div>
+        """, unsafe_allow_html=True)
+
+        delta_costo = (costo_total / ingreso_total * 100) if ingreso_total else 0
+        st_module.markdown(f"""
+        <div style='border-left: 4px solid #dc2626; padding: 12px 16px; border-radius: 8px;
+                    background: #fef2f2; margin-bottom: 12px;'>
+            <div style='font-size: 0.8rem; color: #6b7280;'>🧾 Costo Directo</div>
+            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
+                ${costo_total:,.2f}
+            </div>
+            <div style='font-size: 0.75rem; color: #dc2626; margin-top: 4px;'>
+                ↑ {delta_costo:.1f}%
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        color_bruta = "#059669" if utilidad_bruta >= 0 else "#dc2626"
+        bg_bruta = "#f0fdf4" if utilidad_bruta >= 0 else "#fef2f2"
+        signo_bruta = "↑" if utilidad_bruta >= 0 else "↓"
+        st_module.markdown(f"""
+        <div style='border-left: 4px solid {color_bruta}; padding: 12px 16px; border-radius: 8px;
+                    background: {bg_bruta}; margin-bottom: 12px;'>
+            <div style='font-size: 0.8rem; color: #6b7280;'>📝 Utilidad Bruta</div>
+            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
+                ${utilidad_bruta:,.2f}
+            </div>
+            <div style='font-size: 0.75rem; color: {color_bruta}; margin-top: 4px;'>
+                {signo_bruta} {pct_bruta:.1f}%
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        tipo_upper = (tipo or "").strip().upper()
+        aplica_indirectos = tipo_upper in ("IMPORTACION", "EXPORTACION", "DOM MEX")
+        label_ind = "Costos Indirectos (35%)" if aplica_indirectos else "Costos Indirectos (N/A - Vacío)"
+        st_module.markdown(f"""
+        <div style='border-left: 4px solid #7c3aed; padding: 12px 16px; border-radius: 8px;
+                    background: #faf5ff; margin-bottom: 12px;'>
+            <div style='font-size: 0.8rem; color: #6b7280;'>🗂️ {label_ind}</div>
+            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
+                ${costos_indirectos:,.2f}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    color_neta = "#059669" if utilidad_neta >= 0 else "#dc2626"
+    bg_neta = "#f0fdf4" if utilidad_neta >= 0 else "#fef2f2"
+    st_module.markdown(f"""
+    <div style='border: 2px solid {color_neta}; padding: 14px 20px; border-radius: 10px;
+                background: {bg_neta}; display: flex; justify-content: space-between;
+                align-items: center; margin-top: 4px;'>
+        <div>
+            <div style='font-size: 0.8rem; color: #6b7280;'>Utilidad Neta</div>
+            <div style='font-size: 1.6rem; font-weight: 800; color: {color_neta};'>
+                ${utilidad_neta:,.2f}
+            </div>
+        </div>
+        <div style='text-align: right;'>
+            <div style='font-size: 0.8rem; color: #6b7280;'>% Utilidad Neta</div>
+            <div style='font-size: 1.4rem; font-weight: 800; color: {color_neta};'>
+                {pct_neta:.2f}%
             </div>
         </div>
     </div>
