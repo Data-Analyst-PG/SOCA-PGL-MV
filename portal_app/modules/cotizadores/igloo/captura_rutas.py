@@ -229,6 +229,7 @@ def render():
             util["utilidad_bruta"], util["costos_indirectos"],
             util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
             tipo=tipo,
+            tc_usd=tc_usd,
         )
 
         st.session_state.igloo_calc = {
