@@ -216,6 +216,7 @@ def render():
 
         tc_usd = float(valores.get("Tipo de cambio USD", 19.5))
         ingreso_total = ingreso_flete * (tc_usd if moneda_ingreso == "USD" else 1)
+        ingreso_total += ingreso_cruce * (tc_usd if moneda_cruce == "USD" else 1)
         if costos_extras_cobrados:
             ingreso_total += extras
 
