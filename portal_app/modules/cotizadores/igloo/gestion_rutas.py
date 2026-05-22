@@ -12,7 +12,8 @@ from .helpers import (
     DEFAULTS, TIPOS_RUTA,
     cargar_datos_generales,
     safe_number, safe_float,
-    calcular_sueldo_y_bono, calcular_diesel, calcular_extras,
+    calcular_sueldo_y_bono, calcular_diesel,
+    calcular_costos_fijos, calcular_extras,
     calcular_utilidades, mostrar_resultados_utilidad,
 )
 
@@ -508,15 +509,17 @@ def render():
         factor = 2 if modo_viaje == "Team" else 1
         puntualidad_val = puntualidad_original * factor
 
-        extras = calcular_extras(
+        # ── Costos fijos internos (siempre al costo, nunca al ingreso) ────
+        costos_fijos = calcular_costos_fijos(
             lavado_termo, movimiento_local, puntualidad_val, pension, estancia,
-            fianza_termo, renta_termo, pistas_extra, stop, falso,
-            gatas, accesorios, guias,
+            fianza_termo, renta_termo, casetas,
         )
+
+        # ── Extras cobrables (al costo siempre; al ingreso si cobrados) ───
+        extras = calcular_extras(pistas_extra, stop, falso, gatas, accesorios, guias)
 
         tc_usd = float(valores.get("Tipo de cambio USD", 19.5))
         ingreso_total = ingreso_flete * (tc_usd if moneda_ingreso == "USD" else 1)
-        ingreso_total += ingreso_cruce * (tc_usd if moneda_cruce == "USD" else 1)
         if costos_extras_cobrados:
             ingreso_total += extras
 
@@ -524,7 +527,7 @@ def render():
         diesel_camion, diesel_termo = calcular_diesel(km, horas_termo, valores)
         pago_km, sueldo, bono = calcular_sueldo_y_bono(tipo, km, modo_viaje, valores, modo_pago_dom)
 
-        costo_total = diesel_camion + diesel_termo + sueldo + bono + casetas + extras + costo_cruce_convertido
+        costo_total = diesel_camion + diesel_termo + sueldo + bono + costos_fijos + extras + costo_cruce_convertido
 
         util = calcular_utilidades(ingreso_total, costo_total, tipo)
 
@@ -533,7 +536,7 @@ def render():
             "tipo_cambio_cruce": tc_usd if moneda_cruce == "USD" else 1.0,
             "tipo_cambio_costo_cruce": tc_usd if moneda_costo_cruce == "USD" else 1.0,
             "ingreso_flete_convertido": ingreso_flete * (tc_usd if moneda_ingreso == "USD" else 1),
-            "ingreso_cruce_convertido": ingreso_cruce * (tc_usd if moneda_cruce == "USD" else 1),
+            "ingreso_cruce_convertido": 0.0,
             "costo_cruce_convertido": costo_cruce_convertido,
             "ingreso_total": ingreso_total,
             "costo_diesel_camion": diesel_camion,
@@ -542,6 +545,7 @@ def render():
             "sueldo": sueldo,
             "bono": bono,
             "puntualidad_val": puntualidad_val,
+            "costos_fijos": costos_fijos,
             "extras": extras,
             "costo_total": costo_total,
             "costos_indirectos": util["costos_indirectos"],
@@ -557,6 +561,7 @@ def render():
             util["utilidad_bruta"], util["costos_indirectos"],
             util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
             tipo=tipo,
+            tc_usd=tc_usd,
         )
 
     # ══════════════════════════════════════════════════════════════
