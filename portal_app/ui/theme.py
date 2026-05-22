@@ -373,7 +373,7 @@ def aplicar_tema():
 def user_header(nombre: str, rol: str = ""):
     _colores_rol = {
         "admin":        ("#CC1E1E", "#FFF0F0"),
-        "data_analyst": ("#1B2266", "#EEF0FF"),
+        "analista de datos": ("#1B2266", "#EEF0FF"),
         "auditor":      ("#0077B6", "#E8F4FC"),
         "user":         ("#2E7D32", "#E8F5E9"),
         "operaciones":  ("#E65100", "#FFF3E0"),
