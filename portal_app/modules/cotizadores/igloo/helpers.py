@@ -188,9 +188,16 @@ def calcular_diesel(km: float, horas_termo: float, valores: dict):
 def calcular_extras(lavado_termo, movimiento_local, puntualidad_val,
                     pension, estancia, fianza_termo, renta_termo,
                     pistas_extra, stop, falso, gatas, accesorios, guias):
-    """Suma todos los costos extras."""
+    """
+    Suma los costos extras COBRABLES al cliente.
+
+    IMPORTANTE: lavado_termo se recibe pero NO se incluye aquí porque
+    es un costo interno de operación — nunca se cobra al cliente ni
+    debe sumarse al ingreso. Se suma directamente al costo_total en
+    captura_rutas.py y gestion_rutas.py.
+    """
     return sum(map(safe_number, [
-        lavado_termo, movimiento_local, puntualidad_val, pension, estancia,
+        movimiento_local, puntualidad_val, pension, estancia,
         fianza_termo, renta_termo, pistas_extra, stop, falso,
         gatas, accesorios, guias,
     ]))
@@ -254,108 +261,177 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list):
 def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
                                  utilidad_bruta, costos_indirectos,
                                  utilidad_neta, pct_bruta, pct_neta,
-                                 tipo: str = ""):
-    """Muestra las métricas de utilidad con formato visual mejorado."""
+                                 tipo: str = "", tc_usd: float = 0.0):
+    """
+    Muestra las métricas de utilidad con formato visual mejorado.
 
-    # ── Tarifa sugerida (costo = 50% del ingreso → ingreso = costo × 2) ──
-    tarifa_sugerida = costo_total * 2.0
+    tc_usd: tipo de cambio activo. Si > 0, la tarifa sugerida también
+            se muestra convertida a USD.
+    """
 
-    # ── Etiqueta de tarifa con moneda ─────────────────────────────────────
-    if tarifa_sugerida > 0:
+    # ── Tarifa sugerida: costo = 50% del ingreso → ingreso = costo × 2 ──
+    tarifa_mxp = costo_total * 2.0
+    tarifa_usd = (tarifa_mxp / tc_usd) if tc_usd > 0 else 0.0
+
+    # Texto auxiliar con equivalente en USD (solo si hay TC)
+    usd_extra = (
+        f"&nbsp;&nbsp;/&nbsp;&nbsp;USD ${tarifa_usd:,.2f}"
+        if tc_usd > 0 else ""
+    )
+
+    # ── Banner de tarifa sugerida (HTML puro para evitar render literal) ──
+    if tarifa_mxp > 0:
         if ingreso_total == 0:
-            # Sin ingreso capturado: mostrar sugerencia prominente
-            st_module.warning(
-                f"💡 **Tarifa sugerida:** ${tarifa_sugerida:,.2f} MXP  "
-                f"*(basada en que el costo directo represente el 50% del ingreso)*"
+            # Sin ingreso: banner amarillo prominente
+            st_module.markdown(
+                f"""
+                <div style='background:#fffbeb; border-left:4px solid #f59e0b;
+                            padding:10px 16px; border-radius:8px; margin-bottom:14px;
+                            font-size:0.9rem; color:#92400e;'>
+                    💡 <b>Tarifa sugerida (50% margen):</b>
+                    &nbsp; MXP ${tarifa_mxp:,.2f}{usd_extra}<br>
+                    <span style='font-size:0.78rem; opacity:0.8;'>
+                        El costo directo debe representar el 50% del ingreso total.
+                        TC utilizado: ${tc_usd:,.2f} MXP/USD
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
         else:
-            # Con ingreso capturado: mostrar como referencia discreta
-            diff = ingreso_total - tarifa_sugerida
-            diff_pct = (diff / tarifa_sugerida * 100) if tarifa_sugerida else 0
-            color = "green" if diff >= 0 else "red"
+            # Con ingreso: banner azul comparativo
+            diff = ingreso_total - tarifa_mxp
+            diff_pct = (diff / tarifa_mxp * 100) if tarifa_mxp else 0
+            color_diff = "#059669" if diff >= 0 else "#dc2626"
             signo = "+" if diff >= 0 else ""
-            st_module.info(
-                f"📊 **Tarifa sugerida (50% margen):** ${tarifa_sugerida:,.2f} MXP &nbsp;|&nbsp; "
-                f"Tu tarifa está :{color}[**{signo}{diff_pct:.1f}%** ({signo}${diff:,.2f})] vs la sugerida"
+            icon = "✅" if diff >= 0 else "⚠️"
+            st_module.markdown(
+                f"""
+                <div style='background:#eff6ff; border-left:4px solid #3b82f6;
+                            padding:10px 16px; border-radius:8px; margin-bottom:14px;
+                            font-size:0.9rem; color:#1e40af;'>
+                    📊 <b>Tarifa sugerida (50% margen):</b>
+                    &nbsp; MXP ${tarifa_mxp:,.2f}{usd_extra}
+                    &nbsp;|&nbsp;
+                    {icon} Tu tarifa está
+                    <span style='color:{color_diff}; font-weight:700;'>
+                        {signo}{diff_pct:.1f}% ({signo}${diff:,.2f} MXP)
+                    </span>
+                    vs la sugerida
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
     section_header("📊", "Resumen de Utilidades")
 
     col1, col2 = st_module.columns(2)
 
+    # ── Ingreso Total ─────────────────────────────────────────────────────
     with col1:
-        st_module.markdown(f"""
-        <div style='border-left: 4px solid #059669; padding: 12px 16px; border-radius: 8px;
-                    background: #f0fdf4; margin-bottom: 12px;'>
-            <div style='font-size: 0.8rem; color: #6b7280;'>💰 Ingreso Total</div>
-            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
-                ${ingreso_total:,.2f}
+        nota_sin_ingreso = (
+            f"<div style='font-size:0.75rem; color:#f59e0b; margin-top:4px;'>"
+            f"⚠️ Sin ingreso — sugerida: MXP ${tarifa_mxp:,.2f}{usd_extra}"
+            f"</div>"
+            if ingreso_total == 0 and tarifa_mxp > 0
+            else ""
+        )
+        st_module.markdown(
+            f"""
+            <div style='border-left:4px solid #059669; padding:12px 16px;
+                        border-radius:8px; background:#f0fdf4; margin-bottom:12px;'>
+                <div style='font-size:0.8rem; color:#6b7280;'>💰 Ingreso Total</div>
+                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
+                    ${ingreso_total:,.2f}
+                </div>
+                {nota_sin_ingreso}
             </div>
-            {"<div style='font-size: 0.75rem; color: #f59e0b; margin-top: 4px;'>⚠️ Sin ingreso capturado — sugerida: $" + f"{tarifa_sugerida:,.2f}</div>" if ingreso_total == 0 and tarifa_sugerida > 0 else ""}
-        </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
 
+        # ── Costo Directo ─────────────────────────────────────────────────
         delta_costo = (costo_total / ingreso_total * 100) if ingreso_total else 0
-        st_module.markdown(f"""
-        <div style='border-left: 4px solid #dc2626; padding: 12px 16px; border-radius: 8px;
-                    background: #fef2f2; margin-bottom: 12px;'>
-            <div style='font-size: 0.8rem; color: #6b7280;'>🧾 Costo Directo</div>
-            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
-                ${costo_total:,.2f}
+        st_module.markdown(
+            f"""
+            <div style='border-left:4px solid #dc2626; padding:12px 16px;
+                        border-radius:8px; background:#fef2f2; margin-bottom:12px;'>
+                <div style='font-size:0.8rem; color:#6b7280;'>🧾 Costo Directo</div>
+                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
+                    ${costo_total:,.2f}
+                </div>
+                <div style='font-size:0.75rem; color:#dc2626; margin-top:4px;'>
+                    ↑ {delta_costo:.1f}%
+                </div>
             </div>
-            <div style='font-size: 0.75rem; color: #dc2626; margin-top: 4px;'>
-                ↑ {delta_costo:.1f}%
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
 
     with col2:
+        # ── Utilidad Bruta ────────────────────────────────────────────────
         color_bruta = "#059669" if utilidad_bruta >= 0 else "#dc2626"
         bg_bruta = "#f0fdf4" if utilidad_bruta >= 0 else "#fef2f2"
         signo_bruta = "↑" if utilidad_bruta >= 0 else "↓"
-        st_module.markdown(f"""
-        <div style='border-left: 4px solid {color_bruta}; padding: 12px 16px; border-radius: 8px;
-                    background: {bg_bruta}; margin-bottom: 12px;'>
-            <div style='font-size: 0.8rem; color: #6b7280;'>📝 Utilidad Bruta</div>
-            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
-                ${utilidad_bruta:,.2f}
+        st_module.markdown(
+            f"""
+            <div style='border-left:4px solid {color_bruta}; padding:12px 16px;
+                        border-radius:8px; background:{bg_bruta}; margin-bottom:12px;'>
+                <div style='font-size:0.8rem; color:#6b7280;'>📝 Utilidad Bruta</div>
+                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
+                    ${utilidad_bruta:,.2f}
+                </div>
+                <div style='font-size:0.75rem; color:{color_bruta}; margin-top:4px;'>
+                    {signo_bruta} {pct_bruta:.1f}%
+                </div>
             </div>
-            <div style='font-size: 0.75rem; color: {color_bruta}; margin-top: 4px;'>
-                {signo_bruta} {pct_bruta:.1f}%
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
 
+        # ── Costos Indirectos ─────────────────────────────────────────────
         tipo_upper = (tipo or "").strip().upper()
-        aplica_indirectos = tipo_upper in ("IMPORTACION", "EXPORTACION", "DOM MEX")
-        label_ind = "Costos Indirectos (35%)" if aplica_indirectos else "Costos Indirectos (N/A - Vacío)"
-        st_module.markdown(f"""
-        <div style='border-left: 4px solid #7c3aed; padding: 12px 16px; border-radius: 8px;
-                    background: #faf5ff; margin-bottom: 12px;'>
-            <div style='font-size: 0.8rem; color: #6b7280;'>🗂️ {label_ind}</div>
-            <div style='font-size: 2rem; font-weight: 700; color: #1e3a5f;'>
-                ${costos_indirectos:,.2f}
+        aplica_ind = tipo_upper in ("IMPORTACION", "EXPORTACION", "DOM MEX")
+        label_ind = (
+            "Costos Indirectos (35%)"
+            if aplica_ind
+            else "Costos Indirectos (N/A - Vacío)"
+        )
+        st_module.markdown(
+            f"""
+            <div style='border-left:4px solid #7c3aed; padding:12px 16px;
+                        border-radius:8px; background:#faf5ff; margin-bottom:12px;'>
+                <div style='font-size:0.8rem; color:#6b7280;'>🗂️ {label_ind}</div>
+                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
+                    ${costos_indirectos:,.2f}
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
 
+    # ── Utilidad Neta (barra completa) ────────────────────────────────────
     color_neta = "#059669" if utilidad_neta >= 0 else "#dc2626"
     bg_neta = "#f0fdf4" if utilidad_neta >= 0 else "#fef2f2"
-    st_module.markdown(f"""
-    <div style='border: 2px solid {color_neta}; padding: 14px 20px; border-radius: 10px;
-                background: {bg_neta}; display: flex; justify-content: space-between;
-                align-items: center; margin-top: 4px;'>
-        <div>
-            <div style='font-size: 0.8rem; color: #6b7280;'>Utilidad Neta</div>
-            <div style='font-size: 1.6rem; font-weight: 800; color: {color_neta};'>
-                ${utilidad_neta:,.2f}
+    st_module.markdown(
+        f"""
+        <div style='border:2px solid {color_neta}; padding:14px 20px;
+                    border-radius:10px; background:{bg_neta};
+                    display:flex; justify-content:space-between;
+                    align-items:center; margin-top:4px;'>
+            <div>
+                <div style='font-size:0.8rem; color:#6b7280;'>Utilidad Neta</div>
+                <div style='font-size:1.6rem; font-weight:800; color:{color_neta};'>
+                    ${utilidad_neta:,.2f}
+                </div>
+            </div>
+            <div style='text-align:right;'>
+                <div style='font-size:0.8rem; color:#6b7280;'>% Utilidad Neta</div>
+                <div style='font-size:1.4rem; font-weight:800; color:{color_neta};'>
+                    {pct_neta:.2f}%
+                </div>
             </div>
         </div>
-        <div style='text-align: right;'>
-            <div style='font-size: 0.8rem; color: #6b7280;'>% Utilidad Neta</div>
-            <div style='font-size: 1.4rem; font-weight: 800; color: {color_neta};'>
-                {pct_neta:.2f}%
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
