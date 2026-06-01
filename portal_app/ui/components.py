@@ -457,3 +457,191 @@ def payment_info(cliente: dict):
         f'</div>',
         unsafe_allow_html=True,
     )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. CONFIGURACIÓN DE ESTATUS PARA SOLICITUDES (tickets y complementarias)
+# ─────────────────────────────────────────────────────────────────────────────
+# Catálogo centralizado de colores/íconos por estatus.
+# Úsalo en cualquier módulo que necesite colorear un estatus:
+#   from ui.components import ESTATUS_CFG, status_badge_html, solicitud_card, historial_timeline
+
+ESTATUS_CFG = {
+    # Tickets — fases de desarrollo
+    "Nuevo":         {"color": "#1D4ED8", "bg": "#EFF6FF", "border": "#BFDBFE", "icono": "🆕"},
+    "Capacitación":  {"color": "#7C3AED", "bg": "#F5F3FF", "border": "#DDD6FE", "icono": "📚"},
+    "Planteamiento": {"color": "#0891B2", "bg": "#ECFEFF", "border": "#A5F3FC", "icono": "📝"},
+    "Desarrollo":    {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "⚙️"},
+    "Pruebas":       {"color": "#EA580C", "bg": "#FFF7ED", "border": "#FED7AA", "icono": "🧪"},
+    "Entrega":       {"color": "#059669", "bg": "#ECFDF5", "border": "#A7F3D0", "icono": "📦"},
+    "Concluido":     {"color": "#16A34A", "bg": "#F0FDF4", "border": "#BBF7D0", "icono": "✅"},
+    "Cancelado":     {"color": "#DC2626", "bg": "#FEF2F2", "border": "#FECACA", "icono": "🚫"},
+    # Tickets — estatus legacy
+    "En Proceso":    {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "⏳"},
+    # Complementarias
+    "Pendiente":     {"color": "#1D4ED8", "bg": "#EFF6FF", "border": "#BFDBFE", "icono": "🕐"},
+    "En revisión":   {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "🔍"},
+    "Resuelto":      {"color": "#16A34A", "bg": "#F0FDF4", "border": "#BBF7D0", "icono": "✅"},
+    # Viáticos
+    "Pendiente Autorización": {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "⏳"},
+    "Autorizado":    {"color": "#059669", "bg": "#ECFDF5", "border": "#A7F3D0", "icono": "✅"},
+    "Rechazado":     {"color": "#DC2626", "bg": "#FEF2F2", "border": "#FECACA", "icono": "🚫"},
+    "Cerrado":       {"color": "#6B7280", "bg": "#F9FAFB", "border": "#E5E7EB", "icono": "🔒"},
+}
+_ESTATUS_DEFAULT = {"color": "#6B7280", "bg": "#F9FAFB", "border": "#E5E7EB", "icono": "📋"}
+
+
+def status_badge_html(estatus: str) -> str:
+    """
+    Devuelve HTML de un badge de estatus con color y ícono.
+    No renderiza — solo retorna el string HTML para embeber en markdown mayor.
+
+    Uso:
+        badge = status_badge_html("Nuevo")
+        st.markdown(f"Estado: {badge}", unsafe_allow_html=True)
+    """
+    cfg = ESTATUS_CFG.get(estatus, _ESTATUS_DEFAULT)
+    return (
+        f'<span style="background:{cfg["color"]}22;color:{cfg["color"]};'
+        f'border:1.5px solid {cfg["color"]};border-radius:20px;'
+        f'padding:3px 13px;font-size:0.73rem;font-weight:700;white-space:nowrap;">'
+        f'{cfg["icono"]} {estatus}</span>'
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. TIMELINE DE HISTORIAL
+# ─────────────────────────────────────────────────────────────────────────────
+_ACCION_ICONO = {
+    "create":  "🆕",
+    "update":  "✏️",
+    "comment": "💬",
+    "fase":    "🔄",
+    "assign":  "👤",
+    "resolve": "✅",
+    "cancel":  "🚫",
+}
+
+
+def historial_timeline(historial: list):
+    """
+    Renderiza un timeline visual del historial de una solicitud.
+    Cada entrada debe ser un dict con: at, by, action, details.
+
+    Uso:
+        historial_timeline(ticket.get("historial") or [])
+    """
+    if not historial:
+        st.caption("Sin historial registrado.")
+        return
+
+    filas_html = ""
+    for entry in reversed(historial):
+        at_raw = str(entry.get("at", ""))[:16].replace("T", " ")
+        by_    = entry.get("by", "Sistema")
+        action = entry.get("action", "")
+        detail = entry.get("details", "")
+        icono  = _ACCION_ICONO.get(action, "📌")
+
+        filas_html += (
+            f'<div style="display:flex;gap:0.6rem;padding:0.45rem 0;'
+            f'border-bottom:1px solid #E5E7EB;">'
+            f'<span style="font-size:1rem;flex-shrink:0;padding-top:1px;">{icono}</span>'
+            f'<div style="flex:1;font-size:0.82rem;">'
+            f'<div><b style="color:#1B2266;">{by_}</b> '
+            f'<span style="color:#9CA3AF;font-size:0.75rem;">{at_raw}</span></div>'
+            f'<div style="color:#374151;margin-top:1px;">{detail}</div>'
+            f'</div>'
+            f'</div>'
+        )
+
+    st.markdown(
+        f'<div style="max-height:240px;overflow-y:auto;padding:0.5rem 0.75rem;'
+        f'background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;">'
+        f'{filas_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. CARD DE SOLICITUD (tickets y complementarias)
+# ─────────────────────────────────────────────────────────────────────────────
+def solicitud_card(
+    *,
+    id_label: str,
+    titulo: str,
+    fecha: str,
+    estatus: str,
+    meta: list[tuple[str, str]] | None = None,
+    on_edit_key: str | None = None,
+):
+    """
+    Card visual para una solicitud (ticket, complementaria, etc.).
+    Homologada entre módulos — sin HTML en los módulos que la usan.
+
+    Parámetros:
+        id_label    : Texto del ID/folio (ej. "#10" o "Folio 0042")
+        titulo      : Título o descripción corta de la solicitud
+        fecha       : Fecha como string (ej. "2026-05-20")
+        estatus     : Clave del estatus (debe existir en ESTATUS_CFG)
+        meta        : Lista de tuplas (icono_texto, valor) para mostrar debajo del título
+                      Ej. [("🏢 Empresa", "Picus"), ("📂 Categoría", "Tickets")]
+        on_edit_key : Si se pasa, muestra un botón "Ver / Editar" que devuelve True
+                      cuando es clickeado. Usar como: if solicitud_card(...): open_modal()
+
+    Retorna True si se clickeó el botón de editar, False en caso contrario.
+
+    Uso básico (solo lectura):
+        solicitud_card(id_label="#10", titulo="Reporte", fecha="2026-05-20",
+                       estatus="Nuevo", meta=[("🏢", "Picus")])
+
+    Uso con botón de edición:
+        clicked = solicitud_card(..., on_edit_key="edit_10")
+        if clicked:
+            st.session_state["modal_ticket_id"] = 10
+            st.rerun()
+    """
+    cfg = ESTATUS_CFG.get(estatus, _ESTATUS_DEFAULT)
+    badge = status_badge_html(estatus)
+
+    # Meta info (ícono + valor)
+    meta = meta or []
+    meta_html = ""
+    for item in meta:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            meta_html += (
+                f'<span style="color:#6B7280;font-size:0.79rem;">'
+                f'{item[0]}&nbsp;{item[1]}</span> &nbsp;·&nbsp; '
+            )
+    meta_html = meta_html.rstrip(" &nbsp;·&nbsp; ")
+
+    html = (
+        f'<div style="'
+        f'background:{cfg["bg"]};'
+        f'border:1px solid {cfg["border"]};'
+        f'border-left:5px solid {cfg["color"]};'
+        f'border-radius:10px;'
+        f'padding:0.9rem 1.1rem 0.75rem 1.1rem;'
+        f'margin-bottom:0.65rem;'
+        f'">'
+        f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.4rem;">'
+        f'  <div style="flex:1;min-width:0;">'
+        f'    <div style="font-size:0.7rem;color:#9CA3AF;font-weight:600;'
+        f'text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">'
+        f'      {id_label} · {fecha}'
+        f'    </div>'
+        f'    <div style="font-size:1rem;font-weight:700;color:#1B2266;'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+        f'      {titulo}'
+        f'    </div>'
+        f'    <div style="margin-top:0.3rem;line-height:1.6;">{meta_html}</div>'
+        f'  </div>'
+        f'  <div style="flex-shrink:0;margin-top:2px;">{badge}</div>'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+    # Botón de editar (si se pasó una key)
+    if on_edit_key:
+        return st.button("✏️ Ver / Editar", key=on_edit_key, use_container_width=False)
+    return False
