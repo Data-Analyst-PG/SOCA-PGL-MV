@@ -1,12 +1,4 @@
 # portal_app/modules/home.py
-# ─────────────────────────────────────────────────────────────────────────────
-# Home — Portal Palos Garza Logistics
-# Mejoras vs versión anterior:
-#   ✅ Usa sistema de componentes UI (welcome_banner, kpi_row, module_card)
-#   ✅ Caché en queries Supabase — no hace llamadas en cada rerun
-#   ✅ KPIs responsive: 4 col en desktop, 2 en tablet, 1 en móvil
-#   ✅ check_access llamado una sola vez via permisos precargados
-# ─────────────────────────────────────────────────────────────────────────────
 import streamlit as st
 
 from services.supabase_client import current_user, get_authed_client
@@ -14,12 +6,6 @@ from services.authz import profile, role as get_role
 from services.access import get_user_permissions
 from ui.components import welcome_banner, kpi_row, module_card, divider
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# QUERIES CON CACHÉ
-# ttl=60 → Supabase se consulta máximo una vez por minuto por usuario.
-# Sin caché, cada rerun (click, input) lanzaba 2 queries innecesarias.
-# ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _get_ticket_counts(user_id: str, user_email: str) -> dict:
@@ -47,11 +33,25 @@ def _get_ticket_counts(user_id: str, user_email: str) -> dict:
 @st.cache_data(ttl=60, show_spinner=False)
 def _get_comp_counts(user_id: str, user_email: str) -> dict:
     """Conteo de complementarias del usuario logueado. Cacheado 60s."""
+    try:
+        sb = get_authed_client()
+        res = (
+            sb.table("solicitudes_complementarias")
+            .select("estatus")
+            .ilike("correo", user_email)
+            .limit(1000)
+            .execute()
+        )
+        rows = res.data or []
+        counts = {"Pendiente": 0, "En revisión": 0, "Cancelado": 0, "Resuelto": 0}
+        for r in rows:
+            s = r.get("estatus") or "Pendiente"
+            if s in counts:
+                counts[s] += 1
+        return counts
+    except Exception:
+        return {"Pendiente": 0, "En revisión": 0, "Cancelado": 0, "Resuelto": 0}
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# RENDER PRINCIPAL
-# ─────────────────────────────────────────────────────────────────────────────
 
 def render():
     u       = current_user() or {}
@@ -61,55 +61,35 @@ def render():
     rol     = p.get("job_title") or get_role() or "usuario"
     area    = p.get("area_name") or ""
 
-    # ── Banner de bienvenida ──────────────────────────────────────────────────
     welcome_banner(nombre, rol, area)
 
+    # user_email debe definirse ANTES de llamar a las funciones cacheadas
     user_email = (u.get("email") or "").strip().lower()
-    
-    # ── Cargar conteos (cacheados) ────────────────────────────────────────────
-    t_counts = _get_ticket_counts(user_id)
-    c_counts = _get_comp_counts(user_id)
 
-    t_total    = sum(t_counts.values())
-    t_abiertos = t_counts["Nuevo"] + t_counts["En Proceso"]
-    c_total    = sum(c_counts.values())
-    c_resueltos = c_counts["Resuelto"]
+    t_counts = _get_ticket_counts(user_id, user_email)
+    c_counts = _get_comp_counts(user_id, user_email)
+
+    t_total      = sum(t_counts.values())
+    t_abiertos   = t_counts["Nuevo"] + t_counts.get("En Proceso", 0)
+    c_total      = sum(c_counts.values())
+    c_resueltos  = c_counts["Resuelto"]
     c_pendientes = c_counts["Pendiente"] + c_counts["En revisión"]
 
-    # ── KPIs — responsive grid automático ────────────────────────────────────
     st.markdown("### 📊 Resumen general")
     kpi_row([
-        dict(
-            icono="🎫", label="Tickets totales",
-            valor=t_total,
-            sub=f"{t_abiertos} abiertos",
-            color="#1D4ED8",
-        ),
-        dict(
-            icono="⏳", label="Tickets abiertos",
-            valor=t_abiertos,
-            sub=f"{t_counts['Nuevo']} nuevos",
-            color="#D97706",
-        ),
-        dict(
-            icono="📬", label="Complementarias total",
-            valor=c_total,
-            sub=f"{c_pendientes} pendientes",
-            color="#1B2266",
-        ),
-        dict(
-            icono="✅", label="Complementarias resueltas",
-            valor=c_resueltos,
-            sub="históricas",
-            color="#059669",
-        ),
+        dict(icono="🎫", label="Tickets totales",
+             valor=t_total, sub=f"{t_abiertos} abiertos", color="#1D4ED8"),
+        dict(icono="⏳", label="Tickets abiertos",
+             valor=t_abiertos, sub=f"{t_counts['Nuevo']} nuevos", color="#D97706"),
+        dict(icono="📬", label="Complementarias total",
+             valor=c_total, sub=f"{c_pendientes} pendientes", color="#1B2266"),
+        dict(icono="✅", label="Complementarias resueltas",
+             valor=c_resueltos, sub="históricas", color="#059669"),
     ])
 
-    # ── Acceso rápido — solo módulos visibles para este usuario ──────────────
     st.markdown("### 🚀 Acceso rápido")
 
-    # Cargar permisos una sola vez (ya están en session_state desde app.py)
-    perms   = get_user_permissions(user_id)
+    perms    = get_user_permissions(user_id)
     es_admin = perms.get("_is_admin", False) or rol == "admin"
 
     def _tiene(*claves):
@@ -117,10 +97,9 @@ def render():
             return True
         return any(perms.get(k, False) for k in claves)
 
-    # ── Determinar cards visibles ─────────────────────────────────────────────
-    tiene_tickets    = _tiene("tickets:create", "tickets:read")
-    tiene_comp       = _tiene("complementarias:create", "complementarias:read")
-    tiene_auditoria  = _tiene(
+    tiene_tickets     = _tiene("tickets:create", "tickets:read")
+    tiene_comp        = _tiene("complementarias:create", "complementarias:read")
+    tiene_auditoria   = _tiene(
         "auditoria:reporte_auxiliares", "auditoria:rutas_frecuentes",
         "auditoria:rentabilidad",       "auditoria:prorrateador",
         "auditoria:lincoln_auditoria",  "auditoria:sac_ventas",
@@ -144,7 +123,6 @@ def render():
     ]
     tiene_cotizadores = len(empresas_accesibles) > 0
 
-    # ── Construir listas de cards por columna ─────────────────────────────────
     cards_izq = []
     cards_der = []
 
@@ -155,9 +133,9 @@ def render():
             descripcion="Crea y consulta solicitudes al equipo de Análisis de Datos",
             color_acento="#1D4ED8",
             badges=[
-                dict(texto=f"{t_counts['Nuevo']} Nuevos",       color="blue"),
-                dict(texto=f"{t_counts['En Proceso']} En proceso", color="yellow"),
-                dict(texto=f"{t_counts['Concluido']} Concluidos",  color="green"),
+                dict(texto=f"{t_counts['Nuevo']} Nuevos",              color="blue"),
+                dict(texto=f"{t_counts.get('En Proceso',0)} En proceso", color="yellow"),
+                dict(texto=f"{t_counts.get('Concluido',0)} Concluidos",  color="green"),
             ],
         ))
 
@@ -177,9 +155,7 @@ def render():
             titulo="Auditoría",
             descripcion="Reporte auxiliares, rutas frecuentes, rentabilidad y prorrateador",
             color_acento="#0077B6",
-            badges=[
-                dict(texto=f"{n_herr} herramientas", color="gray"),
-            ],
+            badges=[dict(texto=f"{n_herr} herramientas", color="gray")],
         ))
 
     if tiene_facturacion:
@@ -188,9 +164,7 @@ def render():
             titulo="Facturación",
             descripcion="Estado de cuenta y módulos de facturación",
             color_acento="#B45309",
-            badges=[
-                dict(texto="Estado de cuenta", color="yellow"),
-            ],
+            badges=[dict(texto="Estado de cuenta", color="yellow")],
         ))
 
     if tiene_ventas:
@@ -199,13 +173,11 @@ def render():
             titulo="Ventas",
             descripcion="Buscador de rutas y subastas de tarifas",
             color_acento="#7C3AED",
-            badges=[
+            badges=[b for b in [
                 dict(texto="Buscador", color="purple") if _tiene("ventas:buscador") else None,
                 dict(texto="Subastas", color="purple") if _tiene("ventas:subastas") else None,
-            ],
+            ] if b],
         ))
-        # Limpiar Nones
-        cards_izq[-1]["badges"] = [b for b in cards_izq[-1]["badges"] if b]
 
     if tiene_comp:
         cards_der.append(dict(
@@ -214,9 +186,9 @@ def render():
             descripcion="Captura y consulta de solicitudes de complementarias y desconclusiones",
             color_acento="#CC1E1E",
             badges=[
-                dict(texto=f"{c_counts['Pendiente']} Pendientes",   color="blue"),
-                dict(texto=f"{c_counts['En revisión']} En revisión", color="yellow"),
-                dict(texto=f"{c_counts['Resuelto']} Resueltos",      color="green"),
+                dict(texto=f"{c_counts['Pendiente']} Pendientes",    color="blue"),
+                dict(texto=f"{c_counts['En revisión']} En revisión",  color="yellow"),
+                dict(texto=f"{c_counts['Resuelto']} Resueltos",       color="green"),
             ],
         ))
 
@@ -229,31 +201,17 @@ def render():
             badges=[dict(texto=e, color="gray") for e in empresas_accesibles],
         ))
 
-    # ── Renderizar cards en 2 columnas ────────────────────────────────────────
     if not cards_izq and not cards_der:
         st.info("No tienes módulos asignados aún. Contacta al administrador.")
     else:
         col_izq, col_der = st.columns(2)
         with col_izq:
             for c in cards_izq:
-                module_card(
-                    icono=c["icono"],
-                    titulo=c["titulo"],
-                    descripcion=c["descripcion"],
-                    badges=c["badges"],
-                    color_acento=c["color_acento"],
-                )
+                module_card(**c)
         with col_der:
             for c in cards_der:
-                module_card(
-                    icono=c["icono"],
-                    titulo=c["titulo"],
-                    descripcion=c["descripcion"],
-                    badges=c["badges"],
-                    color_acento=c["color_acento"],
-                )
+                module_card(**c)
 
-    # ── Footer ────────────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
     divider()
 
