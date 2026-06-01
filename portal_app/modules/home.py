@@ -22,11 +22,17 @@ from ui.components import welcome_banner, kpi_row, module_card, divider
 # ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _get_ticket_counts(user_id: str) -> dict:
-    """Conteo de tickets por estatus. Cacheado 60s por user_id."""
+def _get_ticket_counts(user_id: str, user_email: str) -> dict:
+    """Conteo de tickets del usuario logueado. Cacheado 60s."""
     try:
         sb = get_authed_client()
-        res = sb.table("tickets").select("estatus").limit(1000).execute()
+        res = (
+            sb.table("tickets")
+            .select("estatus")
+            .ilike("correo", user_email)
+            .limit(1000)
+            .execute()
+        )
         rows = res.data or []
         counts = {"Nuevo": 0, "En Proceso": 0, "Cancelado": 0, "Concluido": 0}
         for r in rows:
@@ -39,25 +45,8 @@ def _get_ticket_counts(user_id: str) -> dict:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _get_comp_counts(user_id: str) -> dict:
-    """Conteo de complementarias por estatus. Cacheado 60s por user_id."""
-    try:
-        sb = get_authed_client()
-        res = (
-            sb.table("solicitudes_complementarias")
-            .select("estatus")
-            .limit(1000)
-            .execute()
-        )
-        rows = res.data or []
-        counts = {"Pendiente": 0, "En revisión": 0, "Cancelado": 0, "Resuelto": 0}
-        for r in rows:
-            s = r.get("estatus") or "Pendiente"
-            if s in counts:
-                counts[s] += 1
-        return counts
-    except Exception:
-        return {"Pendiente": 0, "En revisión": 0, "Cancelado": 0, "Resuelto": 0}
+def _get_comp_counts(user_id: str, user_email: str) -> dict:
+    """Conteo de complementarias del usuario logueado. Cacheado 60s."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
