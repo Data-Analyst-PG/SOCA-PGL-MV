@@ -64,6 +64,8 @@ def render():
     # ── Banner de bienvenida ──────────────────────────────────────────────────
     welcome_banner(nombre, rol, area)
 
+    user_email = (u.get("email") or "").strip().lower()
+    
     # ── Cargar conteos (cacheados) ────────────────────────────────────────────
     t_counts = _get_ticket_counts(user_id)
     c_counts = _get_comp_counts(user_id)
