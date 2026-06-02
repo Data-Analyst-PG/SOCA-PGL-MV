@@ -18,4 +18,5 @@ from ui.components import (
     status_badge_html, 
     historial_timeline, 
     solicitud_card,
+    solicitudes_table,
 )
