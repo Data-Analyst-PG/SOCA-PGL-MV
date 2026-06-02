@@ -616,8 +616,8 @@ def solicitud_card(
 
     html = (
         f'<div style="'
-        f'background:{cfg["bg"]};'
-        f'border:1px solid {cfg["border"]};'
+        f'background:#FFFFFF;'
+        f'border:1px solid #E5E7EB;'
         f'border-left:5px solid {cfg["color"]};'
         f'border-radius:10px;'
         f'padding:0.9rem 1.1rem 0.75rem 1.1rem;'
