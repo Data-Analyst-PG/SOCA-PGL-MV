@@ -1,25 +1,10 @@
 """
-_shared.py – Set Logis Plus  (v2)
+_shared.py – Set Logis Plus  (v3)
 Helpers, defaults y cálculo central.
 
-Lógica de dirección (derivada del tipo de ruta):
-  NB  / D2DNB  → Subida
-  SB  / D2DSB  → Bajada
-  Empty        → sin ingreso, solo pago millas vacías
-
-Lógica de millas y pago owner:
-  Pago = (miles_load + short_miles) × PxM_cargado
-        + miles_empty × PxM_vacio
-
-Modo Team → usa tarifas Team de config.
-Cruce:
-  "Sin cruce" → ingreso=0, costo=0
-  "Propio"    → costo fijo de config (Cargado o Vacío según tipo_carga)
-  "Externo"   → costo capturado en formulario
-Ruta MX (D2D): siempre externo, ingreso y costo en USD.
-
-Semáforos Set Logis:
-  Directos ≤ 85% verde | Indirectos ≤ 9% verde | Ut.Neta ≥ 6% verde
+Extras:
+  extras_costo = suma de extras que NO se cobran al cliente (costo puro)
+  Los extras cobrados al cliente ya van incluidos en flete_usa al llamar calcular.
 """
 
 from __future__ import annotations
@@ -40,10 +25,27 @@ TABLE_TRAFICOS = "Traficos_SetLogis"
 # ─────────────────────────────────────────────
 # TIPOS DE RUTA
 # ─────────────────────────────────────────────
-TIPOS_RUTA    = ["NB", "SB", "D2DNB", "D2DSB", "Empty"]
-TIPOS_CON_MX  = {"D2DNB", "D2DSB"}
-TIPOS_SUBIDA  = {"NB", "D2DNB", "Empty"}
-TIPOS_BAJADA  = {"SB", "D2DSB"}
+TIPOS_RUTA   = ["NB", "SB", "D2DNB", "D2DSB", "Empty"]
+TIPOS_CON_MX = {"D2DNB", "D2DSB"}
+TIPOS_SUBIDA = {"NB", "D2DNB", "Empty"}
+TIPOS_BAJADA = {"SB", "D2DSB"}
+
+# ─────────────────────────────────────────────
+# EXTRAS (igual que Lincoln)
+# ─────────────────────────────────────────────
+EXTRAS_USA = [
+    "Stop Off",
+    "Detention",
+    "Lumper Fees",
+    "Layover",
+    "Fianzas",
+    "Additional Insurance",
+    "Loadlocks",
+    "Accessories",
+    "Guias",
+    "Maniobras",
+    "Mov Extraordinario",
+]
 
 # ─────────────────────────────────────────────
 # DEFAULTS
@@ -177,35 +179,30 @@ def _pxm_vacio(modo: str, v: dict) -> float:
 def calcular_ruta_setlogis(
     *,
     tipo_ruta: str,
-    modo: str,                    # "Sencillo" | "Team"
+    modo: str,
     ruta_usa: str,
     cliente: str,
     miles_load: float,
     miles_empty: float,
     short_miles: float,
-    # Ingresos USA (ya en USD)
-    flete_usa: float,
+    flete_usa: float,       # Ya incluye extras cobrados al cliente si los hay
     fuel: float,
-    # Cruce (ya en USD)
-    tipo_cruce: str,              # "Sin cruce" | "Propio" | "Externo"
+    tipo_cruce: str,        # "Sin cruce" | "Propio" | "Externo"
     ingreso_cruce: float,
     costo_cruce_externo: float,
-    # Ruta MX (ya en USD, solo D2D)
     ingreso_mx: float,
     costo_mx: float,
-    # Costo indirecto
-    modo_costo_indirecto: str,    # "CXM" | "Porcentaje"
+    extras_costo: float,    # Extras NO cobrados al cliente (costo puro)
+    modo_costo_indirecto: str,
     valores: dict,
 ) -> dict:
 
     v = valores
 
-    # Tarifas
-    pxm_cargado    = _pxm_cargado(tipo_ruta, modo, v)
-    pxm_vacio_v    = _pxm_vacio(modo, v)
-    tc             = safe(v.get("Tipo de Cambio USD/MXP", 18.50))
+    pxm_cargado = _pxm_cargado(tipo_ruta, modo, v)
+    pxm_vacio_v = _pxm_vacio(modo, v)
+    tc          = safe(v.get("Tipo de Cambio USD/MXP", 18.50))
 
-    # Millas
     miles_load  = safe(miles_load)
     miles_empty = safe(miles_empty)
     short_miles = safe(short_miles)
@@ -231,10 +228,8 @@ def calcular_ruta_setlogis(
     if is_empty or tipo_cruce == "Sin cruce":
         costo_cruce = 0.0
     elif tipo_cruce == "Propio":
-        # La key correcta según tipo_carga se pasa desde el formulario vía valores
-        # Por simplicidad usamos Cargado como default; el formulario ya controla esto
         costo_cruce = safe(v.get("Cruce Propio Cargado", 80.0))
-    else:  # Externo
+    else:
         costo_cruce = safe(costo_cruce_externo)
 
     # ── COSTO MX ─────────────────────────────────────────────────────────────
@@ -246,7 +241,8 @@ def calcular_ruta_setlogis(
     pago_owner_total   = pago_owner_cargado + pago_owner_vacio
 
     # ── COSTOS DIRECTOS ───────────────────────────────────────────────────────
-    costo_directo_total = pago_owner_total + costo_cruce + costo_mx_calc
+    extras_costo = safe(extras_costo)
+    costo_directo_total = pago_owner_total + costo_cruce + costo_mx_calc + extras_costo
 
     # ── COSTOS INDIRECTOS ─────────────────────────────────────────────────────
     if modo_costo_indirecto == "CXM":
@@ -269,63 +265,52 @@ def calcular_ruta_setlogis(
         return (num / den * 100) if den > 0 else 0.0
 
     pct_dir  = _pct(costo_directo_total, ingreso_global)
-    pct_ind  = _pct(costo_indirecto,     ingreso_global)
+    pct_ind_ = _pct(costo_indirecto,     ingreso_global)
     pct_ut_b = _pct(utilidad_bruta,      ingreso_global)
     pct_ut_n = _pct(utilidad_neta,       ingreso_global)
 
     # ── SEMÁFOROS ────────────────────────────────────────────────────────────
     color_dir  = "#16a34a" if pct_dir  <= 85.0 else "#dc2626"
-    color_ind  = "#16a34a" if pct_ind  <=  9.0 else "#dc2626"
+    color_ind  = "#16a34a" if pct_ind_ <=  9.0 else "#dc2626"
     color_ut_n = "#16a34a" if pct_ut_n >=  6.0 else "#dc2626"
 
     return {
-        # Identificación
         "Tipo_Viaje":          tipo_ruta,
         "Modo":                modo,
         "Direccion":           direccion_label(tipo_ruta),
         "Ruta_USA":            ruta_usa,
         "Cliente":             cliente,
-        # Millas
         "Miles_Load":          miles_load,
         "Miles_Empty":         miles_empty,
         "Short_Miles":         short_miles,
         "Millas_Totales":      millas_totales,
-        # Tarifas aplicadas
         "PxM_Cargado":         pxm_cargado,
         "PxM_Vacio":           pxm_vacio_v,
-        # Ingresos
         "Flete_USA":           flete_usa,
         "Fuel":                fuel,
         "Flete_Fuel":          flete_fuel if not is_empty else 0.0,
         "Ingreso_Cruce":       ingreso_cruce,
         "Ingreso_MX":          ingreso_mx,
         "Ingreso_Global":      ingreso_global,
-        # Cruce
         "Tipo_Cruce":          tipo_cruce,
         "Costo_Cruce":         costo_cruce,
-        # MX
         "Costo_MX":            costo_mx_calc,
-        # Costos owner
         "Pago_Owner_Cargado":  pago_owner_cargado,
         "Pago_Owner_Vacio":    pago_owner_vacio,
         "Pago_Owner_Total":    pago_owner_total,
-        # Costos agrupados
+        "Extras_Costo":        extras_costo,
         "Costo_Directo":       costo_directo_total,
         "Costo_Indirecto":     costo_indirecto,
         "Costo_Total":         costo_total,
-        # Utilidades
         "Utilidad_Bruta":      utilidad_bruta,
         "Utilidad_Neta":       utilidad_neta,
-        # Porcentajes
         "Pct_Costo_Directo":   pct_dir,
-        "Pct_Costo_Indirecto": pct_ind,
+        "Pct_Costo_Indirecto": pct_ind_,
         "Pct_Ut_Bruta":        pct_ut_b,
         "Pct_Ut_Neta":         pct_ut_n,
-        # Semáforos
         "Color_Directo":       color_dir,
         "Color_Indirecto":     color_ind,
         "Color_Ut_Neta":       color_ut_n,
-        # Auxiliares
         "CXM_Indirecto":       cxm_aplicado,
         "Pct_Indirecto":       pct_aplicado,
         "TC":                  tc,
