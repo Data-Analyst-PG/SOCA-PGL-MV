@@ -18,7 +18,7 @@ import streamlit as st
 from services.supabase_client import current_user, get_authed_client
 from ui.components import (
     section_header, kpi_row, alert,
-    solicitud_card, historial_timeline, status_badge_html,
+    solicitud_card, historial_timeline, status_badge_html, solicitudes_table,
 )
 
 # ── Catálogos ─────────────────────────────────────────────────────────────────
@@ -363,18 +363,7 @@ def render():
                 for col in row.index
             ]
 
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "ID":        st.column_config.NumberColumn("ID", width="small"),
-                "Estatus":   st.column_config.TextColumn("Estatus", width="medium"),
-                "Título":    st.column_config.TextColumn("Título", width="large"),
-                "Correo":    st.column_config.TextColumn("Correo", width="medium"),
-                "Descripción": st.column_config.TextColumn("Descripción", width="large"),
-            },
-        )
+        solicitudes_table(df)
 
         # Descarga Excel (solo lo filtrado)
         excel_bytes = _to_excel(df)
