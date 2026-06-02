@@ -19,7 +19,7 @@ import streamlit as st
 from ui.components import (
     section_header, kpi_row, alert,
     solicitud_card, historial_timeline, status_badge_html,
-    solicitudes_table,
+    solicitudes_table, page_banner,
 )
 from .shared import get_complementarias, update_complementaria, now_iso_utc
 
@@ -168,7 +168,7 @@ def _modal_edicion(comp: dict, gestor: str):
 
 # ── Render principal ──────────────────────────────────────────────────────────
 def render():
-    section_header("📋", "Gestión de Complementarias",
+    page_banner("📋", "Gestión de Complementarias",
                    "Revisa y actualiza solicitudes de complementarias")
 
     perfil = st.session_state.get("profile") or {}
