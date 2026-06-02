@@ -1,10 +1,19 @@
 """
-_shared.py – Set Logis Plus  (v3)
+_shared.py – Set Logis Plus
 Helpers, defaults y cálculo central.
 
+Fórmula tarifa americana (Desglosada):
+  Flete = Miles_Load × CXM_Flete
+  Fuel  = Miles_Load × CXM_Fuel      ← ambos sobre Miles Load
+  Total = Flete + Fuel
+
+Pago owner:
+  Cargado = (Miles_Load + Short_Miles) × PxM_cargado
+  Vacío   = Miles_Empty × PxM_vacio
+
 Extras:
-  extras_costo = suma de extras que NO se cobran al cliente (costo puro)
-  Los extras cobrados al cliente ya van incluidos en flete_usa al llamar calcular.
+  extras_costo = extras NO cobrados al cliente (costo puro)
+  Extras cobrados al cliente ya van sumados en flete_usa al llamar.
 """
 
 from __future__ import annotations
@@ -51,20 +60,15 @@ EXTRAS_USA = [
 # DEFAULTS
 # ─────────────────────────────────────────────
 DEFAULTS: dict[str, float] = {
-    # Owner individual (USD/milla)
     "PxM Owner Subidas":       1.60,
     "PxM Owner Bajadas":       1.40,
     "PxM Owner Vacio":         0.80,
-    # Owner Team (USD/milla)
     "PxM Owner Subidas Team":  1.80,
     "PxM Owner Bajadas Team":  1.60,
     "PxM Owner Vacio Team":    0.90,
-    # Cruce propio (USD)
     "Cruce Propio Cargado":   80.00,
     "Cruce Propio Vacio":     50.00,
-    # Tipo de cambio
     "Tipo de Cambio USD/MXP": 18.50,
-    # Costos indirectos
     "CXM Indirecto":           0.10,
     "% Costo Indirecto":       0.09,
 }
@@ -185,14 +189,18 @@ def calcular_ruta_setlogis(
     miles_load: float,
     miles_empty: float,
     short_miles: float,
-    flete_usa: float,       # Ya incluye extras cobrados al cliente si los hay
-    fuel: float,
-    tipo_cruce: str,        # "Sin cruce" | "Propio" | "Externo"
+    # flete_usa ya viene calculado desde captura_rutas:
+    #   Desglosada → (CXM_Flete × Miles_Load) + (CXM_Fuel × Miles_Load)
+    #   Flat       → tarifa total
+    # También incluye extras cobrados al cliente si los hay.
+    flete_usa: float,
+    fuel: float,        # Fuel por separado para desglose en resultados
+    tipo_cruce: str,    # "Sin cruce" | "Propio" | "Externo"
     ingreso_cruce: float,
     costo_cruce_externo: float,
     ingreso_mx: float,
     costo_mx: float,
-    extras_costo: float,    # Extras NO cobrados al cliente (costo puro)
+    extras_costo: float,    # Extras NO cobrados al cliente
     modo_costo_indirecto: str,
     valores: dict,
 ) -> dict:
@@ -212,16 +220,22 @@ def calcular_ruta_setlogis(
     is_empty = tipo_ruta == "Empty"
 
     if is_empty:
-        flete_usa = fuel = flete_fuel = ingreso_usa = 0.0
-        ingreso_cruce = ingreso_mx = 0.0
+        flete_usa  = 0.0
+        fuel       = 0.0
+        flete_fuel = 0.0
+        ingreso_usa = 0.0
+        ingreso_cruce = 0.0
+        ingreso_mx    = 0.0
     else:
-        flete_usa  = safe(flete_usa)
-        fuel       = safe(fuel)
-        flete_fuel = flete_usa + fuel
-        ingreso_usa = flete_fuel
+        flete_usa   = safe(flete_usa)
+        fuel        = safe(fuel)
+        # flete_fuel = flete_usa ya incluye el fuel cuando viene de Desglosada
+        # Lo guardamos por separado para mostrar en desglose
+        flete_fuel  = flete_usa
+        ingreso_usa = flete_usa
 
-    ingreso_cruce = safe(ingreso_cruce) if not is_empty else 0.0
-    ingreso_mx    = safe(ingreso_mx) if (tiene_mx(tipo_ruta) and not is_empty) else 0.0
+    ingreso_cruce  = safe(ingreso_cruce) if not is_empty else 0.0
+    ingreso_mx     = safe(ingreso_mx) if (tiene_mx(tipo_ruta) and not is_empty) else 0.0
     ingreso_global = ingreso_usa + ingreso_cruce + ingreso_mx
 
     # ── COSTO CRUCE ──────────────────────────────────────────────────────────
@@ -236,6 +250,7 @@ def calcular_ruta_setlogis(
     costo_mx_calc = safe(costo_mx) if tiene_mx(tipo_ruta) else 0.0
 
     # ── PAGO OWNER ───────────────────────────────────────────────────────────
+    # Short miles se pagan igual que cargadas (misma tasa subida/bajada)
     pago_owner_cargado = (miles_load + short_miles) * pxm_cargado
     pago_owner_vacio   = miles_empty * pxm_vacio_v
     pago_owner_total   = pago_owner_cargado + pago_owner_vacio
@@ -269,7 +284,7 @@ def calcular_ruta_setlogis(
     pct_ut_b = _pct(utilidad_bruta,      ingreso_global)
     pct_ut_n = _pct(utilidad_neta,       ingreso_global)
 
-    # ── SEMÁFOROS ────────────────────────────────────────────────────────────
+    # ── SEMÁFOROS Set Logis ───────────────────────────────────────────────────
     color_dir  = "#16a34a" if pct_dir  <= 85.0 else "#dc2626"
     color_ind  = "#16a34a" if pct_ind_ <=  9.0 else "#dc2626"
     color_ut_n = "#16a34a" if pct_ut_n >=  6.0 else "#dc2626"
@@ -286,9 +301,9 @@ def calcular_ruta_setlogis(
         "Millas_Totales":      millas_totales,
         "PxM_Cargado":         pxm_cargado,
         "PxM_Vacio":           pxm_vacio_v,
-        "Flete_USA":           flete_usa,
-        "Fuel":                fuel,
-        "Flete_Fuel":          flete_fuel if not is_empty else 0.0,
+        "Flete_USA":           flete_usa,   # total flete (incluye fuel en desglosada)
+        "Fuel":                fuel,        # guardado por separado para referencia
+        "Flete_Fuel":          flete_fuel,
         "Ingreso_Cruce":       ingreso_cruce,
         "Ingreso_MX":          ingreso_mx,
         "Ingreso_Global":      ingreso_global,
