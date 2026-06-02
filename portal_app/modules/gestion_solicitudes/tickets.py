@@ -18,7 +18,7 @@ import streamlit as st
 from services.supabase_client import current_user, get_authed_client
 from ui.components import (
     section_header, kpi_row, alert,
-    solicitud_card, historial_timeline, status_badge_html, solicitudes_table,
+    solicitud_card, historial_timeline, status_badge_html, solicitudes_table, page_banner,
 )
 
 # ── Catálogos ─────────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ def _badge_html(est: str) -> str:
 # RENDER PRINCIPAL
 # ─────────────────────────────────────────────────────────────────────────────
 def render():
-    section_header("🎫", "Gestión de Tickets",
+    page_banner("🎫", "Gestión de Tickets",
                    "Administra fases, asignaciones y comentarios")
 
     gestor  = _gestor_nombre()
