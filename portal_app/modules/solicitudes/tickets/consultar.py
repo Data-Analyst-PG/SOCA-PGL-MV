@@ -3,23 +3,38 @@
 # Vista "Mis Tickets" para el usuario final.
 # Sin HTML propio — todo el visual viene de ui/components.
 # ─────────────────────────────────────────────────────────────────────────────
-import streamlit as st
+from __future__ import annotations
+from io import BytesIO
+
 import pandas as pd
+import streamlit as st
 
 from services.supabase_client import current_user, get_authed_client
 from ui.components import (
     section_header, kpi_row, alert,
     solicitud_card, historial_timeline, status_badge_html,
+    solicitudes_table,
     ESTATUS_CFG,
 )
 
-# ── Fases que cuentan como "en proceso" ──────────────────────────────────────
 FASES_EN_PROCESO = {"Capacitación", "Planteamiento", "Desarrollo", "Pruebas", "Entrega", "En Proceso"}
-TODAS_LAS_FASES  = ["Nuevo", "Capacitación", "Planteamiento", "Desarrollo",
-                    "Pruebas", "Entrega", "Concluido", "Cancelado"]
+
+COLS_TABLA = [
+    ("id",           "ID"),
+    ("created_at",   "Fecha creación"),
+    ("updated_at",   "Última actualización"),
+    ("empresa",      "Empresa"),
+    ("titulo",       "Título"),
+    ("categoria",    "Categoría"),
+    ("departamento", "Departamento"),
+    ("prioridad",    "Prioridad"),
+    ("estatus",      "Estatus"),
+    ("assigned_to",  "Asignado a"),
+    ("descripcion",  "Descripción"),
+]
 
 
-# ── Query cacheada ────────────────────────────────────────────────────────────
+# ── Query ─────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=30, show_spinner=False)
 def _mis_tickets(user_email: str) -> list:
     try:
@@ -37,7 +52,29 @@ def _mis_tickets(user_email: str) -> list:
         return []
 
 
-# ── Modal de detalle (solo lectura para el usuario) ───────────────────────────
+# ── Excel ─────────────────────────────────────────────────────────────────────
+def _to_excel(df: pd.DataFrame) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Mis Tickets")
+        ws = writer.sheets["Mis Tickets"]
+        for col_cells in ws.columns:
+            max_len = max(
+                len(str(c.value)) if c.value is not None else 0
+                for c in col_cells
+            )
+            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 50)
+        from openpyxl.styles import Font, PatternFill, Alignment
+        fill = PatternFill("solid", fgColor="1B2266")
+        font = Font(color="FFFFFF", bold=True)
+        for cell in ws[1]:
+            cell.fill      = fill
+            cell.font      = font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+    return buf.getvalue()
+
+
+# ── Modal de detalle (solo lectura) ───────────────────────────────────────────
 @st.dialog("Detalle del ticket", width="large")
 def _modal_detalle(ticket: dict):
     est   = ticket.get("estatus", "Nuevo")
@@ -47,8 +84,10 @@ def _modal_detalle(ticket: dict):
         f"**#{ticket.get('id')}** — {ticket.get('titulo','')}&nbsp;&nbsp;{badge}",
         unsafe_allow_html=True,
     )
-    st.caption(f"Creado: {str(ticket.get('created_at',''))[:10]}  |  "
-               f"Actualizado: {str(ticket.get('updated_at',''))[:10]}")
+    st.caption(
+        f"Creado: {str(ticket.get('created_at',''))[:10]}  |  "
+        f"Actualizado: {str(ticket.get('updated_at',''))[:10]}"
+    )
 
     col1, col2, col3 = st.columns(3)
     col1.markdown(f"**Empresa:** {ticket.get('empresa','')}")
@@ -81,7 +120,7 @@ def render():
 
     section_header("🎫", "Mis tickets", "Consulta el estado de tus solicitudes")
 
-    # ── KPIs ─────────────────────────────────────────────────────────────────
+    # ── KPIs ──────────────────────────────────────────────────────────────────
     counts: dict[str, int] = {}
     for t in tickets:
         s = t.get("estatus", "Nuevo")
@@ -105,12 +144,14 @@ def render():
     st.divider()
 
     # ── Filtros ───────────────────────────────────────────────────────────────
-    col1, col2, col3 = st.columns([1, 1, 1])
+    col1, col2, col3 = st.columns(3)
     with col1:
-        estatuses_presentes = sorted(set(t.get("estatus","Nuevo") for t in tickets))
+        estatuses_presentes = sorted(set(t.get("estatus", "Nuevo") for t in tickets))
         filtro_est = st.selectbox("Estatus", ["Todos"] + estatuses_presentes, key="ctk_est")
     with col2:
-        filtro_q = st.text_input("Buscar título", placeholder="Ej. Reporte ventas", key="ctk_q")
+        filtro_q = st.text_input(
+            "Buscar título", placeholder="Ej. Reporte ventas", key="ctk_q"
+        )
     with col3:
         orden = st.selectbox("Ordenar", ["Más recientes", "Más antiguos"], key="ctk_ord")
 
@@ -119,30 +160,21 @@ def render():
         filtrados = [t for t in filtrados if t.get("estatus") == filtro_est]
     if filtro_q.strip():
         q = filtro_q.strip().lower()
-        filtrados = [t for t in filtrados if q in str(t.get("titulo","")).lower()]
+        filtrados = [t for t in filtrados if q in str(t.get("titulo", "")).lower()]
     if orden == "Más antiguos":
         filtrados = list(reversed(filtrados))
 
     st.caption(f"Mostrando {len(filtrados)} ticket(s)")
-
-    # ── Descarga ──────────────────────────────────────────────────────────────
-    if filtrados:
-        cols_exp = ["id","created_at","updated_at","solicitante","correo",
-                    "empresa","titulo","categoria","departamento","prioridad","estatus","assigned_to"]
-        df = pd.DataFrame([{c: t.get(c,"") for c in cols_exp} for t in filtrados])
-        st.download_button("⬇️ Descargar CSV", data=df.to_csv(index=False).encode(),
-                           file_name="mis_tickets.csv", mime="text/csv", key="ctk_dl")
-
     st.divider()
 
-    # ── Cards + modal ─────────────────────────────────────────────────────────
-    # Recuperar ticket seleccionado para el modal
+    # ── Modal ─────────────────────────────────────────────────────────────────
     if "ctk_modal_id" in st.session_state:
         tid = st.session_state.pop("ctk_modal_id")
         ticket_sel = next((t for t in tickets if t.get("id") == tid), None)
         if ticket_sel:
             _modal_detalle(ticket_sel)
 
+    # ── Cards ─────────────────────────────────────────────────────────────────
     for t in filtrados:
         tid   = t.get("id")
         est   = t.get("estatus", "Nuevo")
@@ -166,3 +198,26 @@ def render():
         if clicked:
             st.session_state["ctk_modal_id"] = tid
             st.rerun()
+
+    # ── Tabla + descarga Excel (al final, debajo de las cards) ─────────────────
+    if filtrados:
+        st.divider()
+        st.markdown("#### 📊 Resumen descargable")
+
+        df = pd.DataFrame([
+            {label: t.get(col, "") for col, label in COLS_TABLA}
+            for t in filtrados
+        ])
+        for fecha_col in ["Fecha creación", "Última actualización"]:
+            if fecha_col in df.columns:
+                df[fecha_col] = df[fecha_col].astype(str).str[:10]
+
+        solicitudes_table(df)
+
+        st.download_button(
+            "⬇️ Descargar Excel",
+            data=_to_excel(df),
+            file_name="mis_tickets.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="ctk_dl",
+        )
