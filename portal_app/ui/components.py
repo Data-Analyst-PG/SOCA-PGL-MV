@@ -645,3 +645,79 @@ def solicitud_card(
     if on_edit_key:
         return st.button("✏️ Ver / Editar", key=on_edit_key, use_container_width=False)
     return False
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 15. TABLA DE SOLICITUDES CON ESTATUS COLOREADO
+# ─────────────────────────────────────────────────────────────────────────────
+_TABLA_COL_WIDTHS = {
+    "ID": "50px", "Fecha creación": "100px", "Última actualización": "100px",
+    "Solicitante": "140px", "Correo": "160px", "Empresa": "100px",
+    "Título": "160px", "Categoría": "120px", "Departamento": "110px",
+    "Prioridad": "80px", "Estatus": "120px", "Asignado a": "100px",
+    "Descripción": "200px",
+    # Complementarias
+    "Folio": "60px", "Tipo": "130px", "Tráfico": "110px", "Auditor": "110px",
+    "Fecha resolución": "110px", "Sucursal": "100px", "Plataforma": "100px",
+}
+_PRIO_COLORS = {"Alta": "#D97706", "Urgente": "#DC2626", "Normal": "#6B7280"}
+
+def solicitudes_table(df):
+    """
+    Renderiza un DataFrame como tabla HTML con estatus coloreados.
+    Usa ESTATUS_CFG para los badges y soporta columna Prioridad con color.
+    Úsalo en gestión de tickets y complementarias en lugar de st.dataframe.
+
+    Uso:
+        from ui.components import solicitudes_table
+        solicitudes_table(df)
+    """
+    import pandas as pd
+
+    th = (
+        "background:#1B2266;color:white;font-size:0.72rem;font-weight:700;"
+        "padding:8px 10px;text-align:left;white-space:nowrap;"
+        "text-transform:uppercase;letter-spacing:0.4px;"
+    )
+    td = (
+        "padding:7px 10px;font-size:0.8rem;color:#374151;"
+        "border-bottom:1px solid #E5E7EB;vertical-align:middle;"
+    )
+
+    headers = "".join(
+        f'<th style="{th}min-width:{_TABLA_COL_WIDTHS.get(c, "90px")};">{c}</th>'
+        for c in df.columns
+    )
+
+    rows_html = ""
+    for i, row in df.iterrows():
+        bg = "#FAFAFA" if i % 2 == 0 else "#FFFFFF"
+        cells = ""
+        for col in df.columns:
+            val = str(row[col]) if row[col] is not None else ""
+            if col == "Estatus":
+                cfg   = ESTATUS_CFG.get(val, _ESTATUS_DEFAULT)
+                color = cfg["color"]
+                est_bg = cfg["bg"]
+                cell_val = (
+                    f'<span style="background:{est_bg};color:{color};'
+                    f'border:1px solid {color};border-radius:12px;'
+                    f'padding:2px 10px;font-size:0.72rem;font-weight:700;'
+                    f'white-space:nowrap;">{cfg["icono"]} {val}</span>'
+                )
+            elif col == "Prioridad":
+                c = _PRIO_COLORS.get(val, "#6B7280")
+                cell_val = f'<span style="color:{c};font-weight:600;">{val}</span>'
+            else:
+                cell_val = val
+            cells += f'<td style="{td}background:{bg};">{cell_val}</td>'
+        rows_html += f"<tr>{cells}</tr>"
+
+    html = (
+        f'<div style="overflow-x:auto;border-radius:10px;'
+        f'border:1px solid #E5E7EB;margin-bottom:0.75rem;">'
+        f'<table style="width:100%;border-collapse:collapse;">'
+        f'<thead><tr>{headers}</tr></thead>'
+        f'<tbody>{rows_html}</tbody>'
+        f'</table></div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
