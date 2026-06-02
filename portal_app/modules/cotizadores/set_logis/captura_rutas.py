@@ -1,19 +1,10 @@
 """
-captura_rutas.py – Set Logis Plus  (v4)
-Flujo paso a paso igual que Lincoln.
-Sin HTML inline — todo via ui/components.
-
-Orden visual:
-  1. Información General  (tipo, modo, modalidad, indirecto, fecha, cliente)
-  2. Ruta Americana       (origen, destino, millas, tarifa desglosada/flat)
-  3. Cruce Fronterizo     (aplica?, tipo, carga, monedas, ingreso, costo)
-  4. Ruta México          (solo D2D: origen, destino, monedas, ingreso, costo)
-  5. Extras / Otros       (igual que Lincoln: monto + checkbox cobrado al cliente)
-  6. Costo Indirecto      (método CXM o Porcentaje)
-  7. Botón Calcular
-
-Selectores reactivos (tipo_ruta, aplica_cruce, tipo_cruce) están en session_state
-y se actualizan con st.rerun() para controlar qué secciones aparecen.
+captura_rutas.py – Set Logis Plus  (final)
+Base: v2 (estructura y flujo original dentro del form).
+Agregados:
+  · Modalidad de cobro americana: Desglosada (CXM Flete × Miles Load + CXM Fuel × Short Miles)
+                                   o Flat (tarifa total directa)
+  · Extras / Otros Conceptos: igual que Lincoln — monto + checkbox "¿Se cobra al cliente?"
 """
 
 from __future__ import annotations
@@ -117,10 +108,10 @@ def _panel_datos_generales(valores: dict) -> dict:
         cr1, cr2 = st.columns(2)
         valores["Cruce Propio Cargado"] = cr1.number_input(
             "Cruce Propio Cargado", value=float(valores.get("Cruce Propio Cargado", 80.00)),
-            step=1.0, format="%.2f", key="sl_cruce_cfg_c")
+            step=1.0, format="%.2f", key="sl_cruce_c")
         valores["Cruce Propio Vacio"] = cr2.number_input(
             "Cruce Propio Vacío", value=float(valores.get("Cruce Propio Vacio", 50.00)),
-            step=1.0, format="%.2f", key="sl_cruce_cfg_v")
+            step=1.0, format="%.2f", key="sl_cruce_v")
 
         st.markdown("**Tipo de Cambio y Costos Indirectos**")
         x1, x2, x3 = st.columns(3)
@@ -176,7 +167,7 @@ def _mostrar_resumen(r: dict) -> None:
         id_.metric("Cruce",       f"${r['Ingreso_Cruce']:,.2f}")
         if r.get("Extras_Ingreso", 0) > 0:
             _, _, _, ex_ = st.columns(4)
-            ex_.metric("Extras cliente", f"${r['Extras_Ingreso']:,.2f}")
+            ex_.metric("Extras (cliente)", f"${r['Extras_Ingreso']:,.2f}")
         if r["Ingreso_MX"] > 0:
             _, _, _, mx_ = st.columns(4)
             mx_.metric("Ingreso MX", f"${r['Ingreso_MX']:,.2f}")
@@ -241,24 +232,16 @@ def _mostrar_resumen(r: dict) -> None:
 def render() -> None:
     supabase = get_supabase_client()
     if supabase is None:
-        alert("error", "⚠️ Supabase no configurado.")
+        alert("error", "⚠️ Supabase no configurado. Verifica tu conexión.")
         return
 
     u              = current_user() or {}
     user_id        = u.get("id") or u.get("sub") or ""
     nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
 
-    # Session state
     st.session_state.setdefault("sl_resultado", None)
     st.session_state.setdefault("sl_datos", {})
-    # Selectores reactivos en session_state
-    st.session_state.setdefault("sl_tipo_ruta",     "NB")
-    st.session_state.setdefault("sl_aplica_cruce",  True)
-    st.session_state.setdefault("sl_tipo_cruce",    "Propio")
-    st.session_state.setdefault("sl_tcarga_cruce",  "Cargado")
-    st.session_state.setdefault("sl_modalidad",     "Desglosada")
 
-    # Parámetros
     valores = cargar_datos_generales()
     valores = _panel_datos_generales(valores)
     tc      = safe(valores.get("Tipo de Cambio USD/MXP", 18.50))
@@ -266,60 +249,29 @@ def render() -> None:
     divider()
     section_header("🛣️", "Nueva Ruta")
 
-    # ══════════════════════════════════════════════════════════════
-    # SECCIÓN 1 — INFORMACIÓN GENERAL
-    # ══════════════════════════════════════════════════════════════
-    section_header("📋", "Información General")
-
-    ig1, ig2, ig3, ig4 = st.columns(4)
-
-    # Tipo de ruta — reactivo: al cambiar recarga la página
-    tipo_ruta_sel = ig1.selectbox(
-        "🗺️ Tipo de Ruta", TIPOS_RUTA,
-        index=TIPOS_RUTA.index(st.session_state["sl_tipo_ruta"]),
-        key="sl_tipo_ruta_sel",
-    )
-    if tipo_ruta_sel != st.session_state["sl_tipo_ruta"]:
-        st.session_state["sl_tipo_ruta"] = tipo_ruta_sel
-        # Resetear cruce si pasa a Empty
-        if tipo_ruta_sel == "Empty":
-            st.session_state["sl_aplica_cruce"] = False
-        else:
-            st.session_state["sl_aplica_cruce"] = True
-        st.rerun()
-
-    tipo_ruta = st.session_state["sl_tipo_ruta"]
-    is_empty  = tipo_ruta == "Empty"
-    aplica_mx = tiene_mx(tipo_ruta)
-
-    modo      = ig2.selectbox("🚛 Modo", ["Sencillo", "Team"], key="sl_modo")
-    modalidad_sel = ig3.selectbox("📐 Modalidad", ["Desglosada", "Flat"], key="sl_modalidad_sel",
-                                   index=["Desglosada", "Flat"].index(st.session_state["sl_modalidad"]))
-    if modalidad_sel != st.session_state["sl_modalidad"]:
-        st.session_state["sl_modalidad"] = modalidad_sel
-        st.rerun()
-    modalidad = st.session_state["sl_modalidad"]
-
-    modo_ci   = ig4.radio("📉 Indirecto", ["CXM", "Porcentaje"],
-                           horizontal=True, key="sl_modo_ci")
-
-    st.caption(
-        f"📌 Dirección: **{direccion_label(tipo_ruta)}**  ·  "
-        f"Tramo MX: **{'Sí' if aplica_mx else 'No'}**"
-    )
-
     with st.form("sl_captura_ruta", clear_on_submit=False):
 
-        # Fecha y cliente dentro del form
-        fd1, fd2 = st.columns(2)
-        fecha   = fd1.date_input("📅 Fecha", value=datetime.today(), key="sl_fecha")
-        cliente = fd2.text_input("👤 Cliente", key="sl_cliente",
-                                  placeholder="NOMBRE DEL CLIENTE",
-                                  disabled=is_empty)
+        # ── 1. INFORMACIÓN GENERAL ────────────────────────────────────────────
+        st.markdown("### 📋 Información General")
+        g1, g2, g3, g4 = st.columns(4)
+        fecha     = g1.date_input("📅 Fecha",  value=datetime.today(), key="sl_fecha")
+        tipo_ruta = g2.selectbox("🗺️ Tipo",   TIPOS_RUTA,             key="sl_tipo")
+        modo      = g3.selectbox("🚛 Modo",   ["Sencillo", "Team"],   key="sl_modo")
+        cliente   = g4.text_input("👤 Cliente", key="sl_cliente",
+                                   placeholder="NOMBRE DEL CLIENTE",
+                                   disabled=(tipo_ruta == "Empty"))
 
-        # ── SECCIÓN 2 — RUTA AMERICANA ────────────────────────────────────────
+        es_empty  = tipo_ruta == "Empty"
+        aplica_mx = tiene_mx(tipo_ruta)
+
+        st.caption(
+            f"📌 Dirección: **{direccion_label(tipo_ruta)}**  ·  "
+            f"Tramo MX: **{'Sí' if aplica_mx else 'No'}**"
+        )
+
+        # ── 2. RUTA AMERICANA ─────────────────────────────────────────────────
         divider()
-        section_header("🇺🇸", "Ruta Americana")
+        st.markdown("### 🇺🇸 Ruta Americana")
 
         ru1, ru2 = st.columns(2)
         origen_usa  = ru1.text_input("📍 Origen",  key="sl_ori",  placeholder="CIUDAD, ESTADO")
@@ -330,87 +282,88 @@ def render() -> None:
         short_miles = m2.number_input("🔀 Short Miles",  min_value=0.0, step=1.0,  key="sl_sm")
         miles_empty = m3.number_input("⚪ Miles Empty",  min_value=0.0, step=10.0, key="sl_me")
 
-        # Tarifa según modalidad
+        # Modalidad de cobro
         divider()
+        st.markdown("**💵 Tarifa Americana**")
+        mod1, mod2 = st.columns([1, 3])
+        modalidad = mod1.radio("Modalidad", ["Desglosada", "Flat"],
+                                horizontal=False, key="sl_modalidad",
+                                disabled=es_empty)
+
         if modalidad == "Desglosada":
-            section_header("💵", "Tarifa Americana — Desglosada")
-            td1, td2, td3 = st.columns(3)
-            moneda_flete  = td1.selectbox("💱 Moneda", ["USD", "MXP"], key="sl_mon_flete",
-                                           disabled=is_empty)
+            td1, td2, td3 = mod2.columns(3)
+            moneda_flete  = td1.selectbox("💱 Moneda", ["USD", "MXP"],
+                                           key="sl_mon_flete", disabled=es_empty)
             cxm_flete_cap = td2.number_input("CXM Flete ($/mi)", min_value=0.0,
-                                              step=0.001, format="%.4f", key="sl_cxm_flete",
-                                              disabled=is_empty)
+                                              step=0.001, format="%.4f",
+                                              key="sl_cxm_flete", disabled=es_empty)
             cxm_fuel_cap  = td3.number_input("CXM Fuel ($/mi)", min_value=0.0,
-                                              step=0.001, format="%.4f", key="sl_cxm_fuel",
-                                              disabled=is_empty)
+                                              step=0.001, format="%.4f",
+                                              key="sl_cxm_fuel", disabled=es_empty)
             flete_flat_cap = 0.0
+            if not es_empty:
+                preview = (safe(cxm_flete_cap) * safe(miles_load) +
+                           safe(cxm_fuel_cap)  * safe(short_miles))
+                mod2.caption(
+                    f"Vista previa: CXM Flete ${safe(cxm_flete_cap):.4f} × {miles_load:.0f} mi"
+                    f" + CXM Fuel ${safe(cxm_fuel_cap):.4f} × {short_miles:.0f} mi"
+                    f" = **${preview:,.2f}**"
+                )
         else:
-            section_header("💵", "Tarifa Americana — Flat")
-            tf1, tf2 = st.columns(2)
-            moneda_flete   = tf1.selectbox("💱 Moneda", ["USD", "MXP"], key="sl_mon_flete",
-                                            disabled=is_empty)
+            tf1, tf2 = mod2.columns(2)
+            moneda_flete   = tf1.selectbox("💱 Moneda", ["USD", "MXP"],
+                                            key="sl_mon_flete", disabled=es_empty)
             flete_flat_cap = tf2.number_input("Tarifa Total (Flat)", min_value=0.0,
                                                step=50.0, key="sl_flete_flat",
-                                               disabled=is_empty)
+                                               disabled=es_empty)
             cxm_flete_cap = cxm_fuel_cap = 0.0
 
-        # ── SECCIÓN 3 — CRUCE ─────────────────────────────────────────────────
+        # ── 3. CRUCE FRONTERIZO ───────────────────────────────────────────────
         divider()
-        section_header("🛂", "Cruce Fronterizo")
+        st.markdown("### 🛂 Cruce Fronterizo")
 
-        # Checkbox aplica cruce — submit_button del form lo detecta correctamente
-        # pero el rerun lo manejamos con un botón auxiliar FUERA del form más abajo.
-        # Aquí lo mostramos como campo de lectura controlado por session_state.
-        cr_a, cr_b, cr_c, cr_d = st.columns(4)
-        aplica_cruce_form = cr_a.checkbox(
-            "¿Incluye cruce?", key="sl_incl_cruce_form",
-            value=st.session_state["sl_aplica_cruce"],
-            disabled=is_empty,
-        )
-        tipo_cruce_form = cr_b.selectbox(
-            "Tipo de Cruce", ["Propio", "Externo"], key="sl_tcruce_form",
-            index=["Propio", "Externo"].index(st.session_state["sl_tipo_cruce"]),
-            disabled=(not st.session_state["sl_aplica_cruce"] or is_empty),
-        )
-        tipo_carga_form = cr_c.selectbox(
-            "Carga del cruce", ["Cargado", "Vacío"], key="sl_tcarga_form",
-            index=["Cargado", "Vacío"].index(st.session_state["sl_tcarga_cruce"]),
-            disabled=(not st.session_state["sl_aplica_cruce"] or is_empty),
-        )
-        mon_ing_cruce = cr_d.selectbox(
-            "💱 Moneda Ingreso", ["USD", "MXP"], key="sl_mon_ing_cruce",
-            disabled=(not st.session_state["sl_aplica_cruce"] or is_empty),
-        )
+        incluye_cruce = st.checkbox("¿Incluye cruce?", key="sl_incl_cruce",
+                                     value=not es_empty, disabled=es_empty)
 
-        aplica_cruce_actual = st.session_state["sl_aplica_cruce"]
-        tipo_cruce_actual   = st.session_state["sl_tipo_cruce"]
+        if incluye_cruce and not es_empty:
+            crx1, crx2, crx3 = st.columns(3)
+            tipo_cruce   = crx1.selectbox("Tipo de Cruce", ["Propio", "Externo"],
+                                           key="sl_tcruce")
+            tipo_carga_c = crx2.selectbox("Carga del cruce", ["Cargado", "Vacío"],
+                                           key="sl_tcarga_c")
+            mon_ing_cruce = crx3.selectbox("💱 Moneda Ingreso", ["USD", "MXP"],
+                                            key="sl_mon_ing_cruce")
 
-        ingreso_cruce_raw = 0.0
-        mon_costo_cruce   = "USD"
-        costo_cruce_raw   = 0.0
+            ci1, ci2 = st.columns(2)
+            ingreso_cruce_raw = ci1.number_input("💵 Ingreso Cruce", min_value=0.0,
+                                                  step=10.0, key="sl_ing_cruce")
 
-        if aplica_cruce_actual and not is_empty:
-            cr_e, cr_f = st.columns(2)
-            ingreso_cruce_raw = cr_e.number_input(
-                "💵 Ingreso Cruce", min_value=0.0, step=10.0, key="sl_ing_cruce"
-            )
-            if tipo_cruce_actual == "Externo":
-                cr_f_cols = st.columns(2)
-                mon_costo_cruce = cr_f_cols[0].selectbox(
-                    "💱 Moneda Costo Cruce", ["USD", "MXP"], key="sl_mon_costo_cruce"
-                )
-                costo_cruce_raw = cr_f_cols[1].number_input(
-                    "💸 Costo Cruce", min_value=0.0, step=10.0, key="sl_costo_cruce"
-                )
+            if tipo_cruce == "Externo":
+                mon_costo_cruce = ci2.selectbox("💱 Moneda Costo", ["USD", "MXP"],
+                                                 key="sl_mon_costo_cruce")
+                costo_cruce_raw = st.number_input("💸 Costo Cruce Externo", min_value=0.0,
+                                                   step=10.0, key="sl_costo_cruce")
             else:
-                key_cfg   = "Cruce Propio Cargado" if tipo_carga_form == "Cargado" else "Cruce Propio Vacio"
+                mon_costo_cruce = "USD"
+                costo_cruce_raw = 0.0
+                key_cfg  = "Cruce Propio Cargado" if tipo_carga_c == "Cargado" else "Cruce Propio Vacio"
                 costo_cfg = safe(valores.get(key_cfg, 80.0))
                 st.caption(f"ℹ️ Costo cruce propio configurado: **${costo_cfg:,.2f} USD**")
 
-        # ── SECCIÓN 4 — RUTA MX ───────────────────────────────────────────────
+            if mon_ing_cruce == "MXP":
+                st.caption(f"ℹ️ Ingreso cruce en USD: **${ingreso_cruce_raw / tc:,.2f}**")
+        else:
+            tipo_cruce        = "Sin cruce"
+            tipo_carga_c      = "Cargado"
+            mon_ing_cruce     = "USD"
+            ingreso_cruce_raw = 0.0
+            mon_costo_cruce   = "USD"
+            costo_cruce_raw   = 0.0
+
+        # ── 4. RUTA MX (solo D2D) ─────────────────────────────────────────────
         if aplica_mx:
             divider()
-            section_header("🇲🇽", "Ruta México (Externo)")
+            st.markdown("### 🇲🇽 Ruta México (Externo)")
 
             mx_r1, mx_r2 = st.columns(2)
             origen_mx  = mx_r1.text_input("📍 Origen MX",  key="sl_ori_mx",
@@ -419,21 +372,33 @@ def render() -> None:
                                             placeholder="CIUDAD, ESTADO")
 
             mx1, mx2, mx3, mx4 = st.columns(4)
-            mon_ing_mx     = mx1.selectbox("💱 Moneda Ingreso", ["USD", "MXP"], key="sl_mon_ing_mx")
-            ingreso_mx_raw = mx2.number_input("💵 Ingreso MX", min_value=0.0, step=50.0, key="sl_ing_mx")
-            mon_costo_mx   = mx3.selectbox("💱 Moneda Costo",  ["USD", "MXP"], key="sl_mon_costo_mx")
-            costo_mx_raw   = mx4.number_input("💸 Costo MX",   min_value=0.0, step=50.0, key="sl_costo_mx")
+            mon_ing_mx     = mx1.selectbox("💱 Moneda Ingreso", ["USD", "MXP"],
+                                            key="sl_mon_ing_mx")
+            ingreso_mx_raw = mx2.number_input("💵 Ingreso MX", min_value=0.0,
+                                               step=50.0, key="sl_ing_mx")
+            mon_costo_mx   = mx3.selectbox("💱 Moneda Costo",  ["USD", "MXP"],
+                                            key="sl_mon_costo_mx")
+            costo_mx_raw   = mx4.number_input("💸 Costo MX", min_value=0.0,
+                                               step=50.0, key="sl_costo_mx")
+
+            if mon_ing_mx == "MXP" or mon_costo_mx == "MXP":
+                st.caption(
+                    f"ℹ️ Equivalente USD — "
+                    f"Ingreso: **${ingreso_mx_raw / tc if mon_ing_mx == 'MXP' else ingreso_mx_raw:,.2f}**  ·  "
+                    f"Costo: **${costo_mx_raw / tc if mon_costo_mx == 'MXP' else costo_mx_raw:,.2f}**"
+                )
         else:
             origen_mx = destino_mx = ""
             mon_ing_mx = mon_costo_mx = "USD"
             ingreso_mx_raw = costo_mx_raw = 0.0
 
-        # ── SECCIÓN 5 — EXTRAS ────────────────────────────────────────────────
+        # ── 5. EXTRAS / OTROS CONCEPTOS ───────────────────────────────────────
         divider()
-        section_header("➕", "Extras / Otros Conceptos")
+        st.markdown("### ➕ Extras / Otros Conceptos")
+        st.caption("Captura el monto y marca ✓ si se cobra al cliente (suma a ingreso). Sin monto = ignorado.")
 
-        otros_cargos: dict[str, float]  = {}
-        otros_pagados: dict[str, bool]  = {}
+        otros_cargos: dict[str, float] = {}
+        otros_pagados: dict[str, bool] = {}
 
         for i in range(0, len(EXTRAS_USA), 2):
             col_a, col_b = st.columns(2)
@@ -441,96 +406,77 @@ def render() -> None:
                 if idx >= len(EXTRAS_USA):
                     break
                 extra = EXTRAS_USA[idx]
-                key_m = f"sl_ex_m_{idx}"
-                key_p = f"sl_ex_p_{idx}"
                 with col:
                     ex1, ex2 = st.columns([3, 1])
-                    monto   = ex1.number_input(extra, min_value=0.0, step=10.0,
-                                               key=key_m, label_visibility="visible")
-                    pagado  = ex2.checkbox("cobra", key=key_p, value=False,
+                    monto  = ex1.number_input(extra, min_value=0.0, step=10.0,
+                                              key=f"sl_ex_m_{idx}")
+                    cobrado = ex2.checkbox("cobra", key=f"sl_ex_p_{idx}",
+                                           value=True,
                                            help="¿Se cobra al cliente?")
                     if monto > 0:
                         otros_cargos[extra]  = monto
-                        otros_pagados[extra] = pagado
+                        otros_pagados[extra] = cobrado
 
-        # ── SECCIÓN 6 — COSTO INDIRECTO ───────────────────────────────────────
+        # ── 6. COSTO INDIRECTO ────────────────────────────────────────────────
         divider()
-        section_header("📉", "Costo Indirecto")
+        st.markdown("### 📉 Costo Indirecto")
+        ci_col, _ = st.columns([1, 2])
+        modo_ci = ci_col.radio("Método", ["CXM", "Porcentaje"],
+                                horizontal=True, key="sl_modo_ci")
         st.caption(
             f"CXM configurado: **${safe(valores.get('CXM Indirecto', 0.10)):.3f}/mi**  ·  "
-            f"% configurado: **{safe(valores.get('% Costo Indirecto', 0.09))*100:.1f}%**"
+            f"% configurado: **{safe(valores.get('% Costo Indirecto', 0.09)) * 100:.1f}%**"
         )
 
-        # ── BOTÓN CALCULAR ────────────────────────────────────────────────────
+        # ── CALCULAR ──────────────────────────────────────────────────────────
         divider()
         calcular = st.form_submit_button(
             "🧮 Calcular Ruta", type="primary", use_container_width=True
         )
 
-    # ── Botones reactivos FUERA del form ──────────────────────────────────────
-    # Permiten actualizar session_state y recargar el formulario
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-        if st.button("🔄 Aplicar cambios de cruce / tipo", key="sl_btn_cruce_reload",
-                     help="Presiona aquí después de cambiar Tipo de Cruce o si incluye cruce"):
-            st.session_state["sl_aplica_cruce"] = aplica_cruce_form
-            st.session_state["sl_tipo_cruce"]   = tipo_cruce_form
-            st.session_state["sl_tcarga_cruce"] = tipo_carga_form
-            st.rerun()
-
     # ── Lógica post-form ──────────────────────────────────────────────────────
     if calcular:
-        # Sincronizar session_state con lo que está en el form al momento del submit
-        st.session_state["sl_aplica_cruce"] = aplica_cruce_form
-        st.session_state["sl_tipo_cruce"]   = tipo_cruce_form
-        st.session_state["sl_tcarga_cruce"] = tipo_carga_form
-
         errores = []
         ruta_usa = f"{normalizar(origen_usa)} - {normalizar(destino_usa)}"
 
         if not origen_usa.strip() or not destino_usa.strip():
             errores.append("⚠️ Ingresa origen y destino de la ruta USA.")
-        if not is_empty and not cliente.strip():
+        if not es_empty and not cliente.strip():
             errores.append("⚠️ Ingresa el cliente.")
-        if not is_empty and miles_load <= 0 and short_miles <= 0:
+        if not es_empty and miles_load <= 0 and short_miles <= 0:
             errores.append("⚠️ Ingresa al menos Miles Load o Short Miles.")
-        if is_empty and miles_empty <= 0:
+        if es_empty and miles_empty <= 0:
             errores.append("⚠️ Las rutas Empty requieren Miles Empty.")
 
         if errores:
             for e in errores:
                 st.error(e)
         else:
-            # Calcular tarifa americana
-            if is_empty:
+            # Tarifa americana según modalidad
+            if es_empty:
                 flete_usd = fuel_usd = 0.0
             elif modalidad == "Desglosada":
                 flete_raw = safe(cxm_flete_cap) * safe(miles_load)
                 fuel_raw  = safe(cxm_fuel_cap)  * safe(short_miles)
                 flete_usd = a_usd(flete_raw, moneda_flete, tc)
                 fuel_usd  = a_usd(fuel_raw,  moneda_flete, tc)
-            else:
+            else:  # Flat
                 flete_usd = a_usd(safe(flete_flat_cap), moneda_flete, tc)
                 fuel_usd  = 0.0
 
-            # Convertir a USD
+            # Conversión a USD
             ingreso_cruce_u = a_usd(ingreso_cruce_raw, mon_ing_cruce,   tc)
             costo_cruce_u   = a_usd(costo_cruce_raw,   mon_costo_cruce, tc)
             ingreso_mx_u    = a_usd(ingreso_mx_raw,    mon_ing_mx,      tc)
             costo_mx_u      = a_usd(costo_mx_raw,      mon_costo_mx,    tc)
 
-            # Extras: ingreso = todos los que tienen monto
-            #         costo   = solo los marcados como "cobrado al cliente" = False (pagado por empresa)
-            extras_ingreso = sum(v for n, v in otros_cargos.items() if otros_pagados.get(n, False))
-            extras_costo   = sum(v for n, v in otros_cargos.items() if otros_pagados.get(n, False))
-            # Nota: en Lincoln "cobrado al cliente" = sí → suma a ingreso;
-            # si no se cobra al cliente → es costo puro.
-            extras_ingreso = sum(v for n, v in otros_cargos.items() if otros_pagados.get(n, False))
-            extras_costo_puro = sum(v for n, v in otros_cargos.items() if not otros_pagados.get(n, False))
-
-            tipo_cruce_calc = (
-                "Sin cruce" if (not aplica_cruce_form or is_empty) else tipo_cruce_form
-            )
+            # Extras
+            # Cobrado al cliente → suma a ingreso (se pasa sumado en flete_usd)
+            # No cobrado         → costo puro
+            extras_ingreso   = sum(v for n, v in otros_cargos.items()
+                                   if otros_pagados.get(n, True))
+            extras_costo_puro = sum(v for n, v in otros_cargos.items()
+                                    if not otros_pagados.get(n, True))
 
             resultado = calcular_ruta_setlogis(
                 tipo_ruta            = tipo_ruta,
@@ -542,7 +488,7 @@ def render() -> None:
                 short_miles          = short_miles,
                 flete_usa            = flete_usd + extras_ingreso,
                 fuel                 = fuel_usd,
-                tipo_cruce           = tipo_cruce_calc,
+                tipo_cruce           = tipo_cruce,
                 ingreso_cruce        = ingreso_cruce_u,
                 costo_cruce_externo  = costo_cruce_u,
                 ingreso_mx           = ingreso_mx_u,
@@ -566,15 +512,15 @@ def render() -> None:
                 "id_ruta":          id_ruta,
                 "fecha":            str(fecha),
                 "usuario":          nombre_usuario,
-                "origen_mx":        normalizar(origen_mx) if aplica_mx else "",
+                "origen_mx":        normalizar(origen_mx)  if aplica_mx else "",
                 "destino_mx":       normalizar(destino_mx) if aplica_mx else "",
                 "moneda_flete":     moneda_flete,
                 "mon_ing_cruce":    mon_ing_cruce,
                 "mon_costo_cruce":  mon_costo_cruce,
                 "mon_ing_mx":       mon_ing_mx,
                 "mon_costo_mx":     mon_costo_mx,
-                "tipo_carga_cruce": tipo_carga_form if aplica_cruce_form and not is_empty else "",
-                "incluye_cruce":    aplica_cruce_form and not is_empty,
+                "tipo_carga_cruce": tipo_carga_c if incluye_cruce and not es_empty else "",
+                "incluye_cruce":    incluye_cruce and not es_empty,
                 "otros_cargos":     otros_cargos,
                 "otros_pagados":    otros_pagados,
             }
@@ -592,11 +538,11 @@ def render() -> None:
                 d = st.session_state["sl_datos"]
 
                 extras_db = {
-                    f"Extra_{n.replace(' ','_')}": v
+                    f"Extra_{n.replace(' ', '_')}": v
                     for n, v in d.get("otros_cargos", {}).items()
                 }
-                extras_pagados_db = {
-                    f"Extra_{n.replace(' ','_')}_Cobrado": v
+                extras_cobrado_db = {
+                    f"Extra_{n.replace(' ', '_')}_Cobrado": v
                     for n, v in d.get("otros_pagados", {}).items()
                 }
 
@@ -653,7 +599,7 @@ def render() -> None:
                     "Pct_Ut_Neta":          r["Pct_Ut_Neta"],
                     "TC_USD_MXP":           r["TC"],
                     **extras_db,
-                    **extras_pagados_db,
+                    **extras_cobrado_db,
                 }
 
                 fila_limpia = limpiar_fila_json(fila)
