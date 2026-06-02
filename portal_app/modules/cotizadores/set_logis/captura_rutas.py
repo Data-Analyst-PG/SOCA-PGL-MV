@@ -1,10 +1,9 @@
 """
-captura_rutas.py – Set Logis Plus  (final)
-Base: v2 (estructura y flujo original dentro del form).
-Agregados:
-  · Modalidad de cobro americana: Desglosada (CXM Flete × Miles Load + CXM Fuel × Short Miles)
-                                   o Flat (tarifa total directa)
-  · Extras / Otros Conceptos: igual que Lincoln — monto + checkbox "¿Se cobra al cliente?"
+captura_rutas.py – Set Logis Plus
+Base v2 + modalidad + extras + correcciones:
+  · Fuel usa Miles Load (igual que Flete): (ML × CXM_Flete) + (ML × CXM_Fuel)
+  · Cards estándar: Ingreso Total, Costo Directo, Utilidad Bruta, Utilidad Neta
+  · Desglose de ingresos y costos en expanders, no en cards
 """
 
 from __future__ import annotations
@@ -135,95 +134,120 @@ def _panel_datos_generales(valores: dict) -> dict:
 # ─────────────────────────────────────────────
 # RESUMEN DE RESULTADOS
 # ─────────────────────────────────────────────
-def _mostrar_resumen(r: dict) -> None:
+def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float) -> None:
     divider()
     section_header("📊", "Resultado de la Ruta")
 
+    # ── 4 cards estándar ─────────────────────────────────────────────────────
     kpi_row([
-        {"icono": "💵", "label": "Ingreso Global",
-         "valor": f"${r['Ingreso_Global']:,.2f} USD",
-         "sub": "Total ingresos", "color": "#1B2266"},
-        {"icono": "🚛", "label": "Pago Owner",
-         "valor": f"${r['Pago_Owner_Total']:,.2f} USD",
-         "sub": f"${r['PxM_Cargado']:.2f}/mi carg · ${r['PxM_Vacio']:.2f}/mi vacío",
-         "color": "#0369a1"},
-        {"icono": "📈", "label": "Utilidad Bruta",
-         "valor": f"${r['Utilidad_Bruta']:,.2f} USD",
-         "sub": f"{r['Pct_Ut_Bruta']:.1f}% del ingreso",
-         "color": "#16a34a" if r["Utilidad_Bruta"] >= 0 else "#dc2626"},
-        {"icono": "🏆", "label": "Utilidad Neta",
-         "valor": f"${r['Utilidad_Neta']:,.2f} USD",
-         "sub": f"{r['Pct_Ut_Neta']:.1f}% del ingreso",
-         "color": r["Color_Ut_Neta"]},
+        {
+            "icono": "💵",
+            "label": "Ingreso Total",
+            "valor": f"${r['Ingreso_Global']:,.2f} USD",
+            "sub":   "Flete + Cruce + MX + Extras cliente",
+            "color": "#1B2266",
+        },
+        {
+            "icono": "📉",
+            "label": "Costo Directo",
+            "valor": f"${r['Costo_Directo']:,.2f} USD",
+            "sub":   f"{r['Pct_Costo_Directo']:.1f}% del ingreso",
+            "color": r["Color_Directo"],
+        },
+        {
+            "icono": "📈",
+            "label": "Utilidad Bruta",
+            "valor": f"${r['Utilidad_Bruta']:,.2f} USD",
+            "sub":   f"{r['Pct_Ut_Bruta']:.1f}% del ingreso",
+            "color": "#16a34a" if r["Utilidad_Bruta"] >= 0 else "#dc2626",
+        },
+        {
+            "icono": "🏆",
+            "label": "Utilidad Neta",
+            "valor": f"${r['Utilidad_Neta']:,.2f} USD",
+            "sub":   f"{r['Pct_Ut_Neta']:.1f}% del ingreso",
+            "color": r["Color_Ut_Neta"],
+        },
     ])
 
-    with st.expander("📋 Detalle completo del cálculo", expanded=True):
-
-        section_header("💰", "Ingresos")
-        ia, ib, ic, id_ = st.columns(4)
-        ia.metric("Flete USA",    f"${r['Flete_USA']:,.2f}")
-        ib.metric("Fuel",         f"${r['Fuel']:,.2f}")
-        ic.metric("Flete + Fuel", f"${r['Flete_Fuel']:,.2f}")
-        id_.metric("Cruce",       f"${r['Ingreso_Cruce']:,.2f}")
-        if r.get("Extras_Ingreso", 0) > 0:
-            _, _, _, ex_ = st.columns(4)
-            ex_.metric("Extras (cliente)", f"${r['Extras_Ingreso']:,.2f}")
-        if r["Ingreso_MX"] > 0:
-            _, _, _, mx_ = st.columns(4)
-            mx_.metric("Ingreso MX", f"${r['Ingreso_MX']:,.2f}")
-
-        divider()
-        section_header("🛣️", "Millas")
-        ma, mb, mc, md = st.columns(4)
-        ma.metric("Miles Load",   f"{r['Miles_Load']:,.0f}")
-        mb.metric("Short Miles",  f"{r['Short_Miles']:,.0f}")
-        mc.metric("Miles Empty",  f"{r['Miles_Empty']:,.0f}")
-        md.metric("Total Millas", f"{r['Millas_Totales']:,.0f}")
-
-        divider()
-        section_header("📉", "Costos Directos")
-        ca, cb, cc, cd = st.columns(4)
-        ca.metric("Owner Cargado", f"${r['Pago_Owner_Cargado']:,.2f}")
-        cb.metric("Owner Vacío",   f"${r['Pago_Owner_Vacio']:,.2f}")
-        cc.metric("Cruce",         f"${r['Costo_Cruce']:,.2f}")
-        cd.metric("Ruta MX",       f"${r['Costo_MX']:,.2f}")
-        if r.get("Extras_Costo", 0) > 0:
-            _, _, _, exc_ = st.columns(4)
-            exc_.metric("Extras (costo)", f"${r['Extras_Costo']:,.2f}")
-
-        pct_dir_txt = f"{r['Pct_Costo_Directo']:.1f}% del ingreso (límite 85%)"
-        if r["Color_Directo"] == "#16a34a":
-            st.success(f"✅ Costos Directos: {pct_dir_txt}")
+    # ── Expander: Desglose de Ingresos ────────────────────────────────────────
+    with st.expander("💰 Desglose de Ingresos", expanded=False):
+        section_header("🇺🇸", "Parte Americana")
+        if modalidad == "Desglosada":
+            ua1, ua2, ua3 = st.columns(3)
+            ua1.metric("Flete (CXM Flete × ML)", f"${r['Miles_Load'] * cxm_flete:,.2f}")
+            ua2.metric("Fuel  (CXM Fuel  × ML)", f"${r['Miles_Load'] * cxm_fuel:,.2f}")
+            ua3.metric("Total Americana",         f"${r['Flete_USA']:,.2f}")
         else:
-            st.error(f"🔴 Costos Directos: {pct_dir_txt} — EXCEDE EL LÍMITE")
+            st.metric("Tarifa Flat", f"${r['Flete_USA']:,.2f}")
+
+        if r.get("Extras_Ingreso", 0) > 0:
+            st.metric("Extras cobrados al cliente", f"${r.get('Extras_Ingreso', 0):,.2f}")
+
+        if r["Ingreso_Cruce"] > 0:
+            divider()
+            section_header("🛂", "Cruce")
+            st.metric("Ingreso Cruce", f"${r['Ingreso_Cruce']:,.2f}")
+
+        if r["Ingreso_MX"] > 0:
+            divider()
+            section_header("🇲🇽", "Parte Mexicana")
+            st.metric("Ingreso MX", f"${r['Ingreso_MX']:,.2f}")
+
+    # ── Expander: Desglose de Costos ──────────────────────────────────────────
+    with st.expander("📉 Desglose de Costos", expanded=False):
+        section_header("🚛", "Pago Owner")
+        po1, po2, po3 = st.columns(3)
+        po1.metric("Cargado (ML+SM × PxM)",
+                   f"${r['Pago_Owner_Cargado']:,.2f}",
+                   help=f"({r['Miles_Load']:.0f} + {r['Short_Miles']:.0f}) × ${r['PxM_Cargado']:.4f}")
+        po2.metric("Vacío (ME × PxM Vacío)",
+                   f"${r['Pago_Owner_Vacio']:,.2f}",
+                   help=f"{r['Miles_Empty']:.0f} × ${r['PxM_Vacio']:.4f}")
+        po3.metric("Total Owner", f"${r['Pago_Owner_Total']:,.2f}")
+
+        if r["Costo_Cruce"] > 0:
+            divider()
+            section_header("🛂", "Cruce")
+            st.metric("Costo Cruce", f"${r['Costo_Cruce']:,.2f}")
+
+        if r["Costo_MX"] > 0:
+            divider()
+            section_header("🇲🇽", "Parte Mexicana")
+            st.metric("Costo MX", f"${r['Costo_MX']:,.2f}")
+
+        if r.get("Extras_Costo", 0) > 0:
+            divider()
+            section_header("➕", "Extras (costo puro)")
+            st.metric("Extras no cobrados", f"${r['Extras_Costo']:,.2f}")
 
         divider()
         section_header("📉", "Costos Indirectos")
-        ci_a, ci_b = st.columns(2)
-        ci_a.metric("Costo Indirecto", f"${r['Costo_Indirecto']:,.2f}")
-        ci_b.metric("CXM aplicado",    f"${r['CXM_Indirecto']:.3f}/mi")
+        ci1, ci2 = st.columns(2)
+        ci1.metric("Costo Indirecto", f"${r['Costo_Indirecto']:,.2f}")
+        ci2.metric("CXM aplicado",    f"${r['CXM_Indirecto']:.4f}/mi")
 
-        pct_ind_txt = f"{r['Pct_Costo_Indirecto']:.1f}% del ingreso (límite 9%)"
-        if r["Color_Indirecto"] == "#16a34a":
-            st.success(f"✅ Costos Indirectos: {pct_ind_txt}")
-        else:
-            st.error(f"🔴 Costos Indirectos: {pct_ind_txt} — EXCEDE EL LÍMITE")
+    # ── Semáforos ─────────────────────────────────────────────────────────────
+    divider()
+    s1, s2, s3 = st.columns(3)
 
-        divider()
-        section_header("🏁", "Resumen Final")
-        rf_a, rf_b, rf_c = st.columns(3)
-        rf_a.metric("Costo Total",    f"${r['Costo_Total']:,.2f}")
-        rf_b.metric("Utilidad Bruta", f"${r['Utilidad_Bruta']:,.2f}",
-                    delta=f"{r['Pct_Ut_Bruta']:.1f}%")
-        rf_c.metric("Utilidad Neta",  f"${r['Utilidad_Neta']:,.2f}",
-                    delta=f"{r['Pct_Ut_Neta']:.1f}%",
-                    delta_color="normal" if r["Utilidad_Neta"] >= 0 else "inverse")
+    pct_dir = r["Pct_Costo_Directo"]
+    if r["Color_Directo"] == "#16a34a":
+        s1.success(f"✅ C. Directos: {pct_dir:.1f}% (≤85%)")
+    else:
+        s1.error(f"🔴 C. Directos: {pct_dir:.1f}% — EXCEDE 85%")
 
-        pct_n_txt = f"{r['Pct_Ut_Neta']:.1f}% del ingreso (mínimo 6%)"
-        if r["Color_Ut_Neta"] == "#16a34a":
-            st.success(f"✅ Utilidad Neta: {pct_n_txt}")
-        else:
-            st.error(f"🔴 Utilidad Neta: {pct_n_txt} — POR DEBAJO DEL MÍNIMO")
+    pct_ind = r["Pct_Costo_Indirecto"]
+    if r["Color_Indirecto"] == "#16a34a":
+        s2.success(f"✅ C. Indirectos: {pct_ind:.1f}% (≤9%)")
+    else:
+        s2.error(f"🔴 C. Indirectos: {pct_ind:.1f}% — EXCEDE 9%")
+
+    pct_n = r["Pct_Ut_Neta"]
+    if r["Color_Ut_Neta"] == "#16a34a":
+        s3.success(f"✅ Ut. Neta: {pct_n:.1f}% (≥6%)")
+    else:
+        s3.error(f"🔴 Ut. Neta: {pct_n:.1f}% — POR DEBAJO 6%")
 
 
 # ─────────────────────────────────────────────
@@ -302,12 +326,13 @@ def render() -> None:
                                               key="sl_cxm_fuel", disabled=es_empty)
             flete_flat_cap = 0.0
             if not es_empty:
-                preview = (safe(cxm_flete_cap) * safe(miles_load) +
-                           safe(cxm_fuel_cap)  * safe(short_miles))
+                # ✅ Ambos usan Miles Load
+                preview = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
                 mod2.caption(
-                    f"Vista previa: CXM Flete ${safe(cxm_flete_cap):.4f} × {miles_load:.0f} mi"
-                    f" + CXM Fuel ${safe(cxm_fuel_cap):.4f} × {short_miles:.0f} mi"
-                    f" = **${preview:,.2f}**"
+                    f"Vista previa: (CXM Flete ${safe(cxm_flete_cap):.4f}"
+                    f" + CXM Fuel ${safe(cxm_fuel_cap):.4f})"
+                    f" × {miles_load:.0f} ML"
+                    f" = **${preview:,.2f} USD**"
                 )
         else:
             tf1, tf2 = mod2.columns(2)
@@ -318,7 +343,7 @@ def render() -> None:
                                                disabled=es_empty)
             cxm_flete_cap = cxm_fuel_cap = 0.0
 
-        # ── 3. CRUCE FRONTERIZO ───────────────────────────────────────────────
+        # ── 3. CRUCE ──────────────────────────────────────────────────────────
         divider()
         st.markdown("### 🛂 Cruce Fronterizo")
 
@@ -337,7 +362,6 @@ def render() -> None:
             ci1, ci2 = st.columns(2)
             ingreso_cruce_raw = ci1.number_input("💵 Ingreso Cruce", min_value=0.0,
                                                   step=10.0, key="sl_ing_cruce")
-
             if tipo_cruce == "Externo":
                 mon_costo_cruce = ci2.selectbox("💱 Moneda Costo", ["USD", "MXP"],
                                                  key="sl_mon_costo_cruce")
@@ -360,7 +384,7 @@ def render() -> None:
             mon_costo_cruce   = "USD"
             costo_cruce_raw   = 0.0
 
-        # ── 4. RUTA MX (solo D2D) ─────────────────────────────────────────────
+        # ── 4. RUTA MX ────────────────────────────────────────────────────────
         if aplica_mx:
             divider()
             st.markdown("### 🇲🇽 Ruta México (Externo)")
@@ -392,7 +416,7 @@ def render() -> None:
             mon_ing_mx = mon_costo_mx = "USD"
             ingreso_mx_raw = costo_mx_raw = 0.0
 
-        # ── 5. EXTRAS / OTROS CONCEPTOS ───────────────────────────────────────
+        # ── 5. EXTRAS ─────────────────────────────────────────────────────────
         divider()
         st.markdown("### ➕ Extras / Otros Conceptos")
         st.caption("Captura el monto y marca ✓ si se cobra al cliente (suma a ingreso). Sin monto = ignorado.")
@@ -408,10 +432,10 @@ def render() -> None:
                 extra = EXTRAS_USA[idx]
                 with col:
                     ex1, ex2 = st.columns([3, 1])
-                    monto  = ex1.number_input(extra, min_value=0.0, step=10.0,
-                                              key=f"sl_ex_m_{idx}")
+                    monto   = ex1.number_input(extra, min_value=0.0, step=10.0,
+                                               key=f"sl_ex_m_{idx}")
                     cobrado = ex2.checkbox("cobra", key=f"sl_ex_p_{idx}",
-                                           value=True,
+                                           value=False,
                                            help="¿Se cobra al cliente?")
                     if monto > 0:
                         otros_cargos[extra]  = monto
@@ -428,7 +452,6 @@ def render() -> None:
             f"% configurado: **{safe(valores.get('% Costo Indirecto', 0.09)) * 100:.1f}%**"
         )
 
-        # ── CALCULAR ──────────────────────────────────────────────────────────
         divider()
         calcular = st.form_submit_button(
             "🧮 Calcular Ruta", type="primary", use_container_width=True
@@ -452,15 +475,15 @@ def render() -> None:
             for e in errores:
                 st.error(e)
         else:
-            # Tarifa americana según modalidad
+            # ── Tarifa americana — ambos CXM usan Miles Load ───────────────────
             if es_empty:
                 flete_usd = fuel_usd = 0.0
             elif modalidad == "Desglosada":
-                flete_raw = safe(cxm_flete_cap) * safe(miles_load)
-                fuel_raw  = safe(cxm_fuel_cap)  * safe(short_miles)
+                # (CXM_Flete + CXM_Fuel) × Miles_Load
+                flete_raw = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
                 flete_usd = a_usd(flete_raw, moneda_flete, tc)
-                fuel_usd  = a_usd(fuel_raw,  moneda_flete, tc)
-            else:  # Flat
+                fuel_usd  = 0.0   # ya está incluido en flete_usd
+            else:
                 flete_usd = a_usd(safe(flete_flat_cap), moneda_flete, tc)
                 fuel_usd  = 0.0
 
@@ -471,12 +494,10 @@ def render() -> None:
             costo_mx_u      = a_usd(costo_mx_raw,      mon_costo_mx,    tc)
 
             # Extras
-            # Cobrado al cliente → suma a ingreso (se pasa sumado en flete_usd)
-            # No cobrado         → costo puro
-            extras_ingreso   = sum(v for n, v in otros_cargos.items()
-                                   if otros_pagados.get(n, True))
+            extras_ingreso    = sum(v for n, v in otros_cargos.items()
+                                    if otros_pagados.get(n, False))
             extras_costo_puro = sum(v for n, v in otros_cargos.items()
-                                    if not otros_pagados.get(n, True))
+                                    if not otros_pagados.get(n, False))
 
             resultado = calcular_ruta_setlogis(
                 tipo_ruta            = tipo_ruta,
@@ -528,7 +549,13 @@ def render() -> None:
 
     # ── Mostrar resultado ─────────────────────────────────────────────────────
     if st.session_state.get("sl_resultado"):
-        _mostrar_resumen(st.session_state["sl_resultado"])
+        r = st.session_state["sl_resultado"]
+        _mostrar_resumen(
+            r,
+            modalidad   = r.get("Modalidad", "Flat"),
+            cxm_flete   = r.get("CXM_Flete_Cap", 0.0),
+            cxm_fuel    = r.get("CXM_Fuel_Cap",  0.0),
+        )
 
         divider()
         if st.button("💾 Guardar en Base de Datos", key="sl_guardar",
