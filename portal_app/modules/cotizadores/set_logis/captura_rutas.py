@@ -138,7 +138,11 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
     divider()
     section_header("📊", "Resultado de la Ruta")
 
-    # ── 4 cards estándar ─────────────────────────────────────────────────────
+    # ── Utilidad Bruta: ≥15% verde, <15% rojo ────────────────────────────────
+    pct_ut_b   = r["Pct_Ut_Bruta"]
+    color_ut_b = "#16a34a" if pct_ut_b >= 15.0 else "#dc2626"
+
+    # ── 5 cards ───────────────────────────────────────────────────────────────
     kpi_row([
         {
             "icono": "💵",
@@ -158,8 +162,15 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
             "icono": "📈",
             "label": "Utilidad Bruta",
             "valor": f"${r['Utilidad_Bruta']:,.2f} USD",
-            "sub":   f"{r['Pct_Ut_Bruta']:.1f}% del ingreso",
-            "color": "#16a34a" if r["Utilidad_Bruta"] >= 0 else "#dc2626",
+            "sub":   f"{pct_ut_b:.1f}% del ingreso",
+            "color": color_ut_b,
+        },
+        {
+            "icono": "🔁",
+            "label": "Costo Indirecto",
+            "valor": f"${r['Costo_Indirecto']:,.2f} USD",
+            "sub":   f"{r['Pct_Costo_Indirecto']:.1f}% del ingreso",
+            "color": r["Color_Indirecto"],
         },
         {
             "icono": "🏆",
@@ -170,66 +181,9 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
         },
     ])
 
-    # ── Expander: Desglose de Ingresos ────────────────────────────────────────
-    with st.expander("💰 Desglose de Ingresos", expanded=False):
-        section_header("🇺🇸", "Parte Americana")
-        if modalidad == "Desglosada":
-            ua1, ua2, ua3 = st.columns(3)
-            ua1.metric("Flete (CXM Flete × ML)", f"${r['Miles_Load'] * cxm_flete:,.2f}")
-            ua2.metric("Fuel  (CXM Fuel  × ML)", f"${r['Miles_Load'] * cxm_fuel:,.2f}")
-            ua3.metric("Total Americana",         f"${r['Flete_USA']:,.2f}")
-        else:
-            st.metric("Tarifa Flat", f"${r['Flete_USA']:,.2f}")
-
-        if r.get("Extras_Ingreso", 0) > 0:
-            st.metric("Extras cobrados al cliente", f"${r.get('Extras_Ingreso', 0):,.2f}")
-
-        if r["Ingreso_Cruce"] > 0:
-            divider()
-            section_header("🛂", "Cruce")
-            st.metric("Ingreso Cruce", f"${r['Ingreso_Cruce']:,.2f}")
-
-        if r["Ingreso_MX"] > 0:
-            divider()
-            section_header("🇲🇽", "Parte Mexicana")
-            st.metric("Ingreso MX", f"${r['Ingreso_MX']:,.2f}")
-
-    # ── Expander: Desglose de Costos ──────────────────────────────────────────
-    with st.expander("📉 Desglose de Costos", expanded=False):
-        section_header("🚛", "Pago Owner")
-        po1, po2, po3 = st.columns(3)
-        po1.metric("Cargado (ML+SM × PxM)",
-                   f"${r['Pago_Owner_Cargado']:,.2f}",
-                   help=f"({r['Miles_Load']:.0f} + {r['Short_Miles']:.0f}) × ${r['PxM_Cargado']:.4f}")
-        po2.metric("Vacío (ME × PxM Vacío)",
-                   f"${r['Pago_Owner_Vacio']:,.2f}",
-                   help=f"{r['Miles_Empty']:.0f} × ${r['PxM_Vacio']:.4f}")
-        po3.metric("Total Owner", f"${r['Pago_Owner_Total']:,.2f}")
-
-        if r["Costo_Cruce"] > 0:
-            divider()
-            section_header("🛂", "Cruce")
-            st.metric("Costo Cruce", f"${r['Costo_Cruce']:,.2f}")
-
-        if r["Costo_MX"] > 0:
-            divider()
-            section_header("🇲🇽", "Parte Mexicana")
-            st.metric("Costo MX", f"${r['Costo_MX']:,.2f}")
-
-        if r.get("Extras_Costo", 0) > 0:
-            divider()
-            section_header("➕", "Extras (costo puro)")
-            st.metric("Extras no cobrados", f"${r['Extras_Costo']:,.2f}")
-
-        divider()
-        section_header("📉", "Costos Indirectos")
-        ci1, ci2 = st.columns(2)
-        ci1.metric("Costo Indirecto", f"${r['Costo_Indirecto']:,.2f}")
-        ci2.metric("CXM aplicado",    f"${r['CXM_Indirecto']:.4f}/mi")
-
     # ── Semáforos ─────────────────────────────────────────────────────────────
     divider()
-    s1, s2, s3 = st.columns(3)
+    s1, s2, s3, s4 = st.columns(4)
 
     pct_dir = r["Pct_Costo_Directo"]
     if r["Color_Directo"] == "#16a34a":
@@ -237,17 +191,136 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
     else:
         s1.error(f"🔴 C. Directos: {pct_dir:.1f}% — EXCEDE 85%")
 
+    if color_ut_b == "#16a34a":
+        s2.success(f"✅ Ut. Bruta: {pct_ut_b:.1f}% (≥15%)")
+    else:
+        s2.error(f"🔴 Ut. Bruta: {pct_ut_b:.1f}% — POR DEBAJO 15%")
+
     pct_ind = r["Pct_Costo_Indirecto"]
     if r["Color_Indirecto"] == "#16a34a":
-        s2.success(f"✅ C. Indirectos: {pct_ind:.1f}% (≤9%)")
+        s3.success(f"✅ C. Indirectos: {pct_ind:.1f}% (≤9%)")
     else:
-        s2.error(f"🔴 C. Indirectos: {pct_ind:.1f}% — EXCEDE 9%")
+        s3.error(f"🔴 C. Indirectos: {pct_ind:.1f}% — EXCEDE 9%")
 
     pct_n = r["Pct_Ut_Neta"]
     if r["Color_Ut_Neta"] == "#16a34a":
-        s3.success(f"✅ Ut. Neta: {pct_n:.1f}% (≥6%)")
+        s4.success(f"✅ Ut. Neta: {pct_n:.1f}% (≥6%)")
     else:
-        s3.error(f"🔴 Ut. Neta: {pct_n:.1f}% — POR DEBAJO 6%")
+        s4.error(f"🔴 Ut. Neta: {pct_n:.1f}% — POR DEBAJO 6%")
+
+    # ── Desglose por tramo ────────────────────────────────────────────────────
+    # Cálculos por tramo
+    # Americana
+    ing_ame   = r["Flete_USA"] + r.get("Extras_Ingreso", 0.0)
+    costo_ame = r["Pago_Owner_Total"] + r.get("Extras_Costo_Total", r.get("Extras_Costo", 0.0)) + r["Costo_Indirecto"]
+    ut_ame    = ing_ame - costo_ame
+
+    # Cruce
+    ing_cruce   = r["Ingreso_Cruce"]
+    costo_cruce = r["Costo_Cruce"]
+    ut_cruce    = ing_cruce - costo_cruce
+
+    # MX
+    ing_mx   = r["Ingreso_MX"]
+    costo_mx = r["Costo_MX"]
+    ut_mx    = ing_mx - costo_mx
+
+    # Tabs — siempre Americana; Cruce y MX solo si tienen datos
+    tab_labels = ["🇺🇸 Ruta Americana"]
+    if ing_cruce > 0 or costo_cruce > 0:
+        tab_labels.append("🛂 Cruce")
+    if ing_mx > 0 or costo_mx > 0:
+        tab_labels.append("🇲🇽 Ruta Mexicana")
+
+    divider()
+    with st.expander("🔍 Ver Desglose por Tramo", expanded=False):
+        tabs = st.tabs(tab_labels)
+
+        # ── Tab Americana ─────────────────────────────────────────────────────
+        with tabs[0]:
+            col_i, col_c = st.columns(2)
+
+            with col_i:
+                st.markdown("**📥 Ingresos**")
+                if modalidad == "Desglosada":
+                    ing_flete = r["Miles_Load"] * cxm_flete
+                    ing_fuel  = r["Miles_Load"] * cxm_fuel
+                    st.write(f"Flete: **${ing_flete:,.2f}**")
+                    st.write(f"Fuel:  **${ing_fuel:,.2f}**")
+                else:
+                    st.write(f"Tarifa Flat: **${r['Flete_USA']:,.2f}**")
+
+                if r.get("Extras_Ingreso", 0) > 0:
+                    st.write(f"Extras cobrados: **${r['Extras_Ingreso']:,.2f}**")
+
+                st.markdown(f"**Total: ${ing_ame:,.2f}**")
+
+            with col_c:
+                st.markdown("**📤 Costos Directos**")
+                st.write(
+                    f"Owner Cargado ({r['Miles_Load']:.0f}+{r['Short_Miles']:.0f} mi × "
+                    f"${r['PxM_Cargado']:.4f}): **${r['Pago_Owner_Cargado']:,.2f}**"
+                )
+                st.write(
+                    f"Owner Vacío ({r['Miles_Empty']:.0f} mi × "
+                    f"${r['PxM_Vacio']:.4f}): **${r['Pago_Owner_Vacio']:,.2f}**"
+                )
+                if r.get("Extras_Costo", 0) > 0:
+                    st.write(f"Extras (costo): **${r['Extras_Costo']:,.2f}**")
+                st.write(f"Indirectos: **${r['Costo_Indirecto']:,.2f}**")
+                st.markdown(f"**Total: ${costo_ame:,.2f}**")
+
+            divider()
+            color_ut = "#16a34a" if ut_ame >= 0 else "#dc2626"
+            pct_ut   = (ut_ame / ing_ame * 100) if ing_ame > 0 else 0.0
+            st.markdown(
+                f"**Utilidad Bruta Americana: "
+                f"<span style='color:{color_ut}'>${ut_ame:,.2f} ({pct_ut:.1f}%)</span>**",
+                unsafe_allow_html=True,
+            )
+
+        # ── Tab Cruce ─────────────────────────────────────────────────────────
+        if "🛂 Cruce" in tab_labels:
+            with tabs[tab_labels.index("🛂 Cruce")]:
+                col_i, col_c = st.columns(2)
+                with col_i:
+                    st.markdown("**📥 Ingresos**")
+                    st.write(f"Ingreso Cruce: **${ing_cruce:,.2f}**")
+                    st.markdown(f"**Total: ${ing_cruce:,.2f}**")
+                with col_c:
+                    st.markdown("**📤 Costos Directos**")
+                    tipo_cruce_label = r.get("Tipo_Cruce", "")
+                    st.write(f"Costo Cruce ({tipo_cruce_label}): **${costo_cruce:,.2f}**")
+                    st.markdown(f"**Total: ${costo_cruce:,.2f}**")
+                divider()
+                color_ut = "#16a34a" if ut_cruce >= 0 else "#dc2626"
+                pct_ut   = (ut_cruce / ing_cruce * 100) if ing_cruce > 0 else 0.0
+                st.markdown(
+                    f"**Utilidad Bruta Cruce: "
+                    f"<span style='color:{color_ut}'>${ut_cruce:,.2f} ({pct_ut:.1f}%)</span>**",
+                    unsafe_allow_html=True,
+                )
+
+        # ── Tab MX ────────────────────────────────────────────────────────────
+        if "🇲🇽 Ruta Mexicana" in tab_labels:
+            with tabs[tab_labels.index("🇲🇽 Ruta Mexicana")]:
+                col_i, col_c = st.columns(2)
+                with col_i:
+                    st.markdown("**📥 Ingresos**")
+                    st.write(f"Ingreso MX: **${ing_mx:,.2f}**")
+                    st.markdown(f"**Total: ${ing_mx:,.2f}**")
+                with col_c:
+                    st.markdown("**📤 Costos Directos**")
+                    st.write(f"Costo MX: **${costo_mx:,.2f}**")
+                    st.markdown(f"**Total: ${costo_mx:,.2f}**")
+                divider()
+                color_ut = "#16a34a" if ut_mx >= 0 else "#dc2626"
+                pct_ut   = (ut_mx / ing_mx * 100) if ing_mx > 0 else 0.0
+                st.markdown(
+                    f"**Utilidad Bruta MX: "
+                    f"<span style='color:{color_ut}'>${ut_mx:,.2f} ({pct_ut:.1f}%)</span>**",
+                    unsafe_allow_html=True,
+                )
 
 
 # ─────────────────────────────────────────────
