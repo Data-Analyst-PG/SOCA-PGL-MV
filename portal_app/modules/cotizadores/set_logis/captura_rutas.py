@@ -494,6 +494,8 @@ def render() -> None:
             costo_mx_u      = a_usd(costo_mx_raw,      mon_costo_mx,    tc)
 
             # Extras
+            # Cobrado al cliente → ingreso Y costo
+            # No cobrado         → solo costo
             extras_ingreso    = sum(v for n, v in otros_cargos.items()
                                     if otros_pagados.get(n, False))
             extras_costo_puro = sum(v for n, v in otros_cargos.items()
@@ -507,13 +509,15 @@ def render() -> None:
                 miles_load           = miles_load,
                 miles_empty          = miles_empty,
                 short_miles          = short_miles,
-                flete_usa            = flete_usd + extras_ingreso,
+                flete_usa            = flete_usd,
                 fuel                 = fuel_usd,
                 tipo_cruce           = tipo_cruce,
+                tipo_carga_cruce     = tipo_carga_c,
                 ingreso_cruce        = ingreso_cruce_u,
                 costo_cruce_externo  = costo_cruce_u,
                 ingreso_mx           = ingreso_mx_u,
                 costo_mx             = costo_mx_u,
+                extras_ingreso       = extras_ingreso,
                 extras_costo         = extras_costo_puro,
                 modo_costo_indirecto = modo_ci,
                 valores              = valores,
@@ -523,8 +527,6 @@ def render() -> None:
             resultado["CXM_Flete_Cap"]  = safe(cxm_flete_cap) if modalidad == "Desglosada" else 0.0
             resultado["CXM_Fuel_Cap"]   = safe(cxm_fuel_cap)  if modalidad == "Desglosada" else 0.0
             resultado["Flete_Flat"]     = flete_usd            if modalidad == "Flat"        else 0.0
-            resultado["Extras_Ingreso"] = extras_ingreso
-            resultado["Extras_Costo"]   = extras_costo_puro
 
             id_ruta = _generar_id(supabase)
 
