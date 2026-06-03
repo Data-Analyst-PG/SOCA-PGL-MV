@@ -195,12 +195,14 @@ def calcular_ruta_setlogis(
     # También incluye extras cobrados al cliente si los hay.
     flete_usa: float,
     fuel: float,        # Fuel por separado para desglose en resultados
-    tipo_cruce: str,    # "Sin cruce" | "Propio" | "Externo"
+    tipo_cruce: str,         # "Sin cruce" | "Propio" | "Externo"
+    tipo_carga_cruce: str,   # "Cargado" | "Vacío" — solo aplica si tipo_cruce == "Propio"
     ingreso_cruce: float,
     costo_cruce_externo: float,
     ingreso_mx: float,
     costo_mx: float,
-    extras_costo: float,    # Extras NO cobrados al cliente
+    extras_ingreso: float,   # Extras cobrados al cliente → van a ingreso Y a costo
+    extras_costo: float,     # Extras NO cobrados al cliente → solo van a costo
     modo_costo_indirecto: str,
     valores: dict,
 ) -> dict:
@@ -236,13 +238,16 @@ def calcular_ruta_setlogis(
 
     ingreso_cruce  = safe(ingreso_cruce) if not is_empty else 0.0
     ingreso_mx     = safe(ingreso_mx) if (tiene_mx(tipo_ruta) and not is_empty) else 0.0
-    ingreso_global = ingreso_usa + ingreso_cruce + ingreso_mx
+    # Extras cobrados al cliente suman al ingreso
+    extras_ingreso = safe(extras_ingreso) if not is_empty else 0.0
+    ingreso_global = ingreso_usa + ingreso_cruce + ingreso_mx + extras_ingreso
 
     # ── COSTO CRUCE ──────────────────────────────────────────────────────────
     if is_empty or tipo_cruce == "Sin cruce":
         costo_cruce = 0.0
     elif tipo_cruce == "Propio":
-        costo_cruce = safe(v.get("Cruce Propio Cargado", 80.0))
+        key_cruce   = "Cruce Propio Cargado" if tipo_carga_cruce == "Cargado" else "Cruce Propio Vacio"
+        costo_cruce = safe(v.get(key_cruce, 80.0))
     else:
         costo_cruce = safe(costo_cruce_externo)
 
@@ -256,8 +261,9 @@ def calcular_ruta_setlogis(
     pago_owner_total   = pago_owner_cargado + pago_owner_vacio
 
     # ── COSTOS DIRECTOS ───────────────────────────────────────────────────────
-    extras_costo = safe(extras_costo)
-    costo_directo_total = pago_owner_total + costo_cruce + costo_mx_calc + extras_costo
+    # Todos los extras van a costo, sin importar si se cobran al cliente o no
+    extras_costo_total = safe(extras_ingreso) + safe(extras_costo)
+    costo_directo_total = pago_owner_total + costo_cruce + costo_mx_calc + extras_costo_total
 
     # ── COSTOS INDIRECTOS ─────────────────────────────────────────────────────
     if modo_costo_indirecto == "CXM":
@@ -306,6 +312,7 @@ def calcular_ruta_setlogis(
         "Flete_Fuel":          flete_fuel,
         "Ingreso_Cruce":       ingreso_cruce,
         "Ingreso_MX":          ingreso_mx,
+        "Extras_Ingreso":      extras_ingreso,
         "Ingreso_Global":      ingreso_global,
         "Tipo_Cruce":          tipo_cruce,
         "Costo_Cruce":         costo_cruce,
@@ -313,7 +320,9 @@ def calcular_ruta_setlogis(
         "Pago_Owner_Cargado":  pago_owner_cargado,
         "Pago_Owner_Vacio":    pago_owner_vacio,
         "Pago_Owner_Total":    pago_owner_total,
+        "Extras_Ingreso":      extras_ingreso,
         "Extras_Costo":        extras_costo,
+        "Extras_Costo_Total":  extras_costo_total,
         "Costo_Directo":       costo_directo_total,
         "Costo_Indirecto":     costo_indirecto,
         "Costo_Total":         costo_total,
