@@ -1,715 +1,723 @@
-"""
-captura_rutas.py – Set Logis Plus
-Base v2 + modalidad + extras + correcciones:
-  · Fuel usa Miles Load (igual que Flete): (ML × CXM_Flete) + (ML × CXM_Fuel)
-  · Cards estándar: Ingreso Total, Costo Directo, Utilidad Bruta, Utilidad Neta
-  · Desglose de ingresos y costos en expanders, no en cards
-"""
-
-from __future__ import annotations
-
-import re
-from datetime import datetime
-
+# portal_app/ui/components.py
+# ─────────────────────────────────────────────────────────────────────────────
+# Sistema de componentes UI de Palos Garza Logistics
+#
+# USO RÁPIDO — importa lo que necesites en cualquier módulo:
+#   from ui.components import page_banner, kpi_row, module_card, alert, section_header
+#
+# COMPONENTES DISPONIBLES:
+#   page_banner(icono, titulo, subtitulo)
+#   section_header(icono, titulo, subtitulo)
+#   kpi_row(items)              → items = lista de dicts
+#   module_card(...)            → tarjeta con badges de conteo
+#   alert(tipo, mensaje)        → info | warn | error | success
+#   status_badge(texto, tipo)   → devuelve HTML de un badge
+#   divider()                   → separador visual
+#   welcome_banner(nombre, rol, area)
+# ─────────────────────────────────────────────────────────────────────────────
 import streamlit as st
-
-from services.supabase_client import get_supabase_client, current_user
-from ui.components import section_header, alert, divider, kpi_row
-from ._shared import (
-    TABLE_RUTAS,
-    TIPOS_RUTA,
-    EXTRAS_USA,
-    DEFAULTS,
-    cargar_datos_generales,
-    guardar_datos_generales,
-    limpiar_fila_json,
-    safe,
-    calcular_ruta_setlogis,
-    tiene_mx,
-    direccion_label,
-)
+from ui.theme import PGL_NAVY, PGL_RED, PGL_NAVY_LT, PGL_MUTED, PGL_BORDER, PGL_WHITE
 
 
-# ─────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────
-def normalizar(texto: str) -> str:
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = re.sub(r"\s+", " ", texto)
-    texto = re.sub(r"\s*,\s*", ", ", texto)
-    return texto
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. BANNER DE PÁGINA
+# ─────────────────────────────────────────────────────────────────────────────
+def page_banner(icono: str, titulo: str, subtitulo: str = ""):
+    sub_html = (
+        f'<div style="font-size:0.82rem;color:rgba(255,255,255,0.65);margin-top:0.3rem;">'
+        f'{subtitulo}</div>'
+    ) if subtitulo else ""
+    html = (
+        f'<div style="background:linear-gradient(135deg,{PGL_NAVY} 0%,{PGL_NAVY_LT} 100%);'
+        f'border-radius:14px;padding:1.3rem 1.8rem;margin-bottom:1.5rem;'
+        f'border-left:5px solid {PGL_RED};display:flex;align-items:center;'
+        f'gap:1rem;position:relative;overflow:hidden;">'
+        f'<div style="position:absolute;right:-10px;top:-10px;font-size:6rem;'
+        f'opacity:0.06;line-height:1;pointer-events:none;">{icono}</div>'
+        f'<span style="font-size:2rem;flex-shrink:0;">{icono}</span>'
+        f'<div>'
+        f'<div style="font-size:1.25rem;font-weight:700;color:white;line-height:1.2;">{titulo}</div>'
+        f'{sub_html}'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-def a_usd(monto: float, moneda: str, tc: float) -> float:
-    if moneda == "MXP":
-        return monto / tc if tc > 0 else 0.0
-    return monto
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. ENCABEZADO DE SECCIÓN
+# ─────────────────────────────────────────────────────────────────────────────
+def section_header(icono: str, titulo: str, subtitulo: str = ""):
+    sub_html = (
+        f'<div style="font-size:0.75rem;color:{PGL_MUTED};margin-top:1px;">'
+        f'{subtitulo}</div>'
+    ) if subtitulo else ""
+    html = (
+        f'<div style="display:flex;align-items:center;gap:0.65rem;padding:0.7rem 1rem;'
+        f'background:rgba(27,34,102,0.06);border-radius:10px;'
+        f'border-left:4px solid {PGL_RED};margin-bottom:1rem;">'
+        f'<span style="font-size:1.1rem;flex-shrink:0;">{icono}</span>'
+        f'<div>'
+        f'<div style="font-size:0.95rem;font-weight:700;color:{PGL_NAVY};line-height:1.2;">{titulo}</div>'
+        f'{sub_html}'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-def _get_profile_name(user_id: str) -> str | None:
-    sb = get_supabase_client()
-    if sb is None or not user_id:
-        return None
-    try:
-        res = sb.table("profiles").select("full_name").eq("id", user_id).maybe_single().execute()
-        return (res.data or {}).get("full_name")
-    except Exception:
-        return None
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. FILA DE KPIs
+# ─────────────────────────────────────────────────────────────────────────────
+def kpi_row(items: list):
+    cards_html = ""
+    for item in items:
+        icono = item.get("icono", "")
+        label = item.get("label", "")
+        valor = item.get("valor", 0)
+        sub   = item.get("sub", "")
+        color = item.get("color", PGL_NAVY)
+        cards_html += (
+            f'<div style="background:{PGL_WHITE};border-radius:12px;padding:1rem 1.1rem;'
+            f'border:1px solid {PGL_BORDER};border-left:4px solid {color};'
+            f'box-shadow:0 2px 8px rgba(27,34,102,0.06);">'
+            f'<div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;'
+            f'letter-spacing:0.5px;color:{PGL_MUTED};margin-bottom:4px;">'
+            f'{icono} {label}</div>'
+            f'<div style="font-size:1.9rem;font-weight:800;color:{color};line-height:1.1;">'
+            f'{valor}</div>'
+            f'<div style="font-size:0.72rem;color:{PGL_MUTED};margin-top:3px;">{sub}</div>'
+            f'</div>'
+        )
+    html = (
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));'
+        f'gap:10px;margin-bottom:1.5rem;">'
+        f'{cards_html}'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-def _generar_id(supabase) -> str:
-    try:
-        resp = supabase.table(TABLE_RUTAS).select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
-        if resp.data:
-            ultimo = str(resp.data[0].get("ID_Ruta", "SL000000"))
-            num = int(re.sub(r"\D", "", ultimo)[-6:]) + 1
-        else:
-            num = 1
-        return f"SL{num:06d}"
-    except Exception:
-        import time
-        return f"SL{int(time.time()) % 1000000:06d}"
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. TARJETA DE MÓDULO
+# ─────────────────────────────────────────────────────────────────────────────
+_BADGE_COLORS = {
+    "blue":   ("#DBEAFE", "#1E40AF"),
+    "yellow": ("#FEF9C3", "#92400E"),
+    "green":  ("#D1FAE5", "#065F46"),
+    "red":    ("#FEE2E2", "#7F1D1D"),
+    "gray":   ("#F3F4F6", "#374151"),
+    "purple": ("#EDE9FE", "#4C1D95"),
+    "orange": ("#FFF7ED", "#9A3412"),
+}
+
+def module_card(icono: str, titulo: str, descripcion: str,
+                badges: list = None, color_acento: str = "#1B2266"):
+    badges = badges or []
+    badges_html = ""
+    for b in badges:
+        bg, fg = _BADGE_COLORS.get(b.get("color", "gray"), _BADGE_COLORS["gray"])
+        badges_html += (
+            f'<span style="display:inline-block;background:{bg};color:{fg};'
+            f'font-size:0.72rem;font-weight:700;padding:3px 10px;'
+            f'border-radius:20px;margin-right:5px;margin-top:4px;">'
+            f'{b.get("texto", "")}</span>'
+        )
+    html = (
+        f'<div style="background:{PGL_WHITE};border-radius:14px;padding:1.3rem 1.5rem;'
+        f'border:1px solid {PGL_BORDER};border-left:5px solid {color_acento};'
+        f'box-shadow:0 2px 10px rgba(27,34,102,0.07);margin-bottom:0.75rem;">'
+        f'<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;">'
+        f'<span style="font-size:1.7rem;">{icono}</span>'
+        f'<div>'
+        f'<div style="font-weight:700;font-size:1rem;color:{PGL_NAVY};">{titulo}</div>'
+        f'<div style="font-size:0.8rem;color:{PGL_MUTED};line-height:1.3;">{descripcion}</div>'
+        f'</div>'
+        f'</div>'
+        f'<div style="margin-top:0.4rem;">{badges_html}</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────
-# PANEL DATOS GENERALES
-# ─────────────────────────────────────────────
-def _panel_datos_generales(valores: dict) -> dict:
-    with st.expander("⚙️ Configuración de Parámetros", expanded=False):
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. ALERTAS
+# ─────────────────────────────────────────────────────────────────────────────
+_ALERT_STYLES = {
+    "info":    ("rgba(27,34,102,0.07)", PGL_NAVY,  "ℹ️"),
+    "warn":    ("#FFF8E1",              "#B45309",  "⚠️"),
+    "error":   ("#FEE2E2",              "#991B1B",  "❌"),
+    "success": ("#D1FAE5",              "#065F46",  "✅"),
+}
 
-        st.markdown("**Tarifas Owner Individual (USD/milla)**")
-        c1, c2, c3 = st.columns(3)
-        valores["PxM Owner Subidas"] = c1.number_input(
-            "PxM Subidas", value=float(valores.get("PxM Owner Subidas", 1.60)),
-            step=0.01, format="%.2f", key="sl_pxm_sub")
-        valores["PxM Owner Bajadas"] = c2.number_input(
-            "PxM Bajadas", value=float(valores.get("PxM Owner Bajadas", 1.40)),
-            step=0.01, format="%.2f", key="sl_pxm_baj")
-        valores["PxM Owner Vacio"] = c3.number_input(
-            "PxM Vacío", value=float(valores.get("PxM Owner Vacio", 0.80)),
-            step=0.01, format="%.2f", key="sl_pxm_vac")
-
-        st.markdown("**Tarifas Owner Team (USD/milla)**")
-        t1, t2, t3 = st.columns(3)
-        valores["PxM Owner Subidas Team"] = t1.number_input(
-            "PxM Subidas Team", value=float(valores.get("PxM Owner Subidas Team", 1.80)),
-            step=0.01, format="%.2f", key="sl_pxm_sub_team")
-        valores["PxM Owner Bajadas Team"] = t2.number_input(
-            "PxM Bajadas Team", value=float(valores.get("PxM Owner Bajadas Team", 1.60)),
-            step=0.01, format="%.2f", key="sl_pxm_baj_team")
-        valores["PxM Owner Vacio Team"] = t3.number_input(
-            "PxM Vacío Team", value=float(valores.get("PxM Owner Vacio Team", 0.90)),
-            step=0.01, format="%.2f", key="sl_pxm_vac_team")
-
-        st.markdown("**Cruce Propio (USD)**")
-        cr1, cr2 = st.columns(2)
-        valores["Cruce Propio Cargado"] = cr1.number_input(
-            "Cruce Propio Cargado", value=float(valores.get("Cruce Propio Cargado", 80.00)),
-            step=1.0, format="%.2f", key="sl_cruce_c")
-        valores["Cruce Propio Vacio"] = cr2.number_input(
-            "Cruce Propio Vacío", value=float(valores.get("Cruce Propio Vacio", 50.00)),
-            step=1.0, format="%.2f", key="sl_cruce_v")
-
-        st.markdown("**Tipo de Cambio y Costos Indirectos**")
-        x1, x2, x3 = st.columns(3)
-        valores["Tipo de Cambio USD/MXP"] = x1.number_input(
-            "TC USD/MXP", value=float(valores.get("Tipo de Cambio USD/MXP", 18.50)),
-            step=0.05, format="%.2f", key="sl_tc")
-        valores["CXM Indirecto"] = x2.number_input(
-            "CXM Indirecto ($/mi)", value=float(valores.get("CXM Indirecto", 0.10)),
-            step=0.01, format="%.3f", key="sl_cxm_ind")
-        valores["% Costo Indirecto"] = x3.number_input(
-            "% Costo Indirecto", value=float(valores.get("% Costo Indirecto", 0.09)),
-            min_value=0.0, max_value=1.0, step=0.005, format="%.3f", key="sl_pct_ind")
-
-        if st.button("💾 Guardar Parámetros", key="sl_save_params"):
-            guardar_datos_generales(valores)
-            alert("success", "✅ Parámetros guardados correctamente.")
-
-    return valores
+def alert(tipo: str, mensaje: str):
+    bg, border_color, emoji = _ALERT_STYLES.get(tipo, _ALERT_STYLES["info"])
+    html = (
+        f'<div style="background:{bg};border-left:4px solid {border_color};'
+        f'border-radius:0 8px 8px 0;padding:0.7rem 1rem;font-size:0.88rem;'
+        f'color:{border_color};margin:0.5rem 0;line-height:1.4;">'
+        f'{emoji} {mensaje}'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────
-# RESUMEN DE RESULTADOS
-# ─────────────────────────────────────────────
-def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float) -> None:
-    divider()
-    section_header("📊", "Resultado de la Ruta")
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. BADGE DE ESTATUS (devuelve HTML)
+# ─────────────────────────────────────────────────────────────────────────────
+_STATUS_COLORS = {
+    "nuevo":      ("#DBEAFE", "#1E40AF"),
+    "en_proceso": ("#FEF9C3", "#92400E"),
+    "concluido":  ("#D1FAE5", "#065F46"),
+    "cancelado":  ("#FEE2E2", "#7F1D1D"),
+    "pendiente":  ("#DBEAFE", "#1E40AF"),
+    "revision":   ("#FEF9C3", "#92400E"),
+    "resuelto":   ("#D1FAE5", "#065F46"),
+    "abierta":    ("#EDE9FE", "#4C1D95"),
+    "cerrada":    ("#F3F4F6", "#374151"),
+}
 
-    # ── Utilidad Bruta: ≥15% verde, <15% rojo ────────────────────────────────
-    pct_ut_b   = r["Pct_Ut_Bruta"]
-    color_ut_b = "#16a34a" if pct_ut_b >= 15.0 else "#dc2626"
-
-    # ── 5 cards ───────────────────────────────────────────────────────────────
-    kpi_row([
-        {
-            "icono": "💵",
-            "label": "Ingreso Total",
-            "valor": f"${r['Ingreso_Global']:,.2f} USD",
-            "sub":   "Flete + Cruce + MX + Extras cliente",
-            "color": "#1B2266",
-        },
-        {
-            "icono": "📉",
-            "label": "Costo Directo",
-            "valor": f"${r['Costo_Directo']:,.2f} USD",
-            "sub":   f"{r['Pct_Costo_Directo']:.1f}% del ingreso",
-            "color": r["Color_Directo"],
-        },
-        {
-            "icono": "📈",
-            "label": "Utilidad Bruta",
-            "valor": f"${r['Utilidad_Bruta']:,.2f} USD",
-            "sub":   f"{pct_ut_b:.1f}% del ingreso",
-            "color": color_ut_b,
-        },
-        {
-            "icono": "🔁",
-            "label": "Costo Indirecto",
-            "valor": f"${r['Costo_Indirecto']:,.2f} USD",
-            "sub":   f"{r['Pct_Costo_Indirecto']:.1f}% del ingreso",
-            "color": r["Color_Indirecto"],
-        },
-        {
-            "icono": "🏆",
-            "label": "Utilidad Neta",
-            "valor": f"${r['Utilidad_Neta']:,.2f} USD",
-            "sub":   f"{r['Pct_Ut_Neta']:.1f}% del ingreso",
-            "color": r["Color_Ut_Neta"],
-        },
-    ])
-
-    # ── Semáforos ─────────────────────────────────────────────────────────────
-    divider()
-    s1, s2, s3, s4 = st.columns(4)
-
-    pct_dir = r["Pct_Costo_Directo"]
-    if r["Color_Directo"] == "#16a34a":
-        s1.success(f"✅ C. Directos: {pct_dir:.1f}% (≤85%)")
-    else:
-        s1.error(f"🔴 C. Directos: {pct_dir:.1f}% — EXCEDE 85%")
-
-    if color_ut_b == "#16a34a":
-        s2.success(f"✅ Ut. Bruta: {pct_ut_b:.1f}% (≥15%)")
-    else:
-        s2.error(f"🔴 Ut. Bruta: {pct_ut_b:.1f}% — POR DEBAJO 15%")
-
-    pct_ind = r["Pct_Costo_Indirecto"]
-    if r["Color_Indirecto"] == "#16a34a":
-        s3.success(f"✅ C. Indirectos: {pct_ind:.1f}% (≤9%)")
-    else:
-        s3.error(f"🔴 C. Indirectos: {pct_ind:.1f}% — EXCEDE 9%")
-
-    pct_n = r["Pct_Ut_Neta"]
-    if r["Color_Ut_Neta"] == "#16a34a":
-        s4.success(f"✅ Ut. Neta: {pct_n:.1f}% (≥6%)")
-    else:
-        s4.error(f"🔴 Ut. Neta: {pct_n:.1f}% — POR DEBAJO 6%")
-
-    # ── Desglose por tramo ────────────────────────────────────────────────────
-    # Cálculos por tramo
-    # Americana
-    ing_ame   = r["Flete_USA"] + r.get("Extras_Ingreso", 0.0)
-    costo_ame = r["Pago_Owner_Total"] + r.get("Extras_Costo_Total", r.get("Extras_Costo", 0.0)) + r["Costo_Indirecto"]
-    ut_ame    = ing_ame - costo_ame
-
-    # Cruce
-    ing_cruce   = r["Ingreso_Cruce"]
-    costo_cruce = r["Costo_Cruce"]
-    ut_cruce    = ing_cruce - costo_cruce
-
-    # MX
-    ing_mx   = r["Ingreso_MX"]
-    costo_mx = r["Costo_MX"]
-    ut_mx    = ing_mx - costo_mx
-
-    # Tabs — siempre Americana; Cruce y MX solo si tienen datos
-    tab_labels = ["🇺🇸 Ruta Americana"]
-    if ing_cruce > 0 or costo_cruce > 0:
-        tab_labels.append("🛂 Cruce")
-    if ing_mx > 0 or costo_mx > 0:
-        tab_labels.append("🇲🇽 Ruta Mexicana")
-
-    divider()
-    with st.expander("🔍 Ver Desglose por Tramo", expanded=False):
-        tabs = st.tabs(tab_labels)
-
-        # ── Tab Americana ─────────────────────────────────────────────────────
-        with tabs[0]:
-            col_i, col_c = st.columns(2)
-
-            with col_i:
-                st.markdown("**📥 Ingresos**")
-                if modalidad == "Desglosada":
-                    ing_flete = r["Miles_Load"] * cxm_flete
-                    ing_fuel  = r["Miles_Load"] * cxm_fuel
-                    st.write(f"Flete: **${ing_flete:,.2f}**")
-                    st.write(f"Fuel:  **${ing_fuel:,.2f}**")
-                else:
-                    st.write(f"Tarifa Flat: **${r['Flete_USA']:,.2f}**")
-
-                if r.get("Extras_Ingreso", 0) > 0:
-                    st.write(f"Extras cobrados: **${r['Extras_Ingreso']:,.2f}**")
-
-                st.markdown(f"**Total: ${ing_ame:,.2f}**")
-
-            with col_c:
-                st.markdown("**📤 Costos Directos**")
-                st.write(
-                    f"Owner Cargado ({r['Miles_Load']:.0f}+{r['Short_Miles']:.0f} mi × "
-                    f"${r['PxM_Cargado']:.4f}): **${r['Pago_Owner_Cargado']:,.2f}**"
-                )
-                st.write(
-                    f"Owner Vacío ({r['Miles_Empty']:.0f} mi × "
-                    f"${r['PxM_Vacio']:.4f}): **${r['Pago_Owner_Vacio']:,.2f}**"
-                )
-                if r.get("Extras_Costo", 0) > 0:
-                    st.write(f"Extras (costo): **${r['Extras_Costo']:,.2f}**")
-                st.write(f"Indirectos: **${r['Costo_Indirecto']:,.2f}**")
-                st.markdown(f"**Total: ${costo_ame:,.2f}**")
-
-            divider()
-            color_ut = "#16a34a" if ut_ame >= 0 else "#dc2626"
-            pct_ut   = (ut_ame / ing_ame * 100) if ing_ame > 0 else 0.0
-            st.markdown(
-                f"**Utilidad Bruta Americana: "
-                f"<span style='color:{color_ut}'>${ut_ame:,.2f} ({pct_ut:.1f}%)</span>**",
-                unsafe_allow_html=True,
-            )
-
-        # ── Tab Cruce ─────────────────────────────────────────────────────────
-        if "🛂 Cruce" in tab_labels:
-            with tabs[tab_labels.index("🛂 Cruce")]:
-                col_i, col_c = st.columns(2)
-                with col_i:
-                    st.markdown("**📥 Ingresos**")
-                    st.write(f"Ingreso Cruce: **${ing_cruce:,.2f}**")
-                    st.markdown(f"**Total: ${ing_cruce:,.2f}**")
-                with col_c:
-                    st.markdown("**📤 Costos Directos**")
-                    tipo_cruce_label = r.get("Tipo_Cruce", "")
-                    st.write(f"Costo Cruce ({tipo_cruce_label}): **${costo_cruce:,.2f}**")
-                    st.markdown(f"**Total: ${costo_cruce:,.2f}**")
-                divider()
-                color_ut = "#16a34a" if ut_cruce >= 0 else "#dc2626"
-                pct_ut   = (ut_cruce / ing_cruce * 100) if ing_cruce > 0 else 0.0
-                st.markdown(
-                    f"**Utilidad Bruta Cruce: "
-                    f"<span style='color:{color_ut}'>${ut_cruce:,.2f} ({pct_ut:.1f}%)</span>**",
-                    unsafe_allow_html=True,
-                )
-
-        # ── Tab MX ────────────────────────────────────────────────────────────
-        if "🇲🇽 Ruta Mexicana" in tab_labels:
-            with tabs[tab_labels.index("🇲🇽 Ruta Mexicana")]:
-                col_i, col_c = st.columns(2)
-                with col_i:
-                    st.markdown("**📥 Ingresos**")
-                    st.write(f"Ingreso MX: **${ing_mx:,.2f}**")
-                    st.markdown(f"**Total: ${ing_mx:,.2f}**")
-                with col_c:
-                    st.markdown("**📤 Costos Directos**")
-                    st.write(f"Costo MX: **${costo_mx:,.2f}**")
-                    st.markdown(f"**Total: ${costo_mx:,.2f}**")
-                divider()
-                color_ut = "#16a34a" if ut_mx >= 0 else "#dc2626"
-                pct_ut   = (ut_mx / ing_mx * 100) if ing_mx > 0 else 0.0
-                st.markdown(
-                    f"**Utilidad Bruta MX: "
-                    f"<span style='color:{color_ut}'>${ut_mx:,.2f} ({pct_ut:.1f}%)</span>**",
-                    unsafe_allow_html=True,
-                )
+def status_badge(texto: str, tipo: str) -> str:
+    bg, fg = _STATUS_COLORS.get(tipo.lower(), ("#F3F4F6", "#374151"))
+    return (
+        f'<span style="display:inline-block;background:{bg};color:{fg};'
+        f'font-size:0.72rem;font-weight:700;padding:3px 10px;'
+        f'border-radius:20px;">{texto}</span>'
+    )
 
 
-# ─────────────────────────────────────────────
-# RENDER PRINCIPAL
-# ─────────────────────────────────────────────
-def render() -> None:
-    supabase = get_supabase_client()
-    if supabase is None:
-        alert("error", "⚠️ Supabase no configurado. Verifica tu conexión.")
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. DIVISOR VISUAL
+# ─────────────────────────────────────────────────────────────────────────────
+def divider():
+    html = f'<hr style="border:none;border-top:1.5px solid {PGL_BORDER};margin:1.5rem 0;">'
+    st.markdown(html, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. BANNER DE BIENVENIDA
+# ─────────────────────────────────────────────────────────────────────────────
+_ROL_COLORS = {
+    "admin":        ("#CC1E1E", "#FFF0F0"),
+    "analista de datos": ("#1B2266", "#EEF0FF"),
+    "auditor":      ("#0077B6", "#E8F4FC"),
+    "user":         ("#2E7D32", "#E8F5E9"),
+    "operaciones":  ("#E65100", "#FFF3E0"),
+    "gerente":      ("#6D28D9", "#EDE9FE"),
+    "contralor":    ("#B45309", "#FEF3C7"),
+    "coordinador":  ("#0E7490", "#CFFAFE"),
+    "ejecutivo":    ("#1D4ED8", "#DBEAFE"),
+}
+
+def welcome_banner(nombre: str, rol: str, area: str = ""):
+    c_texto, c_bg = _ROL_COLORS.get(rol.lower(), ("#6B7280", "#F3F4F6"))
+    subtitulo = f"Portal de Palos Garza Logistics · {area}" if area else "Portal de Palos Garza Logistics"
+    html = (
+        f'<div style="background:linear-gradient(135deg,{PGL_NAVY} 0%,{PGL_NAVY_LT} 100%);'
+        f'border-radius:16px;padding:2rem 2.5rem;margin-bottom:2rem;'
+        f'border-left:5px solid {PGL_RED};position:relative;overflow:hidden;">'
+        f'<div style="position:absolute;right:-20px;top:-20px;font-size:8rem;'
+        f'opacity:0.06;line-height:1;pointer-events:none;">🚚</div>'
+        f'<div style="font-size:0.85rem;color:rgba(255,255,255,0.65);'
+        f'font-weight:500;margin-bottom:0.3rem;">Bienvenido de vuelta</div>'
+        f'<div style="font-size:1.8rem;font-weight:800;color:white;'
+        f'margin-bottom:0.4rem;line-height:1.2;">{nombre}</div>'
+        f'<span style="background:{c_bg};color:{c_texto};font-size:0.75rem;font-weight:700;'
+        f'padding:3px 12px;border-radius:20px;text-transform:uppercase;'
+        f'letter-spacing:0.5px;display:inline-block;">{rol}</span>'
+        f'<div style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin-top:0.8rem;">'
+        f'{subtitulo}</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+# ═════════════════════════════════════════════════════════════════════════════
+# COMPONENTES FACTURACIÓN
+# Estos componentes centralizan el HTML de las páginas de facturación.
+# Úsalos así:
+#   from ui.components import client_header, kpi_card, gauge_riesgo, credit_bar, facturas_table, payment_info
+# ═════════════════════════════════════════════════════════════════════════════
+from datetime import date as _date
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. ENCABEZADO DE CLIENTE
+# ─────────────────────────────────────────────────────────────────────────────
+def client_header(cliente: dict, estado: str, color_r: str, logo_b64: str = ""):
+    """
+    Encabezado con logo, nombre, razón social, condiciones y badge de riesgo.
+ 
+    Uso:
+        client_header(cliente, estado, color_r, LOGO_B64)
+    """
+    logo_html = (
+        f'<img src="data:image/png;base64,{logo_b64}" '
+        f'style="height:44px;width:auto;object-fit:contain;">'
+    ) if logo_b64 else ""
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:1rem;'
+        f'padding:0.8rem 0.2rem 0.6rem 0.2rem;'
+        f'border-bottom:2px solid #E5E9F0;margin-bottom:1rem;">'
+        f'{logo_html}'
+        f'<div style="flex:1;">'
+        f'<div style="font-size:1.5rem;font-weight:800;color:#1B2266;line-height:1.1;">'
+        f'{cliente["nombre"]}</div>'
+        f'<div style="font-size:0.8rem;color:#9CA3AF;margin-top:0.1rem;">'
+        f'{cliente["razon_social"]} &nbsp;·&nbsp; '
+        f'<span style="color:{color_r};font-weight:700;">{cliente["condiciones_pago"]}</span>'
+        f' &nbsp;·&nbsp; Emitido: {_date.today().strftime("%d de %B, %Y")}</div>'
+        f'</div>'
+        f'<span style="background:{color_r}22;color:{color_r};font-size:0.75rem;'
+        f'font-weight:700;padding:5px 14px;border-radius:20px;'
+        f'border:1.5px solid {color_r};text-transform:uppercase;white-space:nowrap;">'
+        f'● {estado}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. KPI CARD INDIVIDUAL
+# ─────────────────────────────────────────────────────────────────────────────
+def kpi_card(col, label: str, valor: str, color: str = "#1B2266"):
+    """
+    Tarjeta KPI con borde superior de color. Se usa dentro de columnas st.columns().
+ 
+    Uso:
+        k1, k2 = st.columns(2)
+        kpi_card(k1, "Total Balance", "$120,000 USD", "#DC2626")
+    """
+    col.markdown(
+        f'<div style="background:white;border-radius:10px;padding:0.9rem 1rem;'
+        f'border:1px solid #E5E9F0;border-top:3px solid {color};">'
+        f'<div style="font-size:0.63rem;color:#9CA3AF;font-weight:700;'
+        f'text-transform:uppercase;letter-spacing:0.5px;">{label}</div>'
+        f'<div style="font-size:1.1rem;font-weight:800;color:{color};margin-top:0.2rem;">'
+        f'{valor}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. VELOCÍMETRO DE RIESGO
+# ─────────────────────────────────────────────────────────────────────────────
+def gauge_riesgo(estado: str, color: str, angulo: int):
+    """
+    SVG velocímetro con aguja y badge de estatus.
+    angulo: -75=RIESGO | -25=VIGILANCIA | 25=CLIENTE SANO | 75=EXCELENTE
+ 
+    Uso:
+        gauge_riesgo(estado, color_r, angulo)
+    """
+    rot = f"rotate({angulo})"
+    st.markdown(
+        f'<div style="text-align:center;padding:0.5rem 0;">'
+        f'<svg viewBox="0 0 200 130" width="190" style="display:block;margin:auto;">'
+        f'<path d="M 25 105 A 80 80 0 0 1 75 30" fill="none" stroke="#DC2626" stroke-width="14" stroke-linecap="round"/>'
+        f'<path d="M 75 30 A 80 80 0 0 1 125 30" fill="none" stroke="#D97706" stroke-width="14" stroke-linecap="round"/>'
+        f'<path d="M 125 30 A 80 80 0 0 1 175 105" fill="none" stroke="#059669" stroke-width="14" stroke-linecap="round"/>'
+        f'<g transform="translate(100,105)">'
+        f'<line x1="0" y1="0" x2="0" y2="-60" stroke="#1B2266" stroke-width="3.5" stroke-linecap="round" transform="{rot}"/>'
+        f'<circle cx="0" cy="0" r="7" fill="#1B2266"/>'
+        f'<circle cx="0" cy="0" r="3.5" fill="white"/>'
+        f'</g></svg>'
+        f'<div style="margin-top:-0.3rem;">'
+        f'<span style="background:{color};color:white;font-size:0.75rem;font-weight:700;'
+        f'padding:4px 18px;border-radius:20px;text-transform:uppercase;letter-spacing:0.5px;">'
+        f'● {estado}</span>'
+        f'</div>'
+        f'<div style="display:flex;justify-content:space-between;padding:0 0.5rem;'
+        f'font-size:0.65rem;margin-top:0.5rem;">'
+        f'<span style="color:#DC2626;font-weight:600;">Riesgo</span>'
+        f'<span style="color:#D97706;font-weight:600;">Vigilancia</span>'
+        f'<span style="color:#059669;font-weight:600;">Excelente</span>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. BARRA DE CRÉDITO
+# ─────────────────────────────────────────────────────────────────────────────
+def credit_bar(usado: float, limite: float, color_perfil: str):
+    """
+    Barra de porcentaje de crédito utilizado con métricas de usado/disponible.
+ 
+    Uso:
+        credit_bar(total, cliente["limite_credito"], color_r)
+    """
+    pct = min(usado / limite * 100, 100) if limite else 0
+    st.markdown(
+        f'<div style="padding:0.2rem 0;">'
+        f'<div style="display:flex;justify-content:space-between;margin-bottom:0.4rem;">'
+        f'<div><div style="font-size:1.5rem;font-weight:800;color:{color_perfil};">{pct:.0f}%</div>'
+        f'<div style="font-size:0.65rem;color:#9CA3AF;text-transform:uppercase;">UTILIZADO</div></div>'
+        f'<div style="text-align:right;">'
+        f'<div style="font-size:1.5rem;font-weight:800;color:#059669;">{100-pct:.0f}%</div>'
+        f'<div style="font-size:0.65rem;color:#9CA3AF;text-transform:uppercase;">DISPONIBLE</div></div>'
+        f'</div>'
+        f'<div style="background:#E5E9F0;border-radius:8px;height:10px;overflow:hidden;">'
+        f'<div style="background:{color_perfil};width:{pct}%;height:100%;border-radius:8px;"></div></div>'
+        f'<div style="display:flex;justify-content:space-between;margin-top:0.4rem;'
+        f'font-size:0.76rem;color:#6B7280;">'
+        f'<span>Usado: <b style="color:{color_perfil};">${usado:,.0f}</b></span>'
+        f'<span>Límite: <b style="color:#1B2266;">${limite:,.0f}</b></span>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. TABLA DE FACTURAS
+# ─────────────────────────────────────────────────────────────────────────────
+def facturas_table(facturas: list, filtro: str = "Todas"):
+    """
+    Tabla HTML de facturas con colores según vencimiento.
+    filtro: "Todas" | "Vencidas" | "Al corriente"
+ 
+    Uso:
+        facturas_table(facturas, filtro)
+    """
+    filas = ""
+    for f in facturas:
+        dias    = f["dias_vencido"]
+        vencida = dias > 0
+        if filtro == "Vencidas"     and not vencida: continue
+        if filtro == "Al corriente" and vencida:     continue
+        cf = "#DC2626" if vencida else "#1B2266"
+        cd = "#DC2626" if vencida else "#059669"
+        bd = "#FEE2E2" if vencida else "#D1FAE5"
+        ci = "#DC2626" if vencida else "#1B2266"
+        td = "padding:0.7rem 0.8rem;"
+        filas += (
+            f'<tr style="border-bottom:1px solid #F1F5F9;">'
+            f'<td style="{td}font-weight:700;color:{cf};">{f["folio"]}</td>'
+            f'<td style="{td}color:#6B7280;font-size:0.85rem;">{f["fecha_emision"].strftime("%d %b %Y")}</td>'
+            f'<td style="{td}color:#6B7280;font-size:0.85rem;">{f["fecha_vencimiento"].strftime("%d %b %Y")}</td>'
+            f'<td style="{td}"><span style="background:#EEF0FF;color:#1B2266;font-size:0.78rem;'
+            f'font-weight:600;padding:3px 10px;border-radius:6px;font-family:monospace;">'
+            f'{f["viaje_referencia"]}</span></td>'
+            f'<td style="{td}text-align:center;">'
+            f'<span style="background:{bd};color:{cd};font-weight:700;font-size:0.82rem;'
+            f'padding:3px 10px;border-radius:20px;min-width:32px;display:inline-block;text-align:center;">'
+            f'{dias}</span></td>'
+            f'<td style="{td}text-align:right;font-weight:700;font-size:1rem;color:{ci};">'
+            f'${f["importe"]:,.0f}</td>'
+            f'</tr>'
+        )
+    if not filas:
+        filas = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:#9CA3AF;">Sin facturas con este filtro</td></tr>'
+    th = "padding:0.7rem 0.8rem;font-size:0.72rem;color:#9CA3AF;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;"
+    st.markdown(
+        f'<div style="background:white;border-radius:14px;overflow:hidden;'
+        f'border:1px solid #E5E9F0;box-shadow:0 2px 12px rgba(27,34,102,0.07);">'
+        f'<table style="width:100%;border-collapse:collapse;">'
+        f'<thead><tr style="background:#F8FAFF;border-bottom:2px solid #E5E9F0;">'
+        f'<th style="{th}text-align:left;">FACTURA</th>'
+        f'<th style="{th}text-align:left;">FECHA</th>'
+        f'<th style="{th}text-align:left;">VENCIMIENTO</th>'
+        f'<th style="{th}text-align:left;">VIAJE</th>'
+        f'<th style="{th}text-align:center;">DÍAS VENCIDO</th>'
+        f'<th style="{th}text-align:right;">IMPORTE USD</th>'
+        f'</tr></thead>'
+        f'<tbody>{filas}</tbody>'
+        f'</table></div>',
+        unsafe_allow_html=True,
+    )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. PANEL DE INFORMACIÓN DE PAGO
+# ─────────────────────────────────────────────────────────────────────────────
+def payment_info(cliente: dict):
+    """
+    Panel con banco, cuenta, SWIFT, teléfono y notas de pago del cliente.
+ 
+    Uso:
+        payment_info(cliente)
+    """
+    st.markdown(
+        f'<div style="background:white;border-radius:12px;padding:1rem 1.1rem;border:1px solid #E5E9F0;">'
+        f'<div style="font-weight:700;font-size:0.9rem;color:#1B2266;margin-bottom:0.15rem;">{cliente["banco"]}</div>'
+        f'<div style="font-size:0.75rem;color:#9CA3AF;margin-bottom:0.8rem;">{cliente["banco_empresa"]}</div>'
+        f'<div style="display:flex;justify-content:space-between;padding:0.4rem 0;'
+        f'border-bottom:1px solid #F1F5F9;font-size:0.8rem;">'
+        f'<span style="color:#9CA3AF;">Cuenta</span>'
+        f'<span style="font-weight:700;color:#1B2266;font-family:monospace;">{cliente["cuenta_bancaria"]}</span></div>'
+        f'<div style="display:flex;justify-content:space-between;padding:0.4rem 0;'
+        f'border-bottom:1px solid #F1F5F9;font-size:0.8rem;">'
+        f'<span style="color:#9CA3AF;">SWIFT</span>'
+        f'<span style="font-weight:700;color:#1B2266;font-family:monospace;">{cliente["swift"]}</span></div>'
+        f'<div style="margin-top:0.8rem;padding:0.5rem 0.8rem;background:#EEF0FF;'
+        f'border-radius:8px;text-align:center;">'
+        f'<span style="color:#CC1E1E;font-weight:700;font-size:0.83rem;">📞 {cliente["telefono"]}</span></div>'
+        f'<div style="font-size:0.70rem;color:#9CA3AF;margin-top:0.7rem;line-height:1.4;text-align:center;">'
+        f'{cliente.get("notas_pago","")}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. CONFIGURACIÓN DE ESTATUS PARA SOLICITUDES (tickets y complementarias)
+# ─────────────────────────────────────────────────────────────────────────────
+# Catálogo centralizado de colores/íconos por estatus.
+# Úsalo en cualquier módulo que necesite colorear un estatus:
+#   from ui.components import ESTATUS_CFG, status_badge_html, solicitud_card, historial_timeline
+
+ESTATUS_CFG = {
+    # Tickets — fases de desarrollo
+    "Nuevo":         {"color": "#1D4ED8", "bg": "#EFF6FF", "border": "#BFDBFE", "icono": "🆕"},
+    "Capacitación":  {"color": "#7C3AED", "bg": "#F5F3FF", "border": "#DDD6FE", "icono": "📚"},
+    "Planteamiento": {"color": "#0891B2", "bg": "#ECFEFF", "border": "#A5F3FC", "icono": "📝"},
+    "Desarrollo":    {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "⚙️"},
+    "Pruebas":       {"color": "#EA580C", "bg": "#FFF7ED", "border": "#FED7AA", "icono": "🧪"},
+    "Entrega":       {"color": "#059669", "bg": "#ECFDF5", "border": "#A7F3D0", "icono": "📦"},
+    "Concluido":     {"color": "#16A34A", "bg": "#F0FDF4", "border": "#BBF7D0", "icono": "✅"},
+    "Cancelado":     {"color": "#DC2626", "bg": "#FEF2F2", "border": "#FECACA", "icono": "🚫"},
+    # Tickets — estatus legacy
+    "En Proceso":    {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "⏳"},
+    # Complementarias
+    "Pendiente":     {"color": "#1D4ED8", "bg": "#EFF6FF", "border": "#BFDBFE", "icono": "🕐"},
+    "En revisión":   {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "🔍"},
+    "Resuelto":      {"color": "#16A34A", "bg": "#F0FDF4", "border": "#BBF7D0", "icono": "✅"},
+    # Viáticos
+    "Pendiente Autorización": {"color": "#D97706", "bg": "#FFFBEB", "border": "#FDE68A", "icono": "⏳"},
+    "Autorizado":    {"color": "#059669", "bg": "#ECFDF5", "border": "#A7F3D0", "icono": "✅"},
+    "Rechazado":     {"color": "#DC2626", "bg": "#FEF2F2", "border": "#FECACA", "icono": "🚫"},
+    "Cerrado":       {"color": "#6B7280", "bg": "#F9FAFB", "border": "#E5E7EB", "icono": "🔒"},
+}
+_ESTATUS_DEFAULT = {"color": "#6B7280", "bg": "#F9FAFB", "border": "#E5E7EB", "icono": "📋"}
+
+
+def status_badge_html(estatus: str) -> str:
+    """
+    Devuelve HTML de un badge de estatus con color y ícono.
+    No renderiza — solo retorna el string HTML para embeber en markdown mayor.
+
+    Uso:
+        badge = status_badge_html("Nuevo")
+        st.markdown(f"Estado: {badge}", unsafe_allow_html=True)
+    """
+    cfg = ESTATUS_CFG.get(estatus, _ESTATUS_DEFAULT)
+    return (
+        f'<span style="background:{cfg["color"]}22;color:{cfg["color"]};'
+        f'border:1.5px solid {cfg["color"]};border-radius:20px;'
+        f'padding:3px 13px;font-size:0.73rem;font-weight:700;white-space:nowrap;">'
+        f'{cfg["icono"]} {estatus}</span>'
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. TIMELINE DE HISTORIAL
+# ─────────────────────────────────────────────────────────────────────────────
+_ACCION_ICONO = {
+    "create":  "🆕",
+    "update":  "✏️",
+    "comment": "💬",
+    "fase":    "🔄",
+    "assign":  "👤",
+    "resolve": "✅",
+    "cancel":  "🚫",
+}
+
+
+def historial_timeline(historial: list):
+    """
+    Renderiza un timeline visual del historial de una solicitud.
+    Cada entrada debe ser un dict con: at, by, action, details.
+
+    Uso:
+        historial_timeline(ticket.get("historial") or [])
+    """
+    if not historial:
+        st.caption("Sin historial registrado.")
         return
 
-    u              = current_user() or {}
-    user_id        = u.get("id") or u.get("sub") or ""
-    nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
+    filas_html = ""
+    for entry in reversed(historial):
+        at_raw = str(entry.get("at", ""))[:16].replace("T", " ")
+        by_    = entry.get("by", "Sistema")
+        action = entry.get("action", "")
+        detail = entry.get("details", "")
+        icono  = _ACCION_ICONO.get(action, "📌")
 
-    st.session_state.setdefault("sl_resultado", None)
-    st.session_state.setdefault("sl_datos", {})
-
-    valores = cargar_datos_generales()
-    valores = _panel_datos_generales(valores)
-    tc      = safe(valores.get("Tipo de Cambio USD/MXP", 18.50))
-
-    divider()
-    section_header("🛣️", "Nueva Ruta")
-
-    with st.form("sl_captura_ruta", clear_on_submit=False):
-
-        # ── 1. INFORMACIÓN GENERAL ────────────────────────────────────────────
-        st.markdown("### 📋 Información General")
-        g1, g2, g3, g4 = st.columns(4)
-        fecha     = g1.date_input("📅 Fecha",  value=datetime.today(), key="sl_fecha")
-        tipo_ruta = g2.selectbox("🗺️ Tipo",   TIPOS_RUTA,             key="sl_tipo")
-        modo      = g3.selectbox("🚛 Modo",   ["Sencillo", "Team"],   key="sl_modo")
-        cliente   = g4.text_input("👤 Cliente", key="sl_cliente",
-                                   placeholder="NOMBRE DEL CLIENTE",
-                                   disabled=(tipo_ruta == "Empty"))
-
-        es_empty  = tipo_ruta == "Empty"
-        aplica_mx = tiene_mx(tipo_ruta)
-
-        st.caption(
-            f"📌 Dirección: **{direccion_label(tipo_ruta)}**  ·  "
-            f"Tramo MX: **{'Sí' if aplica_mx else 'No'}**"
+        filas_html += (
+            f'<div style="display:flex;gap:0.6rem;padding:0.45rem 0;'
+            f'border-bottom:1px solid #E5E7EB;">'
+            f'<span style="font-size:1rem;flex-shrink:0;padding-top:1px;">{icono}</span>'
+            f'<div style="flex:1;font-size:0.82rem;">'
+            f'<div><b style="color:#1B2266;">{by_}</b> '
+            f'<span style="color:#9CA3AF;font-size:0.75rem;">{at_raw}</span></div>'
+            f'<div style="color:#374151;margin-top:1px;">{detail}</div>'
+            f'</div>'
+            f'</div>'
         )
 
-        # ── 2. RUTA AMERICANA ─────────────────────────────────────────────────
-        divider()
-        st.markdown("### 🇺🇸 Ruta Americana")
+    st.markdown(
+        f'<div style="max-height:240px;overflow-y:auto;padding:0.5rem 0.75rem;'
+        f'background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;">'
+        f'{filas_html}</div>',
+        unsafe_allow_html=True,
+    )
 
-        ru1, ru2 = st.columns(2)
-        origen_usa  = ru1.text_input("📍 Origen",  key="sl_ori",  placeholder="CIUDAD, ESTADO")
-        destino_usa = ru2.text_input("📍 Destino", key="sl_dest", placeholder="CIUDAD, ESTADO")
 
-        m1, m2, m3 = st.columns(3)
-        miles_load  = m1.number_input("🛣️ Miles Load",  min_value=0.0, step=10.0, key="sl_ml")
-        short_miles = m2.number_input("🔀 Short Miles",  min_value=0.0, step=1.0,  key="sl_sm")
-        miles_empty = m3.number_input("⚪ Miles Empty",  min_value=0.0, step=10.0, key="sl_me")
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. CARD DE SOLICITUD (tickets y complementarias)
+# ─────────────────────────────────────────────────────────────────────────────
+def solicitud_card(
+    *,
+    id_label: str,
+    titulo: str,
+    fecha: str,
+    estatus: str,
+    meta: list[tuple[str, str]] | None = None,
+    on_edit_key: str | None = None,
+):
+    """
+    Card visual para una solicitud (ticket, complementaria, etc.).
+    Homologada entre módulos — sin HTML en los módulos que la usan.
 
-        # Modalidad de cobro
-        divider()
-        st.markdown("**💵 Tarifa Americana**")
-        mod1, mod2 = st.columns([1, 3])
-        modalidad = mod1.radio("Modalidad", ["Desglosada", "Flat"],
-                                horizontal=False, key="sl_modalidad",
-                                disabled=es_empty)
+    Parámetros:
+        id_label    : Texto del ID/folio (ej. "#10" o "Folio 0042")
+        titulo      : Título o descripción corta de la solicitud
+        fecha       : Fecha como string (ej. "2026-05-20")
+        estatus     : Clave del estatus (debe existir en ESTATUS_CFG)
+        meta        : Lista de tuplas (icono_texto, valor) para mostrar debajo del título
+                      Ej. [("🏢 Empresa", "Picus"), ("📂 Categoría", "Tickets")]
+        on_edit_key : Si se pasa, muestra un botón "Ver / Editar" que devuelve True
+                      cuando es clickeado. Usar como: if solicitud_card(...): open_modal()
 
-        if modalidad == "Desglosada":
-            td1, td2, td3 = mod2.columns(3)
-            moneda_flete  = td1.selectbox("💱 Moneda", ["USD", "MXP"],
-                                           key="sl_mon_flete", disabled=es_empty)
-            cxm_flete_cap = td2.number_input("CXM Flete ($/mi)", min_value=0.0,
-                                              step=0.001, format="%.4f",
-                                              key="sl_cxm_flete", disabled=es_empty)
-            cxm_fuel_cap  = td3.number_input("CXM Fuel ($/mi)", min_value=0.0,
-                                              step=0.001, format="%.4f",
-                                              key="sl_cxm_fuel", disabled=es_empty)
-            flete_flat_cap = 0.0
-            if not es_empty:
-                # ✅ Ambos usan Miles Load
-                preview = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
-                mod2.caption(
-                    f"Vista previa: (CXM Flete ${safe(cxm_flete_cap):.4f}"
-                    f" + CXM Fuel ${safe(cxm_fuel_cap):.4f})"
-                    f" × {miles_load:.0f} ML"
-                    f" = **${preview:,.2f} USD**"
-                )
-        else:
-            tf1, tf2 = mod2.columns(2)
-            moneda_flete   = tf1.selectbox("💱 Moneda", ["USD", "MXP"],
-                                            key="sl_mon_flete", disabled=es_empty)
-            flete_flat_cap = tf2.number_input("Tarifa Total (Flat)", min_value=0.0,
-                                               step=50.0, key="sl_flete_flat",
-                                               disabled=es_empty)
-            cxm_flete_cap = cxm_fuel_cap = 0.0
+    Retorna True si se clickeó el botón de editar, False en caso contrario.
 
-        # ── 3. CRUCE ──────────────────────────────────────────────────────────
-        divider()
-        st.markdown("### 🛂 Cruce Fronterizo")
+    Uso básico (solo lectura):
+        solicitud_card(id_label="#10", titulo="Reporte", fecha="2026-05-20",
+                       estatus="Nuevo", meta=[("🏢", "Picus")])
 
-        incluye_cruce = st.checkbox("¿Incluye cruce?", key="sl_incl_cruce",
-                                     value=not es_empty, disabled=es_empty)
+    Uso con botón de edición:
+        clicked = solicitud_card(..., on_edit_key="edit_10")
+        if clicked:
+            st.session_state["modal_ticket_id"] = 10
+            st.rerun()
+    """
+    cfg = ESTATUS_CFG.get(estatus, _ESTATUS_DEFAULT)
+    badge = status_badge_html(estatus)
 
-        if incluye_cruce and not es_empty:
-            crx1, crx2, crx3 = st.columns(3)
-            tipo_cruce   = crx1.selectbox("Tipo de Cruce", ["Propio", "Externo"],
-                                           key="sl_tcruce")
-            tipo_carga_c = crx2.selectbox("Carga del cruce", ["Cargado", "Vacío"],
-                                           key="sl_tcarga_c")
-            mon_ing_cruce = crx3.selectbox("💱 Moneda Ingreso", ["USD", "MXP"],
-                                            key="sl_mon_ing_cruce")
-
-            ci1, ci2 = st.columns(2)
-            ingreso_cruce_raw = ci1.number_input("💵 Ingreso Cruce", min_value=0.0,
-                                                  step=10.0, key="sl_ing_cruce")
-            if tipo_cruce == "Externo":
-                mon_costo_cruce = ci2.selectbox("💱 Moneda Costo", ["USD", "MXP"],
-                                                 key="sl_mon_costo_cruce")
-                costo_cruce_raw = st.number_input("💸 Costo Cruce Externo", min_value=0.0,
-                                                   step=10.0, key="sl_costo_cruce")
-            else:
-                mon_costo_cruce = "USD"
-                costo_cruce_raw = 0.0
-                key_cfg  = "Cruce Propio Cargado" if tipo_carga_c == "Cargado" else "Cruce Propio Vacio"
-                costo_cfg = safe(valores.get(key_cfg, 80.0))
-                st.caption(f"ℹ️ Costo cruce propio configurado: **${costo_cfg:,.2f} USD**")
-
-            if mon_ing_cruce == "MXP":
-                st.caption(f"ℹ️ Ingreso cruce en USD: **${ingreso_cruce_raw / tc:,.2f}**")
-        else:
-            tipo_cruce        = "Sin cruce"
-            tipo_carga_c      = "Cargado"
-            mon_ing_cruce     = "USD"
-            ingreso_cruce_raw = 0.0
-            mon_costo_cruce   = "USD"
-            costo_cruce_raw   = 0.0
-
-        # ── 4. RUTA MX ────────────────────────────────────────────────────────
-        if aplica_mx:
-            divider()
-            st.markdown("### 🇲🇽 Ruta México (Externo)")
-
-            mx_r1, mx_r2 = st.columns(2)
-            origen_mx  = mx_r1.text_input("📍 Origen MX",  key="sl_ori_mx",
-                                            placeholder="CIUDAD, ESTADO")
-            destino_mx = mx_r2.text_input("📍 Destino MX", key="sl_dest_mx",
-                                            placeholder="CIUDAD, ESTADO")
-
-            mx1, mx2, mx3, mx4 = st.columns(4)
-            mon_ing_mx     = mx1.selectbox("💱 Moneda Ingreso", ["USD", "MXP"],
-                                            key="sl_mon_ing_mx")
-            ingreso_mx_raw = mx2.number_input("💵 Ingreso MX", min_value=0.0,
-                                               step=50.0, key="sl_ing_mx")
-            mon_costo_mx   = mx3.selectbox("💱 Moneda Costo",  ["USD", "MXP"],
-                                            key="sl_mon_costo_mx")
-            costo_mx_raw   = mx4.number_input("💸 Costo MX", min_value=0.0,
-                                               step=50.0, key="sl_costo_mx")
-
-            if mon_ing_mx == "MXP" or mon_costo_mx == "MXP":
-                st.caption(
-                    f"ℹ️ Equivalente USD — "
-                    f"Ingreso: **${ingreso_mx_raw / tc if mon_ing_mx == 'MXP' else ingreso_mx_raw:,.2f}**  ·  "
-                    f"Costo: **${costo_mx_raw / tc if mon_costo_mx == 'MXP' else costo_mx_raw:,.2f}**"
-                )
-        else:
-            origen_mx = destino_mx = ""
-            mon_ing_mx = mon_costo_mx = "USD"
-            ingreso_mx_raw = costo_mx_raw = 0.0
-
-        # ── 5. EXTRAS ─────────────────────────────────────────────────────────
-        divider()
-        st.markdown("### ➕ Extras / Otros Conceptos")
-        st.caption("Captura el monto y marca ✓ si se cobra al cliente (suma a ingreso). Sin monto = ignorado.")
-
-        otros_cargos: dict[str, float] = {}
-        otros_pagados: dict[str, bool] = {}
-
-        for i in range(0, len(EXTRAS_USA), 2):
-            col_a, col_b = st.columns(2)
-            for col, idx in [(col_a, i), (col_b, i + 1)]:
-                if idx >= len(EXTRAS_USA):
-                    break
-                extra = EXTRAS_USA[idx]
-                with col:
-                    ex1, ex2 = st.columns([3, 1])
-                    monto   = ex1.number_input(extra, min_value=0.0, step=10.0,
-                                               key=f"sl_ex_m_{idx}")
-                    cobrado = ex2.checkbox("cobra", key=f"sl_ex_p_{idx}",
-                                           value=False,
-                                           help="¿Se cobra al cliente?")
-                    if monto > 0:
-                        otros_cargos[extra]  = monto
-                        otros_pagados[extra] = cobrado
-
-        # ── 6. COSTO INDIRECTO ────────────────────────────────────────────────
-        divider()
-        st.markdown("### 📉 Costo Indirecto")
-        ci_col, _ = st.columns([1, 2])
-        modo_ci = ci_col.radio("Método", ["CXM", "Porcentaje"],
-                                horizontal=True, key="sl_modo_ci")
-        st.caption(
-            f"CXM configurado: **${safe(valores.get('CXM Indirecto', 0.10)):.3f}/mi**  ·  "
-            f"% configurado: **{safe(valores.get('% Costo Indirecto', 0.09)) * 100:.1f}%**"
-        )
-
-        divider()
-        calcular = st.form_submit_button(
-            "🧮 Calcular Ruta", type="primary", use_container_width=True
-        )
-
-    # ── Lógica post-form ──────────────────────────────────────────────────────
-    if calcular:
-        errores = []
-        ruta_usa = f"{normalizar(origen_usa)} - {normalizar(destino_usa)}"
-
-        if not origen_usa.strip() or not destino_usa.strip():
-            errores.append("⚠️ Ingresa origen y destino de la ruta USA.")
-        if not es_empty and not cliente.strip():
-            errores.append("⚠️ Ingresa el cliente.")
-        if not es_empty and miles_load <= 0 and short_miles <= 0:
-            errores.append("⚠️ Ingresa al menos Miles Load o Short Miles.")
-        if es_empty and miles_empty <= 0:
-            errores.append("⚠️ Las rutas Empty requieren Miles Empty.")
-
-        if errores:
-            for e in errores:
-                st.error(e)
-        else:
-            # ── Tarifa americana — ambos CXM usan Miles Load ───────────────────
-            if es_empty:
-                flete_usd = fuel_usd = 0.0
-            elif modalidad == "Desglosada":
-                # (CXM_Flete + CXM_Fuel) × Miles_Load
-                flete_raw = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
-                flete_usd = a_usd(flete_raw, moneda_flete, tc)
-                fuel_usd  = 0.0   # ya está incluido en flete_usd
-            else:
-                flete_usd = a_usd(safe(flete_flat_cap), moneda_flete, tc)
-                fuel_usd  = 0.0
-
-            # Conversión a USD
-            ingreso_cruce_u = a_usd(ingreso_cruce_raw, mon_ing_cruce,   tc)
-            costo_cruce_u   = a_usd(costo_cruce_raw,   mon_costo_cruce, tc)
-            ingreso_mx_u    = a_usd(ingreso_mx_raw,    mon_ing_mx,      tc)
-            costo_mx_u      = a_usd(costo_mx_raw,      mon_costo_mx,    tc)
-
-            # Extras
-            # Cobrado al cliente → ingreso Y costo
-            # No cobrado         → solo costo
-            extras_ingreso    = sum(v for n, v in otros_cargos.items()
-                                    if otros_pagados.get(n, False))
-            extras_costo_puro = sum(v for n, v in otros_cargos.items()
-                                    if not otros_pagados.get(n, False))
-
-            resultado = calcular_ruta_setlogis(
-                tipo_ruta            = tipo_ruta,
-                modo                 = modo,
-                ruta_usa             = ruta_usa,
-                cliente              = normalizar(cliente),
-                miles_load           = miles_load,
-                miles_empty          = miles_empty,
-                short_miles          = short_miles,
-                flete_usa            = flete_usd,
-                fuel                 = fuel_usd,
-                tipo_cruce           = tipo_cruce,
-                tipo_carga_cruce     = tipo_carga_c,
-                ingreso_cruce        = ingreso_cruce_u,
-                costo_cruce_externo  = costo_cruce_u,
-                ingreso_mx           = ingreso_mx_u,
-                costo_mx             = costo_mx_u,
-                extras_ingreso       = extras_ingreso,
-                extras_costo         = extras_costo_puro,
-                modo_costo_indirecto = modo_ci,
-                valores              = valores,
+    # Meta info (ícono + valor)
+    meta = meta or []
+    meta_html = ""
+    for item in meta:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            meta_html += (
+                f'<span style="color:#6B7280;font-size:0.79rem;">'
+                f'{item[0]}&nbsp;{item[1]}</span> &nbsp;·&nbsp; '
             )
+    meta_html = meta_html.rstrip(" &nbsp;·&nbsp; ")
 
-            resultado["Modalidad"]      = modalidad
-            resultado["CXM_Flete_Cap"]  = safe(cxm_flete_cap) if modalidad == "Desglosada" else 0.0
-            resultado["CXM_Fuel_Cap"]   = safe(cxm_fuel_cap)  if modalidad == "Desglosada" else 0.0
-            resultado["Flete_Flat"]     = flete_usd            if modalidad == "Flat"        else 0.0
+    html = (
+        f'<div style="'
+        f'background:#FFFFFF;'
+        f'border:1px solid #E5E7EB;'
+        f'border-left:5px solid {cfg["color"]};'
+        f'border-radius:10px;'
+        f'padding:0.9rem 1.1rem 0.75rem 1.1rem;'
+        f'margin-bottom:0.65rem;'
+        f'">'
+        f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.4rem;">'
+        f'  <div style="flex:1;min-width:0;">'
+        f'    <div style="font-size:0.7rem;color:#9CA3AF;font-weight:600;'
+        f'text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">'
+        f'      {id_label} · {fecha}'
+        f'    </div>'
+        f'    <div style="font-size:1rem;font-weight:700;color:#1B2266;'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+        f'      {titulo}'
+        f'    </div>'
+        f'    <div style="margin-top:0.3rem;line-height:1.6;">{meta_html}</div>'
+        f'  </div>'
+        f'  <div style="flex-shrink:0;margin-top:2px;">{badge}</div>'
+        f'</div>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
-            id_ruta = _generar_id(supabase)
+    # Botón de editar (si se pasó una key)
+    if on_edit_key:
+        return st.button("✏️ Ver / Editar", key=on_edit_key, use_container_width=False)
+    return False
 
-            st.session_state["sl_resultado"] = resultado
-            st.session_state["sl_datos"] = {
-                "id_ruta":          id_ruta,
-                "fecha":            str(fecha),
-                "usuario":          nombre_usuario,
-                "origen_mx":        normalizar(origen_mx)  if aplica_mx else "",
-                "destino_mx":       normalizar(destino_mx) if aplica_mx else "",
-                "moneda_flete":     moneda_flete,
-                "mon_ing_cruce":    mon_ing_cruce,
-                "mon_costo_cruce":  mon_costo_cruce,
-                "mon_ing_mx":       mon_ing_mx,
-                "mon_costo_mx":     mon_costo_mx,
-                "tipo_carga_cruce": tipo_carga_c if incluye_cruce and not es_empty else "",
-                "incluye_cruce":    incluye_cruce and not es_empty,
-                "otros_cargos":     otros_cargos,
-                "otros_pagados":    otros_pagados,
-            }
-            alert("success", "✅ Ruta calculada correctamente.")
+# ─────────────────────────────────────────────────────────────────────────────
+# 15. TABLA DE SOLICITUDES CON ESTATUS COLOREADO
+# ─────────────────────────────────────────────────────────────────────────────
+_TABLA_COL_WIDTHS = {
+    "ID": "50px", "Fecha creación": "100px", "Última actualización": "100px",
+    "Solicitante": "140px", "Correo": "160px", "Empresa": "100px",
+    "Título": "160px", "Categoría": "120px", "Departamento": "110px",
+    "Prioridad": "80px", "Estatus": "120px", "Asignado a": "100px",
+    "Descripción": "200px",
+    # Complementarias
+    "Folio": "60px", "Tipo": "130px", "Tráfico": "110px", "Auditor": "110px",
+    "Fecha resolución": "110px", "Sucursal": "100px", "Plataforma": "100px",
+}
+_PRIO_COLORS = {"Alta": "#D97706", "Urgente": "#DC2626", "Normal": "#6B7280"}
 
-    # ── Mostrar resultado ─────────────────────────────────────────────────────
-    if st.session_state.get("sl_resultado"):
-        r = st.session_state["sl_resultado"]
-        _mostrar_resumen(
-            r,
-            modalidad   = r.get("Modalidad", "Flat"),
-            cxm_flete   = r.get("CXM_Flete_Cap", 0.0),
-            cxm_fuel    = r.get("CXM_Fuel_Cap",  0.0),
-        )
+def solicitudes_table(df):
+    """
+    Renderiza un DataFrame como tabla HTML con estatus coloreados.
+    Usa ESTATUS_CFG para los badges y soporta columna Prioridad con color.
+    Úsalo en gestión de tickets y complementarias en lugar de st.dataframe.
 
-        divider()
-        if st.button("💾 Guardar en Base de Datos", key="sl_guardar",
-                     type="primary", use_container_width=True):
-            try:
-                r = st.session_state["sl_resultado"]
-                d = st.session_state["sl_datos"]
+    Uso:
+        from ui.components import solicitudes_table
+        solicitudes_table(df)
+    """
+    import pandas as pd
 
-                extras_db = {
-                    f"Extra_{n.replace(' ', '_')}": v
-                    for n, v in d.get("otros_cargos", {}).items()
-                }
-                extras_cobrado_db = {
-                    f"Extra_{n.replace(' ', '_')}_Cobrado": v
-                    for n, v in d.get("otros_pagados", {}).items()
-                }
+    th = (
+        "background:#1B2266;color:white;font-size:0.72rem;font-weight:700;"
+        "padding:8px 10px;text-align:left;white-space:nowrap;"
+        "text-transform:uppercase;letter-spacing:0.4px;"
+    )
+    td = (
+        "padding:7px 10px;font-size:0.8rem;color:#374151;"
+        "border-bottom:1px solid #E5E7EB;vertical-align:middle;"
+    )
 
-                fila = {
-                    "ID_Ruta":              d["id_ruta"],
-                    "Fecha":                d["fecha"],
-                    "Usuario":              d["usuario"],
-                    "Tipo_Viaje":           r["Tipo_Viaje"],
-                    "Modo":                 r["Modo"],
-                    "Direccion":            r["Direccion"],
-                    "Modalidad":            r["Modalidad"],
-                    "Cliente":              r["Cliente"],
-                    "Ruta_USA":             r["Ruta_USA"],
-                    "Origen_MX":            d["origen_mx"],
-                    "Destino_MX":           d["destino_mx"],
-                    "Moneda_Flete":         d["moneda_flete"],
-                    "Moneda_Ingreso_Cruce": d["mon_ing_cruce"],
-                    "Moneda_Costo_Cruce":   d["mon_costo_cruce"],
-                    "Moneda_Ingreso_MX":    d["mon_ing_mx"],
-                    "Moneda_Costo_MX":      d["mon_costo_mx"],
-                    "Tipo_Carga_Cruce":     d["tipo_carga_cruce"],
-                    "Incluye_Cruce":        d["incluye_cruce"],
-                    "Miles_Load":           r["Miles_Load"],
-                    "Miles_Empty":          r["Miles_Empty"],
-                    "Short_Miles":          r["Short_Miles"],
-                    "Millas_Totales":       r["Millas_Totales"],
-                    "CXM_Flete":            r["CXM_Flete_Cap"],
-                    "CXM_Fuel":             r["CXM_Fuel_Cap"],
-                    "Flete_Flat":           r["Flete_Flat"],
-                    "Flete_USA":            r["Flete_USA"],
-                    "Fuel":                 r["Fuel"],
-                    "Flete_Fuel":           r["Flete_Fuel"],
-                    "Ingreso_Cruce":        r["Ingreso_Cruce"],
-                    "Tipo_Cruce":           r["Tipo_Cruce"],
-                    "Ingreso_MX":           r["Ingreso_MX"],
-                    "Extras_Ingreso":       r["Extras_Ingreso"],
-                    "Extras_Costo":         r["Extras_Costo"],
-                    "Ingreso_Global":       r["Ingreso_Global"],
-                    "PxM_Cargado":          r["PxM_Cargado"],
-                    "PxM_Vacio":            r["PxM_Vacio"],
-                    "Pago_Owner_Cargado":   r["Pago_Owner_Cargado"],
-                    "Pago_Owner_Vacio":     r["Pago_Owner_Vacio"],
-                    "Pago_Owner_Total":     r["Pago_Owner_Total"],
-                    "Costo_Cruce":          r["Costo_Cruce"],
-                    "Costo_MX":             r["Costo_MX"],
-                    "Costo_Directo":        r["Costo_Directo"],
-                    "Costo_Indirecto":      r["Costo_Indirecto"],
-                    "Costo_Total":          r["Costo_Total"],
-                    "Utilidad_Bruta":       r["Utilidad_Bruta"],
-                    "Utilidad_Neta":        r["Utilidad_Neta"],
-                    "Pct_Costo_Directo":    r["Pct_Costo_Directo"],
-                    "Pct_Costo_Indirecto":  r["Pct_Costo_Indirecto"],
-                    "Pct_Ut_Bruta":         r["Pct_Ut_Bruta"],
-                    "Pct_Ut_Neta":          r["Pct_Ut_Neta"],
-                    "TC_USD_MXP":           r["TC"],
-                    **extras_db,
-                    **extras_cobrado_db,
-                }
+    headers = "".join(
+        f'<th style="{th}min-width:{_TABLA_COL_WIDTHS.get(c, "90px")};">{c}</th>'
+        for c in df.columns
+    )
 
-                fila_limpia = limpiar_fila_json(fila)
-                supabase.table(TABLE_RUTAS).insert(fila_limpia).execute()
+    rows_html = ""
+    for i, row in df.iterrows():
+        bg = "#FAFAFA" if i % 2 == 0 else "#FFFFFF"
+        cells = ""
+        for col in df.columns:
+            val = str(row[col]) if row[col] is not None else ""
+            if col == "Estatus":
+                cfg   = ESTATUS_CFG.get(val, _ESTATUS_DEFAULT)
+                color = cfg["color"]
+                est_bg = cfg["bg"]
+                cell_val = (
+                    f'<span style="background:{est_bg};color:{color};'
+                    f'border:1px solid {color};border-radius:12px;'
+                    f'padding:2px 10px;font-size:0.72rem;font-weight:700;'
+                    f'white-space:nowrap;">{cfg["icono"]} {val}</span>'
+                )
+            elif col == "Prioridad":
+                c = _PRIO_COLORS.get(val, "#6B7280")
+                cell_val = f'<span style="color:{c};font-weight:600;">{val}</span>'
+            else:
+                cell_val = val
+            cells += f'<td style="{td}background:{bg};">{cell_val}</td>'
+        rows_html += f"<tr>{cells}</tr>"
 
-                alert("success", f"✅ Ruta **{d['id_ruta']}** guardada correctamente.")
-                st.session_state["sl_resultado"] = None
-                st.session_state["sl_datos"]     = {}
-
-            except Exception as ex:
-                alert("error", f"❌ Error al guardar: {ex}")
+    html = (
+        f'<div style="overflow-x:auto;border-radius:10px;'
+        f'border:1px solid #E5E7EB;margin-bottom:0.75rem;">'
+        f'<table style="width:100%;border-collapse:collapse;">'
+        f'<thead><tr>{headers}</tr></thead>'
+        f'<tbody>{rows_html}</tbody>'
+        f'</table></div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
