@@ -1,20 +1,17 @@
 """
 captura_rutas.py – Set Logis Plus
-Base v2 + modalidad + extras + correcciones:
-  · Fuel usa Miles Load (igual que Flete): (ML × CXM_Flete) + (ML × CXM_Fuel)
-  · Cards estándar: Ingreso Total, Costo Directo, Utilidad Bruta, Utilidad Neta
-  · Desglose de ingresos y costos en expanders, no en cards
+Helpers de texto/conversión y generación de ID viven en _shared.py.
+HTML de resultados delegado a ui/components (semaforos_ruta, desglose_ruta).
 """
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 
 import streamlit as st
 
 from services.supabase_client import get_supabase_client, current_user
-from ui.components import section_header, alert, divider, kpi_row
+from ui.components import section_header, alert, divider, kpi_row, semaforos_ruta, desglose_ruta
 from ._shared import (
     TABLE_RUTAS,
     TIPOS_RUTA,
@@ -27,50 +24,12 @@ from ._shared import (
     calcular_ruta_setlogis,
     tiene_mx,
     direccion_label,
+    # helpers movidos desde este archivo a _shared:
+    normalizar,
+    a_usd,
+    get_profile_name,
+    generar_id_ruta,
 )
-
-
-# ─────────────────────────────────────────────
-# HELPERS
-# ─────────────────────────────────────────────
-def normalizar(texto: str) -> str:
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = re.sub(r"\s+", " ", texto)
-    texto = re.sub(r"\s*,\s*", ", ", texto)
-    return texto
-
-
-def a_usd(monto: float, moneda: str, tc: float) -> float:
-    if moneda == "MXP":
-        return monto / tc if tc > 0 else 0.0
-    return monto
-
-
-def _get_profile_name(user_id: str) -> str | None:
-    sb = get_supabase_client()
-    if sb is None or not user_id:
-        return None
-    try:
-        res = sb.table("profiles").select("full_name").eq("id", user_id).maybe_single().execute()
-        return (res.data or {}).get("full_name")
-    except Exception:
-        return None
-
-
-def _generar_id(supabase) -> str:
-    try:
-        resp = supabase.table(TABLE_RUTAS).select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
-        if resp.data:
-            ultimo = str(resp.data[0].get("ID_Ruta", "SL000000"))
-            num = int(re.sub(r"\D", "", ultimo)[-6:]) + 1
-        else:
-            num = 1
-        return f"SL{num:06d}"
-    except Exception:
-        import time
-        return f"SL{int(time.time()) % 1000000:06d}"
 
 
 # ─────────────────────────────────────────────
@@ -138,11 +97,9 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
     divider()
     section_header("📊", "Resultado de la Ruta")
 
-    # ── Utilidad Bruta: ≥15% verde, <15% rojo ────────────────────────────────
     pct_ut_b   = r["Pct_Ut_Bruta"]
     color_ut_b = "#16a34a" if pct_ut_b >= 15.0 else "#dc2626"
 
-    # ── 5 cards ───────────────────────────────────────────────────────────────
     kpi_row([
         {
             "icono": "💵",
@@ -181,146 +138,12 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
         },
     ])
 
-    # ── Semáforos ─────────────────────────────────────────────────────────────
+    # Semáforos — umbrales Set Logis (defaults)
     divider()
-    s1, s2, s3, s4 = st.columns(4)
+    semaforos_ruta(r)
 
-    pct_dir = r["Pct_Costo_Directo"]
-    if r["Color_Directo"] == "#16a34a":
-        s1.success(f"✅ C. Directos: {pct_dir:.1f}% (≤85%)")
-    else:
-        s1.error(f"🔴 C. Directos: {pct_dir:.1f}% — EXCEDE 85%")
-
-    if color_ut_b == "#16a34a":
-        s2.success(f"✅ Ut. Bruta: {pct_ut_b:.1f}% (≥15%)")
-    else:
-        s2.error(f"🔴 Ut. Bruta: {pct_ut_b:.1f}% — POR DEBAJO 15%")
-
-    pct_ind = r["Pct_Costo_Indirecto"]
-    if r["Color_Indirecto"] == "#16a34a":
-        s3.success(f"✅ C. Indirectos: {pct_ind:.1f}% (≤9%)")
-    else:
-        s3.error(f"🔴 C. Indirectos: {pct_ind:.1f}% — EXCEDE 9%")
-
-    pct_n = r["Pct_Ut_Neta"]
-    if r["Color_Ut_Neta"] == "#16a34a":
-        s4.success(f"✅ Ut. Neta: {pct_n:.1f}% (≥6%)")
-    else:
-        s4.error(f"🔴 Ut. Neta: {pct_n:.1f}% — POR DEBAJO 6%")
-
-    # ── Desglose por tramo ────────────────────────────────────────────────────
-    # Cálculos por tramo
-    # Americana
-    ing_ame   = r["Flete_USA"] + r.get("Extras_Ingreso", 0.0)
-    costo_ame = r["Pago_Owner_Total"] + r.get("Extras_Costo_Total", r.get("Extras_Costo", 0.0)) + r["Costo_Indirecto"]
-    ut_ame    = ing_ame - costo_ame
-
-    # Cruce
-    ing_cruce   = r["Ingreso_Cruce"]
-    costo_cruce = r["Costo_Cruce"]
-    ut_cruce    = ing_cruce - costo_cruce
-
-    # MX
-    ing_mx   = r["Ingreso_MX"]
-    costo_mx = r["Costo_MX"]
-    ut_mx    = ing_mx - costo_mx
-
-    # Tabs — siempre Americana; Cruce y MX solo si tienen datos
-    tab_labels = ["🇺🇸 Ruta Americana"]
-    if ing_cruce > 0 or costo_cruce > 0:
-        tab_labels.append("🛂 Cruce")
-    if ing_mx > 0 or costo_mx > 0:
-        tab_labels.append("🇲🇽 Ruta Mexicana")
-
-    divider()
-    with st.expander("🔍 Ver Desglose por Tramo", expanded=False):
-        tabs = st.tabs(tab_labels)
-
-        # ── Tab Americana ─────────────────────────────────────────────────────
-        with tabs[0]:
-            col_i, col_c = st.columns(2)
-
-            with col_i:
-                st.markdown("**📥 Ingresos**")
-                if modalidad == "Desglosada":
-                    ing_flete = r["Miles_Load"] * cxm_flete
-                    ing_fuel  = r["Miles_Load"] * cxm_fuel
-                    st.write(f"Flete: **${ing_flete:,.2f}**")
-                    st.write(f"Fuel:  **${ing_fuel:,.2f}**")
-                else:
-                    st.write(f"Tarifa Flat: **${r['Flete_USA']:,.2f}**")
-
-                if r.get("Extras_Ingreso", 0) > 0:
-                    st.write(f"Extras cobrados: **${r['Extras_Ingreso']:,.2f}**")
-
-                st.markdown(f"**Total: ${ing_ame:,.2f}**")
-
-            with col_c:
-                st.markdown("**📤 Costos Directos**")
-                st.write(
-                    f"Owner Cargado ({r['Miles_Load']:.0f}+{r['Short_Miles']:.0f} mi × "
-                    f"${r['PxM_Cargado']:.4f}): **${r['Pago_Owner_Cargado']:,.2f}**"
-                )
-                st.write(
-                    f"Owner Vacío ({r['Miles_Empty']:.0f} mi × "
-                    f"${r['PxM_Vacio']:.4f}): **${r['Pago_Owner_Vacio']:,.2f}**"
-                )
-                if r.get("Extras_Costo", 0) > 0:
-                    st.write(f"Extras (costo): **${r['Extras_Costo']:,.2f}**")
-                st.write(f"Indirectos: **${r['Costo_Indirecto']:,.2f}**")
-                st.markdown(f"**Total: ${costo_ame:,.2f}**")
-
-            divider()
-            color_ut = "#16a34a" if ut_ame >= 0 else "#dc2626"
-            pct_ut   = (ut_ame / ing_ame * 100) if ing_ame > 0 else 0.0
-            st.markdown(
-                f"**Utilidad Bruta Americana: "
-                f"<span style='color:{color_ut}'>${ut_ame:,.2f} ({pct_ut:.1f}%)</span>**",
-                unsafe_allow_html=True,
-            )
-
-        # ── Tab Cruce ─────────────────────────────────────────────────────────
-        if "🛂 Cruce" in tab_labels:
-            with tabs[tab_labels.index("🛂 Cruce")]:
-                col_i, col_c = st.columns(2)
-                with col_i:
-                    st.markdown("**📥 Ingresos**")
-                    st.write(f"Ingreso Cruce: **${ing_cruce:,.2f}**")
-                    st.markdown(f"**Total: ${ing_cruce:,.2f}**")
-                with col_c:
-                    st.markdown("**📤 Costos Directos**")
-                    tipo_cruce_label = r.get("Tipo_Cruce", "")
-                    st.write(f"Costo Cruce ({tipo_cruce_label}): **${costo_cruce:,.2f}**")
-                    st.markdown(f"**Total: ${costo_cruce:,.2f}**")
-                divider()
-                color_ut = "#16a34a" if ut_cruce >= 0 else "#dc2626"
-                pct_ut   = (ut_cruce / ing_cruce * 100) if ing_cruce > 0 else 0.0
-                st.markdown(
-                    f"**Utilidad Bruta Cruce: "
-                    f"<span style='color:{color_ut}'>${ut_cruce:,.2f} ({pct_ut:.1f}%)</span>**",
-                    unsafe_allow_html=True,
-                )
-
-        # ── Tab MX ────────────────────────────────────────────────────────────
-        if "🇲🇽 Ruta Mexicana" in tab_labels:
-            with tabs[tab_labels.index("🇲🇽 Ruta Mexicana")]:
-                col_i, col_c = st.columns(2)
-                with col_i:
-                    st.markdown("**📥 Ingresos**")
-                    st.write(f"Ingreso MX: **${ing_mx:,.2f}**")
-                    st.markdown(f"**Total: ${ing_mx:,.2f}**")
-                with col_c:
-                    st.markdown("**📤 Costos Directos**")
-                    st.write(f"Costo MX: **${costo_mx:,.2f}**")
-                    st.markdown(f"**Total: ${costo_mx:,.2f}**")
-                divider()
-                color_ut = "#16a34a" if ut_mx >= 0 else "#dc2626"
-                pct_ut   = (ut_mx / ing_mx * 100) if ing_mx > 0 else 0.0
-                st.markdown(
-                    f"**Utilidad Bruta MX: "
-                    f"<span style='color:{color_ut}'>${ut_mx:,.2f} ({pct_ut:.1f}%)</span>**",
-                    unsafe_allow_html=True,
-                )
+    # Desglose por tramo — delegado a components
+    desglose_ruta(r, modalidad=modalidad, cxm_flete=cxm_flete, cxm_fuel=cxm_fuel)
 
 
 # ─────────────────────────────────────────────
@@ -334,7 +157,7 @@ def render() -> None:
 
     u              = current_user() or {}
     user_id        = u.get("id") or u.get("sub") or ""
-    nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
+    nombre_usuario = get_profile_name(user_id) or u.get("email") or "Desconocido"
 
     st.session_state.setdefault("sl_resultado", None)
     st.session_state.setdefault("sl_datos", {})
@@ -379,7 +202,6 @@ def render() -> None:
         short_miles = m2.number_input("🔀 Short Miles",  min_value=0.0, step=1.0,  key="sl_sm")
         miles_empty = m3.number_input("⚪ Miles Empty",  min_value=0.0, step=10.0, key="sl_me")
 
-        # Modalidad de cobro
         divider()
         st.markdown("**💵 Tarifa Americana**")
         mod1, mod2 = st.columns([1, 3])
@@ -399,7 +221,6 @@ def render() -> None:
                                               key="sl_cxm_fuel", disabled=es_empty)
             flete_flat_cap = 0.0
             if not es_empty:
-                # ✅ Ambos usan Miles Load
                 preview = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
                 mod2.caption(
                     f"Vista previa: (CXM Flete ${safe(cxm_flete_cap):.4f}"
@@ -494,8 +315,8 @@ def render() -> None:
         st.markdown("### ➕ Extras / Otros Conceptos")
         st.caption("Captura el monto y marca ✓ si se cobra al cliente (suma a ingreso). Sin monto = ignorado.")
 
-        otros_cargos: dict[str, float] = {}
-        otros_pagados: dict[str, bool] = {}
+        otros_cargos:  dict[str, float] = {}
+        otros_pagados: dict[str, bool]  = {}
 
         for i in range(0, len(EXTRAS_USA), 2):
             col_a, col_b = st.columns(2)
@@ -508,8 +329,7 @@ def render() -> None:
                     monto   = ex1.number_input(extra, min_value=0.0, step=10.0,
                                                key=f"sl_ex_m_{idx}")
                     cobrado = ex2.checkbox("cobra", key=f"sl_ex_p_{idx}",
-                                           value=False,
-                                           help="¿Se cobra al cliente?")
+                                           value=False, help="¿Se cobra al cliente?")
                     if monto > 0:
                         otros_cargos[extra]  = monto
                         otros_pagados[extra] = cobrado
@@ -548,31 +368,23 @@ def render() -> None:
             for e in errores:
                 st.error(e)
         else:
-            # ── Tarifa americana — ambos CXM usan Miles Load ───────────────────
             if es_empty:
                 flete_usd = fuel_usd = 0.0
             elif modalidad == "Desglosada":
-                # (CXM_Flete + CXM_Fuel) × Miles_Load
                 flete_raw = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
                 flete_usd = a_usd(flete_raw, moneda_flete, tc)
-                fuel_usd  = 0.0   # ya está incluido en flete_usd
+                fuel_usd  = 0.0
             else:
                 flete_usd = a_usd(safe(flete_flat_cap), moneda_flete, tc)
                 fuel_usd  = 0.0
 
-            # Conversión a USD
             ingreso_cruce_u = a_usd(ingreso_cruce_raw, mon_ing_cruce,   tc)
             costo_cruce_u   = a_usd(costo_cruce_raw,   mon_costo_cruce, tc)
             ingreso_mx_u    = a_usd(ingreso_mx_raw,    mon_ing_mx,      tc)
             costo_mx_u      = a_usd(costo_mx_raw,      mon_costo_mx,    tc)
 
-            # Extras
-            # Cobrado al cliente → ingreso Y costo
-            # No cobrado         → solo costo
-            extras_ingreso    = sum(v for n, v in otros_cargos.items()
-                                    if otros_pagados.get(n, False))
-            extras_costo_puro = sum(v for n, v in otros_cargos.items()
-                                    if not otros_pagados.get(n, False))
+            extras_ingreso    = sum(v for n, v in otros_cargos.items() if otros_pagados.get(n, False))
+            extras_costo_puro = sum(v for n, v in otros_cargos.items() if not otros_pagados.get(n, False))
 
             resultado = calcular_ruta_setlogis(
                 tipo_ruta            = tipo_ruta,
@@ -596,12 +408,12 @@ def render() -> None:
                 valores              = valores,
             )
 
-            resultado["Modalidad"]      = modalidad
-            resultado["CXM_Flete_Cap"]  = safe(cxm_flete_cap) if modalidad == "Desglosada" else 0.0
-            resultado["CXM_Fuel_Cap"]   = safe(cxm_fuel_cap)  if modalidad == "Desglosada" else 0.0
-            resultado["Flete_Flat"]     = flete_usd            if modalidad == "Flat"        else 0.0
+            resultado["Modalidad"]     = modalidad
+            resultado["CXM_Flete_Cap"] = safe(cxm_flete_cap) if modalidad == "Desglosada" else 0.0
+            resultado["CXM_Fuel_Cap"]  = safe(cxm_fuel_cap)  if modalidad == "Desglosada" else 0.0
+            resultado["Flete_Flat"]    = flete_usd            if modalidad == "Flat"        else 0.0
 
-            id_ruta = _generar_id(supabase)
+            id_ruta = generar_id_ruta(supabase)
 
             st.session_state["sl_resultado"] = resultado
             st.session_state["sl_datos"] = {
@@ -627,9 +439,9 @@ def render() -> None:
         r = st.session_state["sl_resultado"]
         _mostrar_resumen(
             r,
-            modalidad   = r.get("Modalidad", "Flat"),
-            cxm_flete   = r.get("CXM_Flete_Cap", 0.0),
-            cxm_fuel    = r.get("CXM_Fuel_Cap",  0.0),
+            modalidad = r.get("Modalidad", "Flat"),
+            cxm_flete = r.get("CXM_Flete_Cap", 0.0),
+            cxm_fuel  = r.get("CXM_Fuel_Cap",  0.0),
         )
 
         divider()
