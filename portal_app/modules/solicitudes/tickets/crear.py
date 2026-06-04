@@ -14,7 +14,7 @@ EMPRESAS      = ["Picus", "Igloo", "Set Freight", "Lincoln Freight", "Set Logis 
 CATEGORIAS    = ["Cotizadores", "Complementarias", "SPGC", "App Eq. Matto",
                  "Tickets", "Nuevo Desarrollo"]
 DEPARTAMENTOS = ["Operaciones", "Contabilidad", "Auditoria", "Matto",
-                 "Safety", "Monitoreo", "Fac & Cob", "Otro"]
+                 "Safety", "Monitoreo", "Fac & Cob", "Liquidaciones", "Control de Diesel", "Otro"]
 PRIORIDADES   = ["Normal", "Alta", "Urgente"]
 
 
