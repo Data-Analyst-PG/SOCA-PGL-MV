@@ -250,7 +250,7 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
         st.caption(f"📌 Dirección: **{direccion_label(tipo_ruta)}** · Tramo MX: **{'Sí' if aplica_mx else 'No'}**")
 
         # ── Ruta USA ──────────────────────────────────────────────────────────
-        divider()
+        st.divider()
         st.markdown("### 🇺🇸 Ruta Americana")
         ruta_actual = str(ruta.get("Ruta_USA", ""))
         partes = ruta_actual.split(" - ", 1) if " - " in ruta_actual else [ruta_actual, ""]
@@ -264,7 +264,7 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
         short_miles = m2.number_input("Short Miles", value=safe(ruta.get("Short_Miles")), min_value=0.0, step=1.0,  key="sl_edit_sm")
         miles_empty = m3.number_input("Miles Empty", value=safe(ruta.get("Miles_Empty")), min_value=0.0, step=10.0, key="sl_edit_me")
 
-        divider()
+        st.divider()
         st.markdown("**💵 Tarifa Americana**")
         modalidad_actual = str(ruta.get("Modalidad", "Flat"))
         mod1, mod2 = st.columns([1, 3])
@@ -290,14 +290,14 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
             tf1, tf2 = mod2.columns(2)
             moneda_flete   = tf1.selectbox("Moneda", ["USD", "MXP"],
                                             index=0 if moneda_flete == "USD" else 1,
-                                            key="sl_edit_mon_flete", disabled=es_empty)
+                                            key="sl_edit_mon_flete_flat", disabled=es_empty)
             flete_flat_cap = tf2.number_input("Tarifa Flat", value=safe(ruta.get("Flete_USA")),
                                                min_value=0.0, step=50.0, key="sl_edit_flat",
                                                disabled=es_empty)
             cxm_flete_cap = cxm_fuel_cap = 0.0
 
         # ── Cruce ─────────────────────────────────────────────────────────────
-        divider()
+        st.divider()
         st.markdown("### 🛂 Cruce Fronterizo")
         incluye_cruce = st.checkbox("¿Incluye cruce?", value=bool(ruta.get("Incluye_Cruce", False)),
                                      key="sl_edit_cruce", disabled=es_empty)
@@ -336,7 +336,7 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
 
         # ── Ruta MX ───────────────────────────────────────────────────────────
         if aplica_mx:
-            divider()
+            st.divider()
             st.markdown("### 🇲🇽 Ruta México")
             mx_r1, mx_r2 = st.columns(2)
             origen_mx  = mx_r1.text_input("Origen MX",  value=str(ruta.get("Origen_MX", "")),  key="sl_edit_ori_mx")
@@ -358,7 +358,7 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
             ingreso_mx_raw = costo_mx_raw = 0.0
 
         # ── Extras ────────────────────────────────────────────────────────────
-        divider()
+        st.divider()
         st.markdown("### ➕ Extras")
         st.caption("Captura el monto y marca ✓ si se cobra al cliente.")
 
@@ -386,13 +386,13 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
                         otros_pagados[extra] = cobrado
 
         # ── Costo Indirecto ───────────────────────────────────────────────────
-        divider()
+        st.divider()
         st.markdown("### 📉 Costo Indirecto")
         ci_col, _ = st.columns([1, 2])
         modo_ci = ci_col.radio("Método", ["CXM", "Porcentaje"],
                                 horizontal=True, key="sl_edit_modo_ci")
 
-        divider()
+        st.divider()
         guardar = st.form_submit_button("💾 Guardar Cambios", type="primary",
                                          use_container_width=True)
 
