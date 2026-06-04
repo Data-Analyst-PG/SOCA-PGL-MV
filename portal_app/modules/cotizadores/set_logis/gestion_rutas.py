@@ -211,13 +211,6 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
     else:
         st.caption("📜 Sin modificaciones previas.")
 
-    # Motivo obligatorio antes del form
-    motivo = st.text_input(
-        "📝 Motivo de la modificación *",
-        placeholder="Ej: Corrección de millas, ajuste de ingreso…",
-        key="sl_edit_motivo",
-    )
-
     valores = cargar_datos_generales()
     tc = safe(valores.get("Tipo de Cambio USD/MXP", 18.50))
 
@@ -228,6 +221,14 @@ def _editar(df: pd.DataFrame, supabase, nombre_usuario: str) -> None:
     # ── FORM DE EDICIÓN ───────────────────────────────────────────────────────
     with st.form("sl_edit_form", clear_on_submit=False):
 
+        # Motivo — primero en el form para que sea visible de inmediato
+        motivo = st.text_input(
+            "📝 Motivo de la modificación *",
+            placeholder="Ej: Corrección de millas, ajuste de ingreso…",
+            key="sl_edit_motivo",
+        )
+
+        st.divider()
         st.markdown("### 📋 Información General")
         g1, g2, g3, g4 = st.columns(4)
 
