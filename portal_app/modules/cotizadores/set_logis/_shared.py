@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 from datetime import date, datetime
 
 import numpy as np
@@ -40,7 +42,7 @@ TIPOS_SUBIDA = {"NB", "D2DNB", "Empty"}
 TIPOS_BAJADA = {"SB", "D2DSB"}
 
 # ─────────────────────────────────────────────
-# EXTRAS (igual que Lincoln)
+# EXTRAS
 # ─────────────────────────────────────────────
 EXTRAS_USA = [
     "Stop Off",
@@ -147,6 +149,58 @@ def limpiar_fila_json(fila: dict) -> dict:
 
 
 # ─────────────────────────────────────────────
+# HELPERS DE TEXTO Y CONVERSIÓN
+# (movidos desde captura_rutas — usados en captura, gestion, consulta)
+# ─────────────────────────────────────────────
+def normalizar(texto: str) -> str:
+    """Convierte texto a mayúsculas, elimina espacios extra y normaliza comas."""
+    if not texto:
+        return ""
+    texto = str(texto).upper().strip()
+    texto = re.sub(r"\s+", " ", texto)
+    texto = re.sub(r"\s*,\s*", ", ", texto)
+    return texto
+
+
+def a_usd(monto: float, moneda: str, tc: float) -> float:
+    """Convierte un monto a USD si está en MXP usando el tipo de cambio dado."""
+    if moneda == "MXP":
+        return monto / tc if tc > 0 else 0.0
+    return monto
+
+
+def get_profile_name(user_id: str) -> str | None:
+    """Obtiene el nombre completo del usuario desde la tabla profiles de Supabase."""
+    from services.supabase_client import get_supabase_client
+    sb = get_supabase_client()
+    if sb is None or not user_id:
+        return None
+    try:
+        res = sb.table("profiles").select("full_name").eq("id", user_id).maybe_single().execute()
+        return (res.data or {}).get("full_name")
+    except Exception:
+        return None
+
+
+def generar_id_ruta(supabase) -> str:
+    """
+    Genera el siguiente ID correlativo para Rutas_SetLogis.
+    Formato: SL000001, SL000002, ...
+    Fallback con timestamp si falla la consulta.
+    """
+    try:
+        resp = supabase.table(TABLE_RUTAS).select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
+        if resp.data:
+            ultimo = str(resp.data[0].get("ID_Ruta", "SL000000"))
+            num = int(re.sub(r"\D", "", ultimo)[-6:]) + 1
+        else:
+            num = 1
+        return f"SL{num:06d}"
+    except Exception:
+        return f"SL{int(time.time()) % 1000000:06d}"
+
+
+# ─────────────────────────────────────────────
 # HELPERS DE NEGOCIO
 # ─────────────────────────────────────────────
 def es_subida(tipo_ruta: str) -> bool:
@@ -189,83 +243,64 @@ def calcular_ruta_setlogis(
     miles_load: float,
     miles_empty: float,
     short_miles: float,
-    # flete_usa ya viene calculado desde captura_rutas:
-    #   Desglosada → (CXM_Flete × Miles_Load) + (CXM_Fuel × Miles_Load)
-    #   Flat       → tarifa total
-    # También incluye extras cobrados al cliente si los hay.
     flete_usa: float,
-    fuel: float,        # Fuel por separado para desglose en resultados
-    tipo_cruce: str,         # "Sin cruce" | "Propio" | "Externo"
-    tipo_carga_cruce: str,   # "Cargado" | "Vacío" — solo aplica si tipo_cruce == "Propio"
+    fuel: float,
+    tipo_cruce: str,
+    tipo_carga_cruce: str,
     ingreso_cruce: float,
     costo_cruce_externo: float,
     ingreso_mx: float,
     costo_mx: float,
-    extras_ingreso: float,   # Extras cobrados al cliente → van a ingreso Y a costo
-    extras_costo: float,     # Extras NO cobrados al cliente → solo van a costo
+    extras_ingreso: float,
+    extras_costo: float,
     modo_costo_indirecto: str,
     valores: dict,
 ) -> dict:
 
     v = valores
 
-    pxm_cargado = _pxm_cargado(tipo_ruta, modo, v)
-    pxm_vacio_v = _pxm_vacio(modo, v)
-    tc          = safe(v.get("Tipo de Cambio USD/MXP", 18.50))
+    # ── MILLAS ───────────────────────────────────────────────────────────────
+    millas_cargadas = safe(miles_load) + safe(short_miles)
+    millas_vacias   = safe(miles_empty)
+    millas_totales  = millas_cargadas + millas_vacias
 
-    miles_load  = safe(miles_load)
-    miles_empty = safe(miles_empty)
-    short_miles = safe(short_miles)
-    millas_totales = miles_load + miles_empty + short_miles
+    # ── PAGO OWNER ───────────────────────────────────────────────────────────
+    pxm_cargado        = _pxm_cargado(tipo_ruta, modo, v)
+    pxm_vacio_v        = _pxm_vacio(modo, v)
+    pago_owner_cargado = millas_cargadas * pxm_cargado
+    pago_owner_vacio   = millas_vacias   * pxm_vacio_v
+    pago_owner_total   = pago_owner_cargado + pago_owner_vacio
 
-    # ── INGRESOS ─────────────────────────────────────────────────────────────
-    is_empty = tipo_ruta == "Empty"
+    # ── FLETE / FUEL ─────────────────────────────────────────────────────────
+    flete_fuel = safe(flete_usa) + safe(fuel)
 
-    if is_empty:
-        flete_usa  = 0.0
-        fuel       = 0.0
-        flete_fuel = 0.0
-        ingreso_usa = 0.0
-        ingreso_cruce = 0.0
-        ingreso_mx    = 0.0
-    else:
-        flete_usa   = safe(flete_usa)
-        fuel        = safe(fuel)
-        # flete_fuel = flete_usa ya incluye el fuel cuando viene de Desglosada
-        # Lo guardamos por separado para mostrar en desglose
-        flete_fuel  = flete_usa
-        ingreso_usa = flete_usa
-
-    ingreso_cruce  = safe(ingreso_cruce) if not is_empty else 0.0
-    ingreso_mx     = safe(ingreso_mx) if (tiene_mx(tipo_ruta) and not is_empty) else 0.0
-    # Extras cobrados al cliente suman al ingreso
-    extras_ingreso = safe(extras_ingreso) if not is_empty else 0.0
-    ingreso_global = ingreso_usa + ingreso_cruce + ingreso_mx + extras_ingreso
-
-    # ── COSTO CRUCE ──────────────────────────────────────────────────────────
-    if is_empty or tipo_cruce == "Sin cruce":
-        costo_cruce = 0.0
-    elif tipo_cruce == "Propio":
-        key_cruce   = "Cruce Propio Cargado" if tipo_carga_cruce == "Cargado" else "Cruce Propio Vacio"
+    # ── CRUCE ────────────────────────────────────────────────────────────────
+    if tipo_cruce == "Propio":
+        key_cruce  = "Cruce Propio Cargado" if tipo_carga_cruce == "Cargado" else "Cruce Propio Vacio"
         costo_cruce = safe(v.get(key_cruce, 80.0))
     else:
         costo_cruce = safe(costo_cruce_externo)
 
-    # ── COSTO MX ─────────────────────────────────────────────────────────────
-    costo_mx_calc = safe(costo_mx) if tiene_mx(tipo_ruta) else 0.0
+    # ── INGRESO GLOBAL ───────────────────────────────────────────────────────
+    ingreso_global = (
+        safe(flete_usa)
+        + safe(fuel)
+        + safe(ingreso_cruce)
+        + safe(ingreso_mx)
+        + safe(extras_ingreso)
+    )
 
-    # ── PAGO OWNER ───────────────────────────────────────────────────────────
-    # Short miles se pagan igual que cargadas (misma tasa subida/bajada)
-    pago_owner_cargado = (miles_load + short_miles) * pxm_cargado
-    pago_owner_vacio   = miles_empty * pxm_vacio_v
-    pago_owner_total   = pago_owner_cargado + pago_owner_vacio
+    # ── COSTO DIRECTO ────────────────────────────────────────────────────────
+    costo_mx_calc       = safe(costo_mx)
+    extras_costo_total  = safe(extras_costo)
+    costo_directo_total = (
+        pago_owner_total
+        + costo_cruce
+        + costo_mx_calc
+        + extras_costo_total
+    )
 
-    # ── COSTOS DIRECTOS ───────────────────────────────────────────────────────
-    # Todos los extras van a costo, sin importar si se cobran al cliente o no
-    extras_costo_total = safe(extras_ingreso) + safe(extras_costo)
-    costo_directo_total = pago_owner_total + costo_cruce + costo_mx_calc + extras_costo_total
-
-    # ── COSTOS INDIRECTOS ─────────────────────────────────────────────────────
+    # ── COSTO INDIRECTO ───────────────────────────────────────────────────────
     if modo_costo_indirecto == "CXM":
         cxm_ind         = safe(v.get("CXM Indirecto", 0.10))
         costo_indirecto = millas_totales * cxm_ind
@@ -307,8 +342,8 @@ def calcular_ruta_setlogis(
         "Millas_Totales":      millas_totales,
         "PxM_Cargado":         pxm_cargado,
         "PxM_Vacio":           pxm_vacio_v,
-        "Flete_USA":           flete_usa,   # total flete (incluye fuel en desglosada)
-        "Fuel":                fuel,        # guardado por separado para referencia
+        "Flete_USA":           flete_usa,
+        "Fuel":                fuel,
         "Flete_Fuel":          flete_fuel,
         "Ingreso_Cruce":       ingreso_cruce,
         "Ingreso_MX":          ingreso_mx,
@@ -320,7 +355,6 @@ def calcular_ruta_setlogis(
         "Pago_Owner_Cargado":  pago_owner_cargado,
         "Pago_Owner_Vacio":    pago_owner_vacio,
         "Pago_Owner_Total":    pago_owner_total,
-        "Extras_Ingreso":      extras_ingreso,
         "Extras_Costo":        extras_costo,
         "Extras_Costo_Total":  extras_costo_total,
         "Costo_Directo":       costo_directo_total,
@@ -337,5 +371,5 @@ def calcular_ruta_setlogis(
         "Color_Ut_Neta":       color_ut_n,
         "CXM_Indirecto":       cxm_aplicado,
         "Pct_Indirecto":       pct_aplicado,
-        "TC":                  tc,
+        "TC":                  safe(v.get("Tipo de Cambio USD/MXP", 18.50)),
     }
