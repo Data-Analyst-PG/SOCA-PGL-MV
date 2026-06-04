@@ -721,3 +721,214 @@ def solicitudes_table(df):
         f'</table></div>'
     )
     st.markdown(html, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 16. SEMÁFOROS DE RUTA (cotizadores owner-operator / camionero)
+# ─────────────────────────────────────────────────────────────────────────────
+def semaforos_ruta(
+    r: dict,
+    *,
+    max_costo_directo: float  = 85.0,   # Set Logis: ≤85%
+    min_ut_bruta:      float  = 15.0,   # Set Logis: ≥15%
+    max_costo_indirecto: float = 9.0,   # Set Logis: ≤9%
+    min_ut_neta:       float  =  6.0,   # Set Logis: ≥6%
+) -> None:
+    """
+    Muestra 4 indicadores tipo semáforo (verde/rojo) para los KPIs de una ruta.
+    Los umbrales tienen defaults de Set Logis pero son configurables por empresa.
+
+    Uso Set Logis (defaults):
+        semaforos_ruta(r)
+
+    Uso Lincoln (ajustar umbrales según corresponda):
+        semaforos_ruta(r, max_costo_directo=80.0, min_ut_bruta=20.0,
+                          max_costo_indirecto=10.0, min_ut_neta=10.0)
+
+    El dict `r` debe venir de calcular_ruta_* y contener:
+        Pct_Costo_Directo, Pct_Ut_Bruta, Pct_Costo_Indirecto, Pct_Ut_Neta
+    """
+    s1, s2, s3, s4 = st.columns(4)
+
+    pct_dir = r.get("Pct_Costo_Directo", 0.0)
+    pct_utb = r.get("Pct_Ut_Bruta", 0.0)
+    pct_ind = r.get("Pct_Costo_Indirecto", 0.0)
+    pct_utn = r.get("Pct_Ut_Neta", 0.0)
+
+    if pct_dir <= max_costo_directo:
+        s1.success(f"C. Directos: {pct_dir:.1f}% (≤{max_costo_directo:.0f}%)")
+    else:
+        s1.error(f"C. Directos: {pct_dir:.1f}% — EXCEDE {max_costo_directo:.0f}%")
+
+    if pct_utb >= min_ut_bruta:
+        s2.success(f"Ut. Bruta: {pct_utb:.1f}% (≥{min_ut_bruta:.0f}%)")
+    else:
+        s2.error(f"Ut. Bruta: {pct_utb:.1f}% — DEBAJO {min_ut_bruta:.0f}%")
+
+    if pct_ind <= max_costo_indirecto:
+        s3.success(f"C. Indirecto: {pct_ind:.1f}% (≤{max_costo_indirecto:.0f}%)")
+    else:
+        s3.error(f"C. Indirecto: {pct_ind:.1f}% — EXCEDE {max_costo_indirecto:.0f}%")
+
+    if pct_utn >= min_ut_neta:
+        s4.success(f"Ut. Neta: {pct_utn:.1f}% (≥{min_ut_neta:.0f}%)")
+    else:
+        s4.error(f"Ut. Neta: {pct_utn:.1f}% — DEBAJO {min_ut_neta:.0f}%")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 17. DESGLOSE DE RUTA POR TRAMO
+# ─────────────────────────────────────────────────────────────────────────────
+def desglose_ruta(
+    r: dict,
+    *,
+    filas_costo_americana: list[tuple[str, float]] | None = None,
+    modalidad: str = "Flat",
+    cxm_flete: float = 0.0,
+    cxm_fuel:  float = 0.0,
+) -> None:
+    """
+    Expander con tabs de desglose ingreso/costo por tramo.
+    Solo muestra los tramos que tengan datos (importe > 0).
+    Funciona para cualquier cotizador: Set Logis, Lincoln, mexicanas.
+
+    Parámetros:
+        r                     : dict resultado de calcular_ruta_*
+        filas_costo_americana : lista de (label, valor) para los costos directos USA.
+                                Si es None usa los campos estándar de Set Logis
+                                (Pago_Owner_Cargado, Pago_Owner_Vacio, Extras_Costo,
+                                Costo_Indirecto).
+        modalidad             : "Desglosada" | "Flat" — afecta cómo se muestra ingreso USA
+        cxm_flete / cxm_fuel  : solo se usan si modalidad == "Desglosada"
+
+    Uso Set Logis (automático):
+        desglose_ruta(r, modalidad=modalidad, cxm_flete=cxm_flete, cxm_fuel=cxm_fuel)
+
+    Uso Lincoln (filas_costo personalizadas):
+        desglose_ruta(r, filas_costo_americana=[
+            ("Sueldo Base", r["sueldo_base"]),
+            ("Bono Millas", r["bono_millas"]),
+            ("Diesel",      r["diesel_usa"]),
+            ("ISR/IMSS",    r["isr_imss"]),
+        ])
+    """
+    # ── Valores base ──────────────────────────────────────────────────────────
+    def _s(k):
+        v = r.get(k, 0.0)
+        try:
+            return float(v) if v is not None else 0.0
+        except Exception:
+            return 0.0
+
+    ing_ame   = _s("Flete_USA") + _s("Fuel") + _s("Extras_Ingreso")
+    ing_cruce = _s("Ingreso_Cruce")
+    ing_mx    = _s("Ingreso_MX")
+    cos_cruce = _s("Costo_Cruce")
+    cos_mx    = _s("Costo_MX")
+
+    # Costos americanos: custom o default Set Logis
+    if filas_costo_americana is None:
+        ml  = _s("Miles_Load")
+        sm  = _s("Short_Miles")
+        me  = _s("Miles_Empty")
+        pxc = _s("PxM_Cargado")
+        pxv = _s("PxM_Vacio")
+        filas_costo_americana = [
+            (f"Owner Cargado ({ml:.0f}+{sm:.0f} mi × ${pxc:.4f})", _s("Pago_Owner_Cargado")),
+            (f"Owner Vacío ({me:.0f} mi × ${pxv:.4f})",             _s("Pago_Owner_Vacio")),
+        ]
+        if _s("Extras_Costo") > 0:
+            filas_costo_americana.append(("Extras (no cobrados)", _s("Extras_Costo")))
+        filas_costo_americana.append(("Costo Indirecto", _s("Costo_Indirecto")))
+
+    cos_ame = sum(v for _, v in filas_costo_americana)
+    ut_ame  = ing_ame   - cos_ame
+    ut_cruc = ing_cruce - cos_cruce
+    ut_mx   = ing_mx    - cos_mx
+
+    # ── Construir tabs dinámicamente ─────────────────────────────────────────
+    tab_labels = []
+    if ing_ame > 0 or cos_ame > 0:
+        tab_labels.append("🇺🇸 Ruta Americana")
+    if ing_cruce > 0 or cos_cruce > 0:
+        tab_labels.append("🛂 Cruce")
+    if ing_mx > 0 or cos_mx > 0:
+        tab_labels.append("🇲🇽 Ruta Mexicana")
+
+    if not tab_labels:
+        return
+
+    with st.expander("🔍 Ver Desglose por Tramo", expanded=False):
+        tabs = st.tabs(tab_labels)
+
+        # ── Americana ────────────────────────────────────────────────────────
+        if "🇺🇸 Ruta Americana" in tab_labels:
+            with tabs[tab_labels.index("🇺🇸 Ruta Americana")]:
+                ci, cc = st.columns(2)
+                with ci:
+                    st.markdown("**Ingresos**")
+                    if modalidad == "Desglosada":
+                        ml = _s("Miles_Load")
+                        st.caption(f"Flete:  **${ml * cxm_flete:,.2f}**")
+                        st.caption(f"Fuel:   **${ml * cxm_fuel:,.2f}**")
+                    else:
+                        st.caption(f"Tarifa Flat: **${_s('Flete_USA'):,.2f}**")
+                    if _s("Extras_Ingreso") > 0:
+                        st.caption(f"Extras cobrados: **${_s('Extras_Ingreso'):,.2f}**")
+                    st.markdown(f"**Total: ${ing_ame:,.2f}**")
+                with cc:
+                    st.markdown("**Costos**")
+                    for label, valor in filas_costo_americana:
+                        st.caption(f"{label}: **${valor:,.2f}**")
+                    st.markdown(f"**Total: ${cos_ame:,.2f}**")
+                st.divider()
+                col_ut = "#16a34a" if ut_ame >= 0 else "#dc2626"
+                pct    = (ut_ame / ing_ame * 100) if ing_ame > 0 else 0.0
+                st.metric(
+                    "Utilidad Bruta Americana",
+                    f"${ut_ame:,.2f}",
+                    f"{pct:.1f}%",
+                    delta_color="normal" if ut_ame >= 0 else "inverse",
+                )
+
+        # ── Cruce ────────────────────────────────────────────────────────────
+        if "🛂 Cruce" in tab_labels:
+            with tabs[tab_labels.index("🛂 Cruce")]:
+                ci2, cc2 = st.columns(2)
+                with ci2:
+                    st.markdown("**Ingresos**")
+                    st.caption(f"Ingreso Cruce: **${ing_cruce:,.2f}**")
+                    st.markdown(f"**Total: ${ing_cruce:,.2f}**")
+                with cc2:
+                    st.markdown("**Costos**")
+                    tipo_cruce = r.get("Tipo_Cruce", "")
+                    st.caption(f"Costo Cruce ({tipo_cruce}): **${cos_cruce:,.2f}**")
+                    st.markdown(f"**Total: ${cos_cruce:,.2f}**")
+                st.divider()
+                pct_c = (ut_cruc / ing_cruce * 100) if ing_cruce > 0 else 0.0
+                st.metric(
+                    "Utilidad Bruta Cruce",
+                    f"${ut_cruc:,.2f}",
+                    f"{pct_c:.1f}%",
+                    delta_color="normal" if ut_cruc >= 0 else "inverse",
+                )
+
+        # ── MX ───────────────────────────────────────────────────────────────
+        if "🇲🇽 Ruta Mexicana" in tab_labels:
+            with tabs[tab_labels.index("🇲🇽 Ruta Mexicana")]:
+                ci3, cc3 = st.columns(2)
+                with ci3:
+                    st.markdown("**Ingresos**")
+                    st.caption(f"Ingreso MX: **${ing_mx:,.2f}**")
+                    st.markdown(f"**Total: ${ing_mx:,.2f}**")
+                with cc3:
+                    st.markdown("**Costos**")
+                    st.caption(f"Costo MX: **${cos_mx:,.2f}**")
+                    st.markdown(f"**Total: ${cos_mx:,.2f}**")
+                st.divider()
+                pct_m = (ut_mx / ing_mx * 100) if ing_mx > 0 else 0.0
+                st.metric(
+                    "Utilidad Bruta MX",
+                    f"${ut_mx:,.2f}",
+                    f"{pct_m:.1f}%",
+                    delta_color="normal" if ut_mx >= 0 else "inverse",
+                )
