@@ -142,7 +142,7 @@ def _mostrar_resultados(r: dict, ruta: pd.Series, es_simulacion: bool) -> None:
             me  = safe(r.get("Miles_Empty"))
             pxc = safe(r.get("PxM_Cargado"))
             pxv = safe(r.get("PxM_Vacio"))
-            st.caption(f"Owner Cargado ({ml:.0f}+{sm:.0f} mi × ${pxc:.4f}): **${safe(r.get('Pago_Owner_Cargado')):,.2f}**")
+            st.caption(f"Owner Cargado ({sm:.0f} mi × ${pxc:.4f}): **${safe(r.get('Pago_Owner_Cargado')):,.2f}**")
             st.caption(f"Owner Vacío   ({me:.0f} mi × ${pxv:.4f}): **${safe(r.get('Pago_Owner_Vacio')):,.2f}**")
             ec = safe(r.get("Extras_Costo"))
             if ec > 0:
