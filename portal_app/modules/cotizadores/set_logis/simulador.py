@@ -2,28 +2,39 @@
 simulador.py – Set Logis Plus
 Simulador de Vuelta Redonda.
 
-Flujo (igual que Igloo):
+Flujo:
   Paso 1 → Selecciona ruta principal (NB / SB / D2DNB / D2DSB)
-  Paso 2 → Sugerencias de tramo Empty ordenadas por % Ut. Bruta
-            (sin contar millas vacías adicionales)
+  Paso 2 → Sugerencias de regreso ordenadas por % Ut. Bruta combinada
+            Candidatas: directas (sin empty) o con empty como puente
   Paso 3 → Botón "Simular" → resumen con kpi_row + semáforos
   Paso 4 → Detalle de cada tramo en expanders
   Paso 5 → Descarga PDF
 
-Estructura de ruta visual:
-  NB / D2DNB : Origen USA → Destino USA → [Origen E → Destino E] → [Origen MX → Destino MX]
-  SB / D2DSB : [Origen MX → Destino MX] → [Origen E → Destino E] → Origen USA → Destino USA
+Modelo geográfico del road trip:
+  Cada ruta tiene un PRIMER PUNTO (de dónde sale) y un ÚLTIMO PUNTO (dónde termina).
+  El regreso debe tener su PRIMER PUNTO igual al ÚLTIMO PUNTO de la principal.
+  El empty actúa de puente cuando no hay conexión directa.
 
-Cálculo combinado:
-  - Se usan los valores guardados de cada ruta (Ingreso_Global, Costo_Directo,
-    Costo_Indirecto, Utilidad_Bruta, Utilidad_Neta, Pct_Ut_*)
-  - NO se recalculan millas vacías: la ruta Empty ya trae su propio costo.
+  _primer_punto:
+    D2DNB → Origen_MX   (viene de México)
+    otros → Origen_USA
+
+  _ultimo_punto:
+    D2DSB → Destino_MX  (termina en México)
+    otros → Destino_USA
+
+  Tipos de regreso compatibles:
+    NB    → SB, D2DSB
+    SB    → NB, D2DNB
+    D2DNB → SB, D2DSB
+    D2DSB → NB, D2DNB
+
+  Empty: siempre solo americana (Origen_USA → Destino_USA)
 """
 
 from __future__ import annotations
 
 import io
-import tempfile
 from datetime import datetime
 
 import pandas as pd
@@ -42,12 +53,19 @@ from ui.components import section_header, alert, divider, kpi_row, semaforos_rut
 from ._shared import (
     TABLE_RUTAS,
     TIPOS_SUBIDA,
-    TIPOS_BAJADA,
     safe,
 )
 
 TIPOS_PRINCIPAL = {"NB", "SB", "D2DNB", "D2DSB"}
 TIPO_EMPTY      = "Empty"
+
+# Tipos de regreso compatibles por tipo de principal
+_REGRESO = {
+    "NB":    {"SB", "D2DSB"},
+    "SB":    {"NB", "D2DNB"},
+    "D2DNB": {"SB", "D2DSB"},
+    "D2DSB": {"NB", "D2DNB"},
+}
 
 
 # ─────────────────────────────────────────────
@@ -63,10 +81,12 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
         df = pd.DataFrame(resp.data or [])
         if df.empty:
             return df
-        nums = ["Ingreso_Global", "Costo_Directo", "Costo_Indirecto",
-                "Costo_Total", "Utilidad_Bruta", "Utilidad_Neta",
-                "Pct_Ut_Bruta", "Pct_Ut_Neta", "Pct_Costo_Directo",
-                "Pct_Costo_Indirecto", "Miles_Load", "Short_Miles", "Miles_Empty"]
+        nums = [
+            "Ingreso_Global", "Costo_Directo", "Costo_Indirecto",
+            "Costo_Total", "Utilidad_Bruta", "Utilidad_Neta",
+            "Pct_Ut_Bruta", "Pct_Ut_Neta", "Pct_Costo_Directo",
+            "Pct_Costo_Indirecto", "Miles_Load", "Short_Miles", "Miles_Empty",
+        ]
         for col in nums:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
@@ -78,26 +98,38 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────
-# HELPERS DE RUTA
+# HELPERS GEOGRÁFICOS
 # ─────────────────────────────────────────────
-def _origen_usa(ruta: pd.Series | dict) -> str:
-    s = str(ruta.get("Ruta_USA", "") if hasattr(ruta, "get") else "")
-    return s.split(" - ")[0].strip().upper()
+def _get(ruta, key: str) -> str:
+    v = ruta.get(key, "") if hasattr(ruta, "get") else ""
+    return str(v).strip().upper() if v else ""
 
 
-def _destino_usa(ruta: pd.Series | dict) -> str:
-    s = str(ruta.get("Ruta_USA", "") if hasattr(ruta, "get") else "")
+def _origen_usa(ruta) -> str:
+    s = _get(ruta, "Ruta_USA")
+    return s.split(" - ")[0].strip() if " - " in s else s
+
+
+def _destino_usa(ruta) -> str:
+    s = _get(ruta, "Ruta_USA")
     parts = s.split(" - ")
-    return parts[-1].strip().upper()
+    return parts[-1].strip() if len(parts) > 1 else s
 
 
-def _label_ruta(row: pd.Series | dict, mostrar_pct: bool = True) -> str:
-    g = row.get if hasattr(row, "get") else row.__getitem__
-    pct = f" | {safe(g('Pct_Ut_Bruta')):.1f}% Ut.B" if mostrar_pct else ""
-    return (
-        f"{g('ID_Ruta')} | {g('Fecha')} | {g('Tipo_Viaje')} | "
-        f"{g('Cliente')} | {g('Ruta_USA')}{pct}"
-    )
+def _primer_punto(ruta) -> str:
+    """De dónde sale la ruta. D2DNB sale de Origen_MX; el resto de Origen_USA."""
+    tipo = _get(ruta, "Tipo_Viaje")
+    if tipo == "D2DNB":
+        return _get(ruta, "Origen_MX") or _origen_usa(ruta)
+    return _origen_usa(ruta)
+
+
+def _ultimo_punto(ruta) -> str:
+    """Dónde termina la ruta. D2DSB termina en Destino_MX; el resto en Destino_USA."""
+    tipo = _get(ruta, "Tipo_Viaje")
+    if tipo == "D2DSB":
+        return _get(ruta, "Destino_MX") or _destino_usa(ruta)
+    return _destino_usa(ruta)
 
 
 def _palabras(s: str, n: int = 2) -> str:
@@ -105,181 +137,214 @@ def _palabras(s: str, n: int = 2) -> str:
 
 
 def _coincide(a: str, b: str) -> bool:
+    """Compara las primeras 2 palabras de dos ubicaciones (tolerante a variaciones menores)."""
     return bool(a and b and _palabras(a) == _palabras(b))
 
 
-# Tipo de regreso según la principal
-_REGRESO = {
-    "NB":    {"SB", "D2DSB"},
-    "D2DNB": {"SB", "D2DSB"},
-    "SB":    {"NB", "D2DNB"},
-    "D2DSB": {"NB", "D2DNB"},
-}
+def _label_ruta(row) -> str:
+    pct = safe(row.get("Pct_Ut_Bruta")) if hasattr(row, "get") else 0.0
+    return (
+        f"{row.get('ID_Ruta','')} | {row.get('Fecha','')} | "
+        f"{row.get('Tipo_Viaje','')} | {row.get('Cliente','—')} | "
+        f"{row.get('Ruta_USA','')} | {pct:.1f}% Ut.B"
+    )
 
 
+# ─────────────────────────────────────────────
+# MOTOR DE SUGERENCIAS
+# ─────────────────────────────────────────────
 def _sugerir_candidatas(df_all: pd.DataFrame, ruta_p: pd.Series) -> list[dict]:
     """
-    Genera lista de candidatas de regreso ordenadas por % Ut. Bruta combinada.
-    Cada candidata es un dict con:
-        label       : texto para el selector
-        ut_bruta    : utilidad bruta combinada (principal + regreso [+ empty])
-        pct_ut_bruta: % ut. bruta combinada
-        ruta_r      : dict de la ruta de regreso
-        ruta_e      : dict de la ruta empty (o None si es directo)
+    Genera candidatas de regreso ordenadas por % Ut. Bruta combinada.
+
+    Lógica:
+      1. El regreso califica si _primer_punto(regreso) == _ultimo_punto(principal)
+      2. Si no hay directas, el Empty actúa de puente:
+           _primer_punto(empty) == _ultimo_punto(principal)
+           _primer_punto(regreso) == _ultimo_punto(empty)
+      3. Ordena todo por pct_ut_bruta combinada descendente.
+
+    Cada candidata devuelve:
+        label, ut_bruta, pct_ut_bruta, ruta_r (dict), ruta_e (dict|None)
     """
-    tipo_p   = str(ruta_p.get("Tipo_Viaje", ""))
+    tipo_p   = _get(ruta_p, "Tipo_Viaje")
     tipos_r  = _REGRESO.get(tipo_p, set())
-    es_sub   = tipo_p in TIPOS_SUBIDA
+    fin_p    = _ultimo_punto(ruta_p)
 
-    # Punto de conexión: destino de la principal si sube, origen si baja
-    ref_loc  = _destino_usa(ruta_p) if es_sub else _origen_usa(ruta_p)
-
-    ing_p  = safe(ruta_p.get("Ingreso_Global", 0))
-    ub_p   = safe(ruta_p.get("Utilidad_Bruta", 0))
+    ing_p = safe(ruta_p.get("Ingreso_Global", 0))
+    ub_p  = safe(ruta_p.get("Utilidad_Bruta", 0))
 
     df_regreso = df_all[df_all["Tipo_Viaje"].isin(tipos_r)].copy() if "Tipo_Viaje" in df_all.columns else pd.DataFrame()
-    df_empty   = df_all[df_all["Tipo_Viaje"] == "Empty"].copy()    if "Tipo_Viaje" in df_all.columns else pd.DataFrame()
+    df_empty   = df_all[df_all["Tipo_Viaje"] == TIPO_EMPTY].copy() if "Tipo_Viaje" in df_all.columns else pd.DataFrame()
 
     candidatas: list[dict] = []
 
-    # ── Opción A: regreso DIRECTO (sin empty) ────────────────────
+    # ── Opción A: Regreso DIRECTO (sin empty) ────────────────────
     for _, r in df_regreso.iterrows():
-        # El regreso debe empezar donde termina la principal (o viceversa)
-        origen_r = _origen_usa(r) if es_sub else _destino_usa(r)
-        if not _coincide(origen_r, ref_loc):
+        if not _coincide(_primer_punto(r), fin_p):
             continue
-        ing_r  = safe(r.get("Ingreso_Global", 0))
-        ub_r   = safe(r.get("Utilidad_Bruta", 0))
-        ing_t  = ing_p + ing_r
-        ub_t   = ub_p + ub_r
-        pct    = (ub_t / ing_t * 100) if ing_t > 0 else 0.0
+        ing_r = safe(r.get("Ingreso_Global", 0))
+        ub_r  = safe(r.get("Utilidad_Bruta", 0))
+        ing_t = ing_p + ing_r
+        ub_t  = ub_p  + ub_r
+        pct   = (ub_t / ing_t * 100) if ing_t > 0 else 0.0
         candidatas.append({
-            "label":        f"✅ DIRECTO · {r.get('ID_Ruta','')} | {r.get('Fecha','')} | {r.get('Tipo_Viaje','')} | {r.get('Cliente','—')} | {r.get('Ruta_USA','')} → Ut.B combinada {pct:.1f}%",
+            "label":        (
+                f"✅ DIRECTO · "
+                f"{r.get('ID_Ruta','')} | {r.get('Fecha','')} | "
+                f"{r.get('Tipo_Viaje','')} | {r.get('Cliente','—')} | "
+                f"{r.get('Ruta_USA','')} · Ut.B comb. {pct:.1f}%"
+            ),
             "ut_bruta":     ub_t,
             "pct_ut_bruta": pct,
             "ruta_r":       r.to_dict(),
             "ruta_e":       None,
         })
 
-    # ── Opción B: empty + regreso ────────────────────────────────
+    # ── Opción B: Empty como puente + Regreso ────────────────────
     for _, e in df_empty.iterrows():
-        # El empty debe salir del punto de conexión de la principal
-        origen_e = _origen_usa(e) if es_sub else _destino_usa(e)
-        if not _coincide(origen_e, ref_loc):
+        # El empty debe salir del último punto de la principal
+        if not _coincide(_origen_usa(e), fin_p):
             continue
-        # Destino del empty = nuevo punto de conexión para el regreso
-        dest_e   = _destino_usa(e) if es_sub else _origen_usa(e)
-        ing_e    = safe(e.get("Ingreso_Global", 0))
-        ub_e     = safe(e.get("Utilidad_Bruta", 0))
+        fin_e = _destino_usa(e)
+        ing_e = safe(e.get("Ingreso_Global", 0))
+        ub_e  = safe(e.get("Utilidad_Bruta", 0))
 
         for _, r in df_regreso.iterrows():
-            origen_r = _origen_usa(r) if es_sub else _destino_usa(r)
-            if not _coincide(origen_r, dest_e):
+            if not _coincide(_primer_punto(r), fin_e):
                 continue
-            ing_r  = safe(r.get("Ingreso_Global", 0))
-            ub_r   = safe(r.get("Utilidad_Bruta", 0))
-            ing_t  = ing_p + ing_e + ing_r
-            ub_t   = ub_p + ub_e + ub_r
-            pct    = (ub_t / ing_t * 100) if ing_t > 0 else 0.0
+            ing_r = safe(r.get("Ingreso_Global", 0))
+            ub_r  = safe(r.get("Utilidad_Bruta", 0))
+            ing_t = ing_p + ing_e + ing_r
+            ub_t  = ub_p  + ub_e  + ub_r
+            pct   = (ub_t / ing_t * 100) if ing_t > 0 else 0.0
             candidatas.append({
-                "label":        f"🔄 CON VACÍO · {e.get('ID_Ruta','')} ({e.get('Ruta_USA','')}) + {r.get('ID_Ruta','')} | {r.get('Cliente','—')} | {r.get('Ruta_USA','')} → Ut.B combinada {pct:.1f}%",
+                "label":        (
+                    f"🔄 CON VACÍO · "
+                    f"[{e.get('ID_Ruta','')} {e.get('Ruta_USA','')}] + "
+                    f"{r.get('ID_Ruta','')} | {r.get('Tipo_Viaje','')} | "
+                    f"{r.get('Cliente','—')} | {r.get('Ruta_USA','')} · "
+                    f"Ut.B comb. {pct:.1f}%"
+                ),
                 "ut_bruta":     ub_t,
                 "pct_ut_bruta": pct,
                 "ruta_r":       r.to_dict(),
                 "ruta_e":       e.to_dict(),
             })
 
+    candidatas.sort(key=lambda x: x["pct_ut_bruta"], reverse=True)
+    return candidatas
+
+
 # ─────────────────────────────────────────────
 # RUTA VISUAL
 # ─────────────────────────────────────────────
-def _ruta_visual(ruta_p: pd.Series, ruta_e: pd.Series | None) -> None:
-    tipo = str(ruta_p.get("Tipo_Viaje", ""))
-    es_sub = tipo in TIPOS_SUBIDA
+def _ruta_visual(ruta_p: pd.Series, ruta_e: pd.Series | None, ruta_r: pd.Series | None) -> None:
+    """
+    Construye la secuencia visual del road trip completo.
 
-    orig_usa  = _origen_usa(ruta_p)
-    dest_usa  = _destino_usa(ruta_p)
-    orig_mx   = str(ruta_p.get("Origen_MX", "")).strip()
-    dest_mx   = str(ruta_p.get("Destino_MX", "")).strip()
-    tiene_mx  = bool(orig_mx and dest_mx)
+    Esquema general (todos los tramos opcionales salvo USA principal):
+      [MX principal] → [USA principal] → [Empty USA] → [MX/USA regreso]
 
-    orig_e = _origen_usa(ruta_e)  if ruta_e is not None else None
-    dest_e = _destino_usa(ruta_e) if ruta_e is not None else None
+    Casos:
+      NB principal    : Origen_USA → Destino_USA
+      D2DNB principal : Origen_MX → Origen_USA → Destino_USA
+      SB principal    : Origen_USA → Destino_USA
+      D2DSB principal : Origen_USA → Destino_USA → Destino_MX
+    """
+    tipo_p = _get(ruta_p, "Tipo_Viaje")
 
-    if es_sub:
-        pasos = [
-            ("🇺🇸", orig_usa, "Origen USA"),
-            ("📍", dest_usa,  "Destino USA"),
-        ]
-        if orig_e:
-            pasos += [("⬜", orig_e, "Inicio Vacío"), ("⬜", dest_e, "Fin Vacío")]
-        if tiene_mx:
-            pasos += [("🇲🇽", orig_mx, "Origen MX"), ("🇲🇽", dest_mx, "Destino MX")]
-    else:
-        pasos = []
-        if tiene_mx:
-            pasos += [("🇲🇽", orig_mx, "Origen MX"), ("🇲🇽", dest_mx, "Destino MX")]
-        if orig_e:
-            pasos += [("⬜", orig_e, "Inicio Vacío"), ("⬜", dest_e, "Fin Vacío")]
-        pasos += [
-            ("🇺🇸", orig_usa, "Origen USA"),
-            ("📍", dest_usa,  "Destino USA"),
-        ]
-
-    bloques = []
-    for icono, lugar, etiqueta in pasos:
-        bloques.append(
-            f'<div style="text-align:center;min-width:90px;">'
-            f'<div style="font-size:0.68rem;color:#6B7280;">{etiqueta}</div>'
-            f'<div style="font-weight:700;font-size:0.85rem;">{icono} {lugar or "—"}</div>'
+    def nodo(icono: str, ciudad: str, etiqueta: str) -> str:
+        return (
+            f'<div style="text-align:center;min-width:90px">'
+            f'<div style="font-size:1.4rem">{icono}</div>'
+            f'<div style="font-weight:700;font-size:.78rem;color:#1B2266">{ciudad}</div>'
+            f'<div style="font-size:.68rem;color:#6B7280">{etiqueta}</div>'
             f'</div>'
         )
 
-    sep = '<div style="color:#1B2266;font-size:1.3rem;padding:0 4px;">→</div>'
-    st.markdown(
-        f'<div style="background:#EEF2FF;border-radius:8px;padding:10px 16px;'
-        f'display:flex;flex-wrap:wrap;align-items:center;gap:4px;">'
-        + sep.join(bloques)
-        + '</div>',
-        unsafe_allow_html=True,
+    flecha = '<div style="font-size:1.3rem;padding:0 4px;align-self:center">→</div>'
+
+    pasos: list[str] = []
+
+    # ── Parte MX de la principal (si D2DNB, va al inicio) ────────
+    if tipo_p == "D2DNB":
+        om = _get(ruta_p, "Origen_MX")
+        dm = _get(ruta_p, "Destino_MX")
+        if om:
+            pasos.append(nodo("🇲🇽", om, "Origen MX"))
+            pasos.append(flecha)
+        if dm:
+            pasos.append(nodo("📍", dm, "Destino MX"))
+            pasos.append(flecha)
+
+    # ── Parte USA de la principal ─────────────────────────────────
+    pasos.append(nodo("🇺🇸", _origen_usa(ruta_p), f"Origen USA ({tipo_p})"))
+    pasos.append(flecha)
+    pasos.append(nodo("📍", _destino_usa(ruta_p), "Destino USA"))
+
+    # ── Parte MX de la principal (si D2DSB, va al final) ─────────
+    if tipo_p == "D2DSB":
+        om = _get(ruta_p, "Origen_MX")
+        dm = _get(ruta_p, "Destino_MX")
+        if om:
+            pasos.append(flecha)
+            pasos.append(nodo("🛂", om, "Origen MX"))
+        if dm:
+            pasos.append(flecha)
+            pasos.append(nodo("🇲🇽", dm, "Destino MX"))
+
+    # ── Tramo Empty (si existe) ───────────────────────────────────
+    if ruta_e is not None:
+        pasos.append(flecha)
+        pasos.append(nodo("⬜", _origen_usa(ruta_e), f"Empty · {_get(ruta_e,'ID_Ruta')}"))
+        pasos.append(flecha)
+        pasos.append(nodo("⬜", _destino_usa(ruta_e), "Fin Empty"))
+
+    # ── Parte de regreso ──────────────────────────────────────────
+    if ruta_r is not None:
+        tipo_r = _get(ruta_r, "Tipo_Viaje")
+
+        # Si el regreso es D2DNB, empieza en MX
+        if tipo_r == "D2DNB":
+            om = _get(ruta_r, "Origen_MX")
+            if om:
+                pasos.append(flecha)
+                pasos.append(nodo("🇲🇽", om, "Origen MX Reg."))
+            pasos.append(flecha)
+            pasos.append(nodo("🇺🇸", _origen_usa(ruta_r), f"Origen USA ({tipo_r})"))
+            pasos.append(flecha)
+            pasos.append(nodo("🏁", _destino_usa(ruta_r), "Destino USA Reg."))
+        else:
+            pasos.append(flecha)
+            pasos.append(nodo("🇺🇸", _origen_usa(ruta_r), f"Origen USA ({tipo_r})"))
+            pasos.append(flecha)
+            # Si el regreso es D2DSB termina en MX
+            if tipo_r == "D2DSB":
+                pasos.append(nodo("📍", _destino_usa(ruta_r), "Destino USA Reg."))
+                dm = _get(ruta_r, "Destino_MX")
+                if dm:
+                    pasos.append(flecha)
+                    pasos.append(nodo("🏁", dm, "Destino MX Reg."))
+            else:
+                pasos.append(nodo("🏁", _destino_usa(ruta_r), "Destino Reg."))
+
+    html = (
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;'
+        'gap:4px;padding:12px 8px;background:#F8FAFF;border-radius:8px;'
+        'border:1px solid #E0E7FF">'
+        + "".join(pasos)
+        + '</div>'
     )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
-# TARJETA DE TRAMO
-# ─────────────────────────────────────────────
-def _tarjeta_tramo(titulo: str, ruta: pd.Series) -> None:
-    ub  = safe(ruta.get("Utilidad_Bruta"))
-    pct = safe(ruta.get("Pct_Ut_Bruta"))
-    color = "#10b981" if ub >= 0 else "#dc2626"
-    with st.container(border=True):
-        h1, h2 = st.columns([3, 1])
-        with h1:
-            st.markdown(f"**{titulo}**")
-            st.caption(
-                f"{ruta.get('ID_Ruta','')} · {ruta.get('Tipo_Viaje','')} · "
-                f"{ruta.get('Cliente','—')} · {ruta.get('Ruta_USA','')}"
-            )
-        with h2:
-            st.markdown(
-                f'<div style="text-align:right;color:{color};">'
-                f'<div style="font-size:1rem;font-weight:800;">${ub:,.2f}</div>'
-                f'<div style="font-size:0.7rem;">{pct:.1f}% Ut. Bruta</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Ingreso",    f"${safe(ruta.get('Ingreso_Global')):,.2f}")
-        m2.metric("Costo Dir.", f"${safe(ruta.get('Costo_Directo')):,.2f}")
-        m3.metric("Ut. Neta",  f"${safe(ruta.get('Utilidad_Neta')):,.2f}")
-        m4.metric("Miles Load", f"{safe(ruta.get('Miles_Load')):.0f} mi")
-
-
-# ─────────────────────────────────────────────
-# RESUMEN VR (kpi_row + semáforos)
+# RESUMEN VR
 # ─────────────────────────────────────────────
 def _resumen_vr(rutas: list[pd.Series]) -> dict:
     def _s(campo):
-        return sum(safe(r.get(campo)) for r in rutas)
+        return sum(safe(r.get(campo, 0)) for r in rutas)
 
     ing = _s("Ingreso_Global")
     cd  = _s("Costo_Directo")
@@ -287,7 +352,7 @@ def _resumen_vr(rutas: list[pd.Series]) -> dict:
     ct  = _s("Costo_Total")
     ub  = _s("Utilidad_Bruta")
     un  = _s("Utilidad_Neta")
-    ml  = _s("Miles_Load") + _s("Short_Miles")
+    ml  = _s("Short_Miles") + _s("Miles_Empty")
 
     pct_cd = (cd / ing * 100) if ing else 0.0
     pct_ci = (ci / ing * 100) if ing else 0.0
@@ -298,11 +363,11 @@ def _resumen_vr(rutas: list[pd.Series]) -> dict:
     color_un = "#10b981" if un >= 0 else "#dc2626"
 
     kpi_row([
-        {"icono": "💵", "label": "Ingreso VR",       "valor": f"${ing:,.2f}", "color": "#1B2266"},
-        {"icono": "📦", "label": "Costo Directo",    "valor": f"${cd:,.2f}",  "color": "#6B7280"},
-        {"icono": "🔁", "label": "Costo Indirecto",  "valor": f"${ci:,.2f}",  "color": "#F59E0B"},
-        {"icono": "📈", "label": "Ut. Bruta",         "valor": f"${ub:,.2f}",  "color": color_ub},
-        {"icono": "🏆", "label": "Ut. Neta",          "valor": f"${un:,.2f}",  "color": color_un},
+        {"icono": "💵", "label": "Ingreso VR",      "valor": f"${ing:,.2f}", "color": "#1B2266"},
+        {"icono": "📦", "label": "Costo Directo",   "valor": f"${cd:,.2f}",  "color": "#6B7280"},
+        {"icono": "🔁", "label": "Costo Indirecto", "valor": f"${ci:,.2f}",  "color": "#F59E0B"},
+        {"icono": "📈", "label": "Ut. Bruta",        "valor": f"${ub:,.2f}",  "color": color_ub},
+        {"icono": "🏆", "label": "Ut. Neta",         "valor": f"${un:,.2f}",  "color": color_un},
     ])
 
     p1, p2, p3, p4, p5 = st.columns(5)
@@ -329,23 +394,24 @@ def _resumen_vr(rutas: list[pd.Series]) -> dict:
 
 
 # ─────────────────────────────────────────────
-# DETALLE POR TRAMO (expanders)
+# DETALLE POR TRAMO
 # ─────────────────────────────────────────────
-def _detalle_tramos(rutas: list[pd.Series], ruta_p: pd.Series, ruta_e: pd.Series | None) -> None:
+def _detalle_tramos(rutas: list[pd.Series], etiquetas: list[str]) -> None:
     divider()
     section_header("📋", "Detalle por Tramo")
 
-    etiquetas = ["🚛 Ruta Principal"]
-    if ruta_e is not None:
-        etiquetas.append("⬜ Tramo Vacío")
-
     for i, (label, ruta) in enumerate(zip(etiquetas, rutas)):
-        with st.expander(f"{label} — {ruta.get('ID_Ruta','')} · {ruta.get('Cliente','—')} · {ruta.get('Ruta_USA','')}", expanded=(i == 0)):
+        titulo = (
+            f"{label} — {ruta.get('ID_Ruta','')} · "
+            f"{ruta.get('Cliente','—')} · {ruta.get('Ruta_USA','')}"
+        )
+        with st.expander(titulo, expanded=(i == 0)):
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("**Ingresos**")
                 st.caption(f"Flete USA: **${safe(ruta.get('Flete_USA')):,.2f}**")
-                st.caption(f"Fuel:      **${safe(ruta.get('Fuel')):,.2f}**")
+                if safe(ruta.get("Fuel")) > 0:
+                    st.caption(f"Fuel:      **${safe(ruta.get('Fuel')):,.2f}**")
                 if safe(ruta.get("Ingreso_Cruce")) > 0:
                     st.caption(f"Cruce:     **${safe(ruta.get('Ingreso_Cruce')):,.2f}**")
                 if safe(ruta.get("Ingreso_MX")) > 0:
@@ -362,17 +428,30 @@ def _detalle_tramos(rutas: list[pd.Series], ruta_p: pd.Series, ruta_e: pd.Series
                 if safe(ruta.get("Costo_MX")) > 0:
                     st.caption(f"MX:            **${safe(ruta.get('Costo_MX')):,.2f}**")
                 if safe(ruta.get("Extras_Costo")) > 0:
-                    st.caption(f"Extras costo:  **${safe(ruta.get('Extras_Costo')):,.2f}**")
+                    st.caption(f"Extras:        **${safe(ruta.get('Extras_Costo')):,.2f}**")
                 st.caption(f"Indirecto:     **${safe(ruta.get('Costo_Indirecto')):,.2f}**")
                 st.markdown(f"**Total: ${safe(ruta.get('Costo_Total')):,.2f}**")
             with c3:
                 st.markdown("**Millas**")
-                st.caption(f"Miles Load:    **{safe(ruta.get('Miles_Load')):.0f} mi**")
-                st.caption(f"Short Miles:   **{safe(ruta.get('Short_Miles')):.0f} mi**")
-                st.caption(f"Miles Empty:   **{safe(ruta.get('Miles_Empty')):.0f} mi**")
-                st.caption(f"PxM Cargado:   **${safe(ruta.get('PxM_Cargado')):.4f}**")
-                st.caption(f"PxM Vacío:     **${safe(ruta.get('PxM_Vacio')):.4f}**")
-                st.markdown(f"**Ut. Neta: ${safe(ruta.get('Utilidad_Neta')):,.2f} ({safe(ruta.get('Pct_Ut_Neta')):.1f}%)**")
+                st.caption(f"Miles Load:  **{safe(ruta.get('Miles_Load')):.0f} mi**")
+                st.caption(f"Short Miles: **{safe(ruta.get('Short_Miles')):.0f} mi**")
+                st.caption(f"Miles Empty: **{safe(ruta.get('Miles_Empty')):.0f} mi**")
+                st.divider()
+                st.markdown("**Resultado**")
+                ut_b = safe(ruta.get("Utilidad_Bruta"))
+                ut_n = safe(ruta.get("Utilidad_Neta"))
+                pct_b = safe(ruta.get("Pct_Ut_Bruta"))
+                pct_n = safe(ruta.get("Pct_Ut_Neta"))
+                color_b = "#16a34a" if ut_b >= 0 else "#dc2626"
+                color_n = "#16a34a" if ut_n >= 0 else "#dc2626"
+                st.markdown(
+                    f'<span style="color:{color_b}">**Ut. Bruta: ${ut_b:,.2f} ({pct_b:.1f}%)**</span>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'<span style="color:{color_n}">**Ut. Neta:  ${ut_n:,.2f} ({pct_n:.1f}%)**</span>',
+                    unsafe_allow_html=True,
+                )
 
 
 # ─────────────────────────────────────────────
@@ -380,9 +459,11 @@ def _detalle_tramos(rutas: list[pd.Series], ruta_p: pd.Series, ruta_e: pd.Series
 # ─────────────────────────────────────────────
 def _generar_pdf(
     rutas: list[pd.Series],
+    etiquetas: list[str],
     res: dict,
     ruta_p: pd.Series,
     ruta_e: pd.Series | None,
+    ruta_r: pd.Series | None,
 ) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -393,128 +474,124 @@ def _generar_pdf(
 
     styles = getSampleStyleSheet()
     title_s  = ParagraphStyle("T", parent=styles["Title"],   fontSize=14, textColor=colors.HexColor("#1B2266"), spaceAfter=4)
-    sub_s    = ParagraphStyle("S", parent=styles["Heading2"],fontSize=10, textColor=colors.HexColor("#1B2266"), spaceBefore=10, spaceAfter=3)
+    sub_s    = ParagraphStyle("S", parent=styles["Heading2"], fontSize=10, textColor=colors.HexColor("#1B2266"), spaceBefore=10, spaceAfter=3)
     normal_s = ParagraphStyle("N", parent=styles["Normal"],  fontSize=8,  leading=11)
     footer_s = ParagraphStyle("F", parent=styles["Normal"],  fontSize=7,  textColor=colors.HexColor("#6c757d"), alignment=TA_CENTER)
 
     story = []
 
-    # ── Encabezado ───────────────────────────────────────────────
+    # Encabezado
     hdr = Table([[
-        Paragraph("<b>SET LOGIS PLUS</b>", ParagraphStyle("H", parent=styles["Normal"], fontSize=13, textColor=colors.white)),
+        Paragraph("<b>SET LOGIS PLUS</b>", ParagraphStyle("H",  parent=styles["Normal"], fontSize=13, textColor=colors.white)),
         Paragraph("Simulador de Vuelta Redonda", ParagraphStyle("HR", parent=styles["Normal"], fontSize=9, textColor=colors.white, alignment=TA_RIGHT)),
-    ]], colWidths=[4.5*inch, 2.5*inch])
+    ]], colWidths=[4.5 * inch, 2.5 * inch])
     hdr.setStyle(TableStyle([
-        ("BACKGROUND", (0,0),(-1,-1), colors.HexColor("#1B2266")),
-        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
-        ("TOPPADDING", (0,0),(-1,-1), 10),
-        ("BOTTOMPADDING",(0,0),(-1,-1), 10),
-        ("LEFTPADDING", (0,0),(0,-1), 12),
-        ("RIGHTPADDING",(-1,0),(-1,-1), 12),
+        ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#1B2266")),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING",   (0, 0), (0, -1),  12),
+        ("RIGHTPADDING",  (-1, 0), (-1, -1), 12),
     ]))
     story.append(hdr)
     story.append(Spacer(1, 10))
 
-    # ── Resumen global ───────────────────────────────────────────
+    # Resumen global
     story.append(Paragraph("Resumen de Vuelta Redonda", sub_s))
-    color_un = colors.HexColor("#28a745") if res["un"] >= 0 else colors.HexColor("#dc3545")
+    color_un_pdf = colors.HexColor("#28a745") if res["un"] >= 0 else colors.HexColor("#dc3545")
     resumen_data = [
-        ["Concepto", "Monto (USD)", "%"],
-        ["Ingreso Total",    f"${res['ing']:,.2f}", "100.00%"],
-        ["Costo Directo",   f"${res['cd']:,.2f}",  f"{res['pct_cd']:.2f}%"],
-        ["Ut. Bruta",        f"${res['ub']:,.2f}",  f"{res['pct_ub']:.2f}%"],
-        ["Costo Indirecto", f"${res['ci']:,.2f}",  f"{res['pct_ci']:.2f}%"],
-        ["Ut. Neta",         f"${res['un']:,.2f}",  f"{res['pct_un']:.2f}%"],
+        ["Concepto",        "Monto (USD)",           "%"],
+        ["Ingreso Total",   f"${res['ing']:,.2f}",   "100.00%"],
+        ["Costo Directo",   f"${res['cd']:,.2f}",    f"{res['pct_cd']:.2f}%"],
+        ["Ut. Bruta",        f"${res['ub']:,.2f}",    f"{res['pct_ub']:.2f}%"],
+        ["Costo Indirecto", f"${res['ci']:,.2f}",    f"{res['pct_ci']:.2f}%"],
+        ["Ut. Neta",         f"${res['un']:,.2f}",    f"{res['pct_un']:.2f}%"],
     ]
-    t_res = Table(resumen_data, colWidths=[2.8*inch, 2.2*inch, 2.0*inch])
+    t_res = Table(resumen_data, colWidths=[2.8 * inch, 2.2 * inch, 2.0 * inch])
     t_res.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,0),  colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",     (0,0),(-1,0),  colors.white),
-        ("FONTNAME",      (0,0),(-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0,0),(-1,-1), 8),
-        ("GRID",          (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
-        ("ALIGN",         (1,1),(-1,-1), "RIGHT"),
-        ("BACKGROUND",    (0,5),(-1,5),  color_un),
-        ("TEXTCOLOR",     (0,5),(-1,5),  colors.white),
-        ("FONTNAME",      (0,5),(-1,5),  "Helvetica-Bold"),
-        ("TOPPADDING",    (0,0),(-1,-1), 3),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 3),
-        ("LEFTPADDING",   (0,0),(-1,-1), 6),
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
+        ("BACKGROUND",    (0, 5), (-1, 5),  color_un_pdf),
+        ("TEXTCOLOR",     (0, 5), (-1, 5),  colors.white),
+        ("FONTNAME",      (0, 5), (-1, 5),  "Helvetica-Bold"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
     ]))
     story.append(t_res)
     story.append(Spacer(1, 10))
 
-    # ── Secuencia de ruta ────────────────────────────────────────
-    story.append(Paragraph("Secuencia de la Ruta", sub_s))
-    tipo = str(ruta_p.get("Tipo_Viaje", ""))
-    es_sub = tipo in TIPOS_SUBIDA
-    pasos_txt = []
-    if es_sub:
-        pasos_txt.append(f"Origen USA: {_origen_usa(ruta_p)}")
-        pasos_txt.append(f"Destino USA: {_destino_usa(ruta_p)}")
-        if ruta_e is not None:
-            pasos_txt.append(f"Inicio Vacío: {_origen_usa(ruta_e)}")
-            pasos_txt.append(f"Fin Vacío: {_destino_usa(ruta_e)}")
-        if str(ruta_p.get("Origen_MX","")).strip():
-            pasos_txt.append(f"Origen MX: {ruta_p.get('Origen_MX','')}")
-            pasos_txt.append(f"Destino MX: {ruta_p.get('Destino_MX','')}")
-    else:
-        if str(ruta_p.get("Origen_MX","")).strip():
-            pasos_txt.append(f"Origen MX: {ruta_p.get('Origen_MX','')}")
-            pasos_txt.append(f"Destino MX: {ruta_p.get('Destino_MX','')}")
-        if ruta_e is not None:
-            pasos_txt.append(f"Inicio Vacío: {_origen_usa(ruta_e)}")
-            pasos_txt.append(f"Fin Vacío: {_destino_usa(ruta_e)}")
-        pasos_txt.append(f"Origen USA: {_origen_usa(ruta_p)}")
-        pasos_txt.append(f"Destino USA: {_destino_usa(ruta_p)}")
+    # Secuencia de ruta (texto)
+    story.append(Paragraph("Secuencia del Road Trip", sub_s))
+    tipo_p = _get(ruta_p, "Tipo_Viaje")
+    pasos_txt: list[str] = []
+    if tipo_p == "D2DNB":
+        om = _get(ruta_p, "Origen_MX")
+        dm = _get(ruta_p, "Destino_MX")
+        if om: pasos_txt.append(f"Origen MX: {om}")
+        if dm: pasos_txt.append(f"Destino MX: {dm}")
+    pasos_txt.append(f"Origen USA ({tipo_p}): {_origen_usa(ruta_p)}")
+    pasos_txt.append(f"Destino USA: {_destino_usa(ruta_p)}")
+    if tipo_p == "D2DSB":
+        dm = _get(ruta_p, "Destino_MX")
+        if dm: pasos_txt.append(f"Destino MX: {dm}")
+    if ruta_e is not None:
+        pasos_txt.append(f"Empty origen: {_origen_usa(ruta_e)}")
+        pasos_txt.append(f"Empty destino: {_destino_usa(ruta_e)}")
+    if ruta_r is not None:
+        tipo_r = _get(ruta_r, "Tipo_Viaje")
+        if tipo_r == "D2DNB":
+            om = _get(ruta_r, "Origen_MX")
+            if om: pasos_txt.append(f"Origen MX Reg.: {om}")
+        pasos_txt.append(f"Origen USA Reg. ({tipo_r}): {_origen_usa(ruta_r)}")
+        pasos_txt.append(f"Destino USA Reg.: {_destino_usa(ruta_r)}")
+        if tipo_r == "D2DSB":
+            dm = _get(ruta_r, "Destino_MX")
+            if dm: pasos_txt.append(f"Destino MX Reg.: {dm}")
     story.append(Paragraph(" → ".join(pasos_txt), normal_s))
     story.append(Spacer(1, 10))
 
-    # ── Detalle por tramo ────────────────────────────────────────
+    # Detalle por tramo
     story.append(Paragraph("Detalle por Tramo", sub_s))
-    etiquetas = ["Ruta Principal"]
-    if ruta_e is not None:
-        etiquetas.append("Tramo Vacío")
-
     for label, ruta in zip(etiquetas, rutas):
-        story.append(Paragraph(f"<b>{label} — {ruta.get('ID_Ruta','')} · {ruta.get('Cliente','—')}</b>", normal_s))
+        story.append(Paragraph(f"<b>{label} — {ruta.get('ID_Ruta', '')} · {ruta.get('Cliente', '—')}</b>", normal_s))
         story.append(Spacer(1, 3))
         tramo_data = [
-            ["Campo", "Valor", "Campo", "Valor"],
-            ["Tipo",       str(ruta.get("Tipo_Viaje","")),   "Fecha",   str(ruta.get("Fecha",""))],
-            ["Ruta USA",   str(ruta.get("Ruta_USA","")),     "Modo",    str(ruta.get("Modo",""))],
-            ["Miles Load", f"{safe(ruta.get('Miles_Load')):.0f} mi",
-             "Miles Empty", f"{safe(ruta.get('Miles_Empty')):.0f} mi"],
-            ["Ingreso",    f"${safe(ruta.get('Ingreso_Global')):,.2f}",
-             "Costo Dir.", f"${safe(ruta.get('Costo_Directo')):,.2f}"],
-            ["Ut. Bruta",  f"${safe(ruta.get('Utilidad_Bruta')):,.2f} ({safe(ruta.get('Pct_Ut_Bruta')):.1f}%)",
+            ["Campo",       "Valor",                                    "Campo",        "Valor"],
+            ["Tipo",        str(ruta.get("Tipo_Viaje", "")),            "Fecha",        str(ruta.get("Fecha", ""))],
+            ["Ruta USA",    str(ruta.get("Ruta_USA", "")),              "Modo",         str(ruta.get("Modo", ""))],
+            ["Short Miles", f"{safe(ruta.get('Short_Miles')):.0f} mi",  "Miles Empty",  f"{safe(ruta.get('Miles_Empty')):.0f} mi"],
+            ["Ingreso",     f"${safe(ruta.get('Ingreso_Global')):,.2f}", "Costo Dir.",  f"${safe(ruta.get('Costo_Directo')):,.2f}"],
+            ["Ut. Bruta",   f"${safe(ruta.get('Utilidad_Bruta')):,.2f} ({safe(ruta.get('Pct_Ut_Bruta')):.1f}%)",
              "Ut. Neta",   f"${safe(ruta.get('Utilidad_Neta')):,.2f} ({safe(ruta.get('Pct_Ut_Neta')):.1f}%)"],
         ]
-        t_tramo = Table(tramo_data, colWidths=[1.4*inch, 2.0*inch, 1.4*inch, 2.0*inch])
+        t_tramo = Table(tramo_data, colWidths=[1.4 * inch, 2.0 * inch, 1.4 * inch, 2.0 * inch])
         t_tramo.setStyle(TableStyle([
-            ("BACKGROUND",  (0,0),(-1,0),  colors.HexColor("#1B2266")),
-            ("TEXTCOLOR",   (0,0),(-1,0),  colors.white),
-            ("FONTNAME",    (0,0),(-1,0),  "Helvetica-Bold"),
-            ("BACKGROUND",  (0,1),(0,-1),  colors.HexColor("#EEF2FF")),
-            ("BACKGROUND",  (2,1),(2,-1),  colors.HexColor("#EEF2FF")),
-            ("FONTNAME",    (0,1),(0,-1),  "Helvetica-Bold"),
-            ("FONTNAME",    (2,1),(2,-1),  "Helvetica-Bold"),
-            ("FONTSIZE",    (0,0),(-1,-1), 7),
-            ("GRID",        (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
-            ("TOPPADDING",  (0,0),(-1,-1), 2),
-            ("BOTTOMPADDING",(0,0),(-1,-1), 2),
-            ("LEFTPADDING", (0,0),(-1,-1), 5),
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("BACKGROUND",    (0, 1), (0, -1),  colors.HexColor("#EEF2FF")),
+            ("BACKGROUND",    (2, 1), (2, -1),  colors.HexColor("#EEF2FF")),
+            ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
+            ("FONTNAME",      (2, 1), (2, -1),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
         ]))
         story.append(t_tramo)
         story.append(Spacer(1, 8))
 
-    # ── Footer ───────────────────────────────────────────────────
     story.append(Spacer(1, 16))
     story.append(Paragraph(
         f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Set Logis Plus",
         footer_s,
     ))
-
     doc.build(story)
     return buf.getvalue()
 
@@ -528,7 +605,6 @@ def render() -> None:
         alert("error", "Supabase no configurado.")
         return
 
-    # Recargar
     r1, r2 = st.columns([1, 4])
     with r1:
         if st.button("🔄 Recargar", key="sl_sim_reload"):
@@ -537,35 +613,31 @@ def render() -> None:
     with r2:
         st.caption("Carga cacheada 2 min.")
 
-    # Session state
     st.session_state.setdefault("sl_sim_realizada", False)
-    st.session_state.setdefault("sl_sim_rutas", [])
-    st.session_state.setdefault("sl_sim_ruta_p", None)
-    st.session_state.setdefault("sl_sim_ruta_e", None)
+    st.session_state.setdefault("sl_sim_datos", None)
 
     df = _cargar_rutas(TABLE_RUTAS)
     if df.empty:
         alert("warn", "No hay rutas guardadas todavía.")
         return
 
-    df_prin  = df[df["Tipo_Viaje"].isin(TIPOS_PRINCIPAL)].copy() if "Tipo_Viaje" in df.columns else pd.DataFrame()
-    df_empty = df[df["Tipo_Viaje"] == TIPO_EMPTY].copy()          if "Tipo_Viaje" in df.columns else pd.DataFrame()
-
+    df_prin = df[df["Tipo_Viaje"].isin(TIPOS_PRINCIPAL)].copy() if "Tipo_Viaje" in df.columns else pd.DataFrame()
     if df_prin.empty:
         alert("warn", "No hay rutas NB / SB / D2DNB / D2DSB guardadas.")
         return
-
     df_prin = df_prin.set_index("ID_Ruta", drop=False)
 
-    # ── PASO 1: Ruta principal ────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # PASO 1: Ruta principal
+    # ══════════════════════════════════════════════════════════════
     divider()
     section_header("📌", "Paso 1 — Selecciona la Ruta Principal")
     st.write("Filtra las rutas (opcional):")
 
     fp1, fp2 = st.columns(2)
-    tipos_d   = sorted(df_prin["Tipo_Viaje"].dropna().unique().tolist())
+    tipos_d    = sorted(df_prin["Tipo_Viaje"].dropna().unique().tolist())
     clientes_d = sorted(df_prin["Cliente"].dropna().astype(str).unique().tolist())
-    f_tipo = fp1.selectbox("Tipo", ["Todos"] + tipos_d, key="sl_sim_ftipo")
+    f_tipo = fp1.selectbox("Tipo",    ["Todos"] + tipos_d,    key="sl_sim_ftipo")
     f_cli  = fp2.selectbox("Cliente", ["Todos"] + clientes_d, key="sl_sim_fcli")
 
     df_pf = df_prin.copy()
@@ -595,30 +667,36 @@ def render() -> None:
             st.markdown(f"**Tipo:** {ruta_p.get('Tipo_Viaje','')}")
             st.markdown(f"**Cliente:** {ruta_p.get('Cliente','—')}")
             st.markdown(f"**Fecha:** {ruta_p.get('Fecha','')}")
+            if _get(ruta_p, "Origen_MX"):
+                st.markdown(f"**Origen MX:** {ruta_p.get('Origen_MX','')}")
+                st.markdown(f"**Destino MX:** {ruta_p.get('Destino_MX','')}")
         with d2:
             st.markdown(f"**Ruta USA:** {ruta_p.get('Ruta_USA','')}")
+            st.markdown(f"**Ultimo punto:** {_ultimo_punto(ruta_p)}")
             st.markdown(f"**Ingreso:** ${safe(ruta_p.get('Ingreso_Global')):,.2f}")
             st.markdown(f"**Costo Dir.:** ${safe(ruta_p.get('Costo_Directo')):,.2f}")
             st.markdown(f"**Ut. Bruta:** ${safe(ruta_p.get('Utilidad_Bruta')):,.2f} ({safe(ruta_p.get('Pct_Ut_Bruta')):.1f}%)")
 
-    # ── PASO 2: Sugerencias de regreso ───────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # PASO 2: Sugerencias de regreso
+    # ══════════════════════════════════════════════════════════════
     divider()
-    section_header("🔁", "Paso 2 — Selecciona el Regreso (con o sin vacío)")
-
-    tipo_p    = str(ruta_p.get("Tipo_Viaje", ""))
-    es_subida = tipo_p in TIPOS_SUBIDA
-    ref_loc   = _destino_usa(ruta_p) if es_subida else _origen_usa(ruta_p)
+    fin_p = _ultimo_punto(ruta_p)
+    section_header("🔁", f"Paso 2 — Regreso desde {fin_p} (con o sin vacío)")
 
     candidatas = _sugerir_candidatas(df, ruta_p)
 
     if not candidatas:
-        alert("info", f"No se encontraron rutas de regreso que salgan de **{ref_loc}**. Puedes simular sin tramo de regreso.")
-        ruta_e = None
+        alert("info", f"No se encontraron rutas de regreso desde **{fin_p}**. Puedes simular solo la ruta principal.")
+        ruta_e     = None
         ruta_r_sel = None
     else:
-        n_directas = sum(1 for c in candidatas if c["ruta_e"] is None)
-        n_vacio    = sum(1 for c in candidatas if c["ruta_e"] is not None)
-        st.caption(f"📊 **{len(candidatas)} combinaciones encontradas** — {n_directas} directas · {n_vacio} con tramo vacío · ordenadas por Ut. Bruta combinada")
+        n_dir   = sum(1 for c in candidatas if c["ruta_e"] is None)
+        n_vacio = sum(1 for c in candidatas if c["ruta_e"] is not None)
+        st.caption(
+            f"📊 **{len(candidatas)} combinaciones** encontradas — "
+            f"{n_dir} directas · {n_vacio} con tramo vacío · ordenadas por Ut. Bruta combinada"
+        )
 
         opciones_labels = ["— Sin regreso —"] + [c["label"] for c in candidatas]
         sel_label = st.selectbox(
@@ -632,59 +710,89 @@ def render() -> None:
             ruta_e     = None
             ruta_r_sel = None
         else:
-            sel_idx    = opciones_labels.index(sel_label) - 1   # -1 por el "Sin regreso"
+            sel_idx    = opciones_labels.index(sel_label) - 1
             cand       = candidatas[sel_idx]
             ruta_e     = pd.Series(cand["ruta_e"]) if cand["ruta_e"] else None
             ruta_r_sel = pd.Series(cand["ruta_r"])
 
-            # Detalle expandible de lo seleccionado
             with st.expander("📋 Ver detalle de la combinación seleccionada", expanded=False):
                 if ruta_e is not None:
-                    st.markdown(f"**Tramo vacío:** {ruta_e.get('ID_Ruta','')} · {ruta_e.get('Ruta_USA','')} · Ut.B ${safe(ruta_e.get('Utilidad_Bruta')):,.2f} ({safe(ruta_e.get('Pct_Ut_Bruta')):.1f}%)")
-                st.markdown(f"**Regreso:** {ruta_r_sel.get('ID_Ruta','')} · {ruta_r_sel.get('Cliente','—')} · {ruta_r_sel.get('Ruta_USA','')} · Ut.B ${safe(ruta_r_sel.get('Utilidad_Bruta')):,.2f} ({safe(ruta_r_sel.get('Pct_Ut_Bruta')):.1f}%)")
+                    st.markdown(
+                        f"**Tramo vacío:** {ruta_e.get('ID_Ruta','')} · "
+                        f"{ruta_e.get('Ruta_USA','')} · "
+                        f"Ut.B ${safe(ruta_e.get('Utilidad_Bruta')):,.2f} ({safe(ruta_e.get('Pct_Ut_Bruta')):.1f}%)"
+                    )
+                if ruta_r_sel is not None:
+                    st.markdown(
+                        f"**Regreso:** {ruta_r_sel.get('ID_Ruta','')} · "
+                        f"{ruta_r_sel.get('Tipo_Viaje','')} · "
+                        f"{ruta_r_sel.get('Cliente','—')} · "
+                        f"{ruta_r_sel.get('Ruta_USA','')} · "
+                        f"Ut.B ${safe(ruta_r_sel.get('Utilidad_Bruta')):,.2f} ({safe(ruta_r_sel.get('Pct_Ut_Bruta')):.1f}%)"
+                    )
                 st.markdown(f"**Ut. Bruta combinada estimada:** ${cand['ut_bruta']:,.2f} ({cand['pct_ut_bruta']:.1f}%)")
 
-    # ── BOTÓN SIMULAR ─────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # BOTÓN SIMULAR
+    # ══════════════════════════════════════════════════════════════
     divider()
     b1, b2, b3 = st.columns([1, 2, 1])
     with b2:
-        if st.button("🚛 Simular Vuelta Redonda", type="primary", use_container_width=True, key="sl_sim_btn"):
-            rutas = [ruta_p] + ([ruta_e] if ruta_e is not None else [])
-            st.session_state["sl_sim_rutas"]   = [r.to_dict() for r in rutas]
-            st.session_state["sl_sim_ruta_p"]  = ruta_p.to_dict()
-            st.session_state["sl_sim_ruta_e"]  = ruta_e.to_dict() if ruta_e is not None else None
+        if st.button("🚛 Simular Vuelta Redonda", type="primary",
+                     use_container_width=True, key="sl_sim_btn"):
+
+            # Construir lista ordenada de tramos
+            rutas_lista: list[dict] = [ruta_p.to_dict()]
+            etiq_lista:  list[str]  = ["🚛 Ruta Principal"]
+
+            if ruta_e is not None:
+                rutas_lista.append(ruta_e.to_dict())
+                etiq_lista.append("⬜ Tramo Vacío")
+
+            if ruta_r_sel is not None:
+                rutas_lista.append(ruta_r_sel.to_dict())
+                etiq_lista.append("🔁 Regreso")
+
+            st.session_state["sl_sim_datos"] = {
+                "rutas":    rutas_lista,
+                "etiquetas": etiq_lista,
+                "ruta_p":   ruta_p.to_dict(),
+                "ruta_e":   ruta_e.to_dict()   if ruta_e     is not None else None,
+                "ruta_r":   ruta_r_sel.to_dict() if ruta_r_sel is not None else None,
+            }
             st.session_state["sl_sim_realizada"] = True
             st.rerun()
 
-    # ── RESULTADOS ────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════
+    # RESULTADOS
+    # ══════════════════════════════════════════════════════════════
     if st.session_state.get("sl_sim_realizada"):
-        rutas_dict  = st.session_state["sl_sim_rutas"]
-        ruta_p_dict = st.session_state["sl_sim_ruta_p"]
-        ruta_e_dict = st.session_state["sl_sim_ruta_e"]
+        datos = st.session_state.get("sl_sim_datos")
+        if not datos:
+            return
 
-        rutas_series = [pd.Series(r) for r in rutas_dict]
-        ruta_p_s     = pd.Series(ruta_p_dict)
-        ruta_e_s     = pd.Series(ruta_e_dict) if ruta_e_dict else None
+        rutas_series = [pd.Series(r) for r in datos["rutas"]]
+        etiquetas    = datos["etiquetas"]
+        ruta_p_s     = pd.Series(datos["ruta_p"])
+        ruta_e_s     = pd.Series(datos["ruta_e"]) if datos["ruta_e"] else None
+        ruta_r_s     = pd.Series(datos["ruta_r"]) if datos["ruta_r"] else None
 
         divider()
         section_header("📊", "Resumen de Vuelta Redonda")
         res = _resumen_vr(rutas_series)
 
-        # Ruta visual
         divider()
-        section_header("🗺️", "Secuencia de la Ruta Completa")
-        _ruta_visual(ruta_p_s, ruta_e_s)
+        section_header("🗺️", "Secuencia del Road Trip")
+        _ruta_visual(ruta_p_s, ruta_e_s, ruta_r_s)
 
-        # Detalle por tramo
-        _detalle_tramos(rutas_series, ruta_p_s, ruta_e_s)
+        _detalle_tramos(rutas_series, etiquetas)
 
-        # PDF
         divider()
         section_header("📥", "Descargar Reporte")
         try:
-            pdf_bytes = _generar_pdf(rutas_series, res, ruta_p_s, ruta_e_s)
+            pdf_bytes = _generar_pdf(rutas_series, etiquetas, res, ruta_p_s, ruta_e_s, ruta_r_s)
             nombre_pdf = (
-                f"VR_SetLogis_{ruta_p_dict.get('ID_Ruta','')}_{ruta_p_dict.get('Cliente','').replace(' ','_')}.pdf"
+                f"VR_SetLogis_{datos['ruta_p'].get('ID_Ruta','')}_{datos['ruta_p'].get('Cliente','').replace(' ','_')}.pdf"
             )
             st.download_button(
                 label="📄 Descargar PDF Vuelta Redonda",
