@@ -260,15 +260,18 @@ def calcular_ruta_setlogis(
     v = valores
 
     # ── MILLAS ───────────────────────────────────────────────────────────────
-    millas_cargadas = safe(miles_load) + safe(short_miles)
+    # Miles_Load: solo para ingreso desglosado (flete/fuel con cliente)
+    # Short_Miles: millas reales recorridas cargado → pago al owner
+    # Miles_Empty: millas vacías → pago al owner vacío
+    millas_short    = safe(short_miles)
     millas_vacias   = safe(miles_empty)
-    millas_totales  = millas_cargadas + millas_vacias
+    millas_totales  = millas_short + millas_vacias   # base para costo indirecto CXM
 
     # ── PAGO OWNER ───────────────────────────────────────────────────────────
     pxm_cargado        = _pxm_cargado(tipo_ruta, modo, v)
     pxm_vacio_v        = _pxm_vacio(modo, v)
-    pago_owner_cargado = millas_cargadas * pxm_cargado
-    pago_owner_vacio   = millas_vacias   * pxm_vacio_v
+    pago_owner_cargado = millas_short  * pxm_cargado
+    pago_owner_vacio   = millas_vacias * pxm_vacio_v
     pago_owner_total   = pago_owner_cargado + pago_owner_vacio
 
     # ── FLETE / FUEL ─────────────────────────────────────────────────────────
