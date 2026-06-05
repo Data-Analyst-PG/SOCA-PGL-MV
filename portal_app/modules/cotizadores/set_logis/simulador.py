@@ -601,51 +601,48 @@ def render() -> None:
             st.markdown(f"**Costo Dir.:** ${safe(ruta_p.get('Costo_Directo')):,.2f}")
             st.markdown(f"**Ut. Bruta:** ${safe(ruta_p.get('Utilidad_Bruta')):,.2f} ({safe(ruta_p.get('Pct_Ut_Bruta')):.1f}%)")
 
-    # ── PASO 2: Tramo Empty ───────────────────────────────────────
+    # ── PASO 2: Sugerencias de regreso ───────────────────────────
     divider()
-    section_header("⬜", "Paso 2 — Tramo Vacío (opcional)")
+    section_header("🔁", "Paso 2 — Selecciona el Regreso (con o sin vacío)")
 
     tipo_p    = str(ruta_p.get("Tipo_Viaje", ""))
     es_subida = tipo_p in TIPOS_SUBIDA
     ref_loc   = _destino_usa(ruta_p) if es_subida else _origen_usa(ruta_p)
 
-    if df_empty.empty:
-        alert("info", "No hay rutas Empty guardadas. Puedes simular sin tramo vacío.")
+    candidatas = _sugerir_candidatas(df, ruta_p)
+
+    if not candidatas:
+        alert("info", f"No se encontraron rutas de regreso que salgan de **{ref_loc}**. Puedes simular sin tramo de regreso.")
         ruta_e = None
+        ruta_r_sel = None
     else:
-        df_empty_idx = df_empty.set_index("ID_Ruta", drop=False)
-        df_sug = _sugerir_empty(df_empty_idx, ruta_p)
+        n_directas = sum(1 for c in candidatas if c["ruta_e"] is None)
+        n_vacio    = sum(1 for c in candidatas if c["ruta_e"] is not None)
+        st.caption(f"📊 **{len(candidatas)} combinaciones encontradas** — {n_directas} directas · {n_vacio} con tramo vacío · ordenadas por Ut. Bruta combinada")
 
-        hay_match = not df_sug.empty and _coincide(
-            _origen_usa(df_sug.iloc[0]) if es_subida else _destino_usa(df_sug.iloc[0]),
-            ref_loc,
-        )
-        n_sug = len(df_sug)
-        st.markdown(
-            f"📊 Se encontraron **{n_sug} rutas Empty posibles**"
-            + (f" — ✅ {len(df_sug[df_sug.apply(lambda r: _coincide(_origen_usa(r) if es_subida else _destino_usa(r), ref_loc), axis=1)])} "
-               f"con {'origen' if es_subida else 'destino'} en **{ref_loc}**" if hay_match else
-               f" — ℹ️ Ninguna coincide exactamente con **{ref_loc}**, se muestran todas ordenadas.")
+        opciones_labels = ["— Sin regreso —"] + [c["label"] for c in candidatas]
+        sel_label = st.selectbox(
+            "Combinación de regreso",
+            options=opciones_labels,
+            key="sl_sim_sel_cand",
+            label_visibility="collapsed",
         )
 
-        idx_e = st.selectbox(
-            "Selecciona ruta Empty sugerida",
-            options=[""] + df_sug.index.tolist(),
-            format_func=lambda i: "— Sin tramo vacío —" if i == "" else _label_ruta(df_sug.loc[i]),
-            key="sl_sim_sel_e",
-        )
-        ruta_e = df_sug.loc[idx_e] if idx_e else None
+        if sel_label == "— Sin regreso —":
+            ruta_e     = None
+            ruta_r_sel = None
+        else:
+            sel_idx    = opciones_labels.index(sel_label) - 1   # -1 por el "Sin regreso"
+            cand       = candidatas[sel_idx]
+            ruta_e     = pd.Series(cand["ruta_e"]) if cand["ruta_e"] else None
+            ruta_r_sel = pd.Series(cand["ruta_r"])
 
-        if ruta_e is not None:
-            with st.expander("📋 Ver detalles del tramo vacío seleccionado", expanded=False):
-                e1, e2 = st.columns(2)
-                with e1:
-                    st.markdown(f"**ID:** {ruta_e.get('ID_Ruta','')}")
-                    st.markdown(f"**Ruta USA:** {ruta_e.get('Ruta_USA','')}")
-                with e2:
-                    st.markdown(f"**Miles Load:** {safe(ruta_e.get('Miles_Load')):.0f} mi")
-                    st.markdown(f"**Ingreso:** ${safe(ruta_e.get('Ingreso_Global')):,.2f}")
-                    st.markdown(f"**Ut. Bruta:** ${safe(ruta_e.get('Utilidad_Bruta')):,.2f} ({safe(ruta_e.get('Pct_Ut_Bruta')):.1f}%)")
+            # Detalle expandible de lo seleccionado
+            with st.expander("📋 Ver detalle de la combinación seleccionada", expanded=False):
+                if ruta_e is not None:
+                    st.markdown(f"**Tramo vacío:** {ruta_e.get('ID_Ruta','')} · {ruta_e.get('Ruta_USA','')} · Ut.B ${safe(ruta_e.get('Utilidad_Bruta')):,.2f} ({safe(ruta_e.get('Pct_Ut_Bruta')):.1f}%)")
+                st.markdown(f"**Regreso:** {ruta_r_sel.get('ID_Ruta','')} · {ruta_r_sel.get('Cliente','—')} · {ruta_r_sel.get('Ruta_USA','')} · Ut.B ${safe(ruta_r_sel.get('Utilidad_Bruta')):,.2f} ({safe(ruta_r_sel.get('Pct_Ut_Bruta')):.1f}%)")
+                st.markdown(f"**Ut. Bruta combinada estimada:** ${cand['ut_bruta']:,.2f} ({cand['pct_ut_bruta']:.1f}%)")
 
     # ── BOTÓN SIMULAR ─────────────────────────────────────────────
     divider()
