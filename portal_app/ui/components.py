@@ -833,8 +833,8 @@ def desglose_ruta(
         pxc = _s("PxM_Cargado")
         pxv = _s("PxM_Vacio")
         filas_costo_americana = [
-            (f"Owner Cargado ({ml:.0f}+{sm:.0f} mi × ${pxc:.4f})", _s("Pago_Owner_Cargado")),
-            (f"Owner Vacío ({me:.0f} mi × ${pxv:.4f})",             _s("Pago_Owner_Vacio")),
+            (f"Owner Cargado ({sm:.0f} mi × ${pxc:.4f})", _s("Pago_Owner_Cargado")),
+            (f"Owner Vacío ({me:.0f} mi × ${pxv:.4f})",   _s("Pago_Owner_Vacio")),
         ]
         if _s("Extras_Costo") > 0:
             filas_costo_americana.append(("Extras (no cobrados)", _s("Extras_Costo")))
