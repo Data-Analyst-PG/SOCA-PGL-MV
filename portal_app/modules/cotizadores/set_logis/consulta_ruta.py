@@ -6,8 +6,19 @@ Sin HTML propio. Sin cálculos directos: usa calcular_ruta_setlogis de _shared.
 
 from __future__ import annotations
 
+import io
+from datetime import datetime
+
 import pandas as pd
 import streamlit as st
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+)
+from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider, kpi_row, status_badge
@@ -334,4 +345,184 @@ def render() -> None:
 
     # ── Mostrar resultados ────────────────────────────────────────────────────
     divider()
-    _mostrar_resultados(r, ruta, es_simulacion=simulando)
+    # ─────────────────────────────────────────────────────────────────────────────
+    # PDF CONSULTA INDIVIDUAL
+    # ─────────────────────────────────────────────────────────────────────────────
+    def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
+        """
+        Genera PDF de consulta individual de una ruta Set Logis.
+        ruta: dict con los campos guardados en Supabase.
+        r:    dict resultado de calcular_ruta_setlogis (KPIs recalculados).
+        """
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=letter,
+            leftMargin=0.6 * inch, rightMargin=0.6 * inch,
+            topMargin=0.5 * inch, bottomMargin=0.5 * inch,
+        )
+        styles  = getSampleStyleSheet()
+        sub_s   = ParagraphStyle("S", parent=styles["Heading2"], fontSize=10,
+                              textColor=colors.HexColor("#1B2266"), spaceBefore=10, spaceAfter=3)
+        norm_s  = ParagraphStyle("N", parent=styles["Normal"],  fontSize=8, leading=11)
+        foot_s  = ParagraphStyle("F", parent=styles["Normal"],  fontSize=7,
+                              textColor=colors.HexColor("#6c757d"), alignment=TA_CENTER)
+        story   = []
+
+        # ── Encabezado ──────────────────────────────────────────────────────────
+        hdr = Table([[
+            Paragraph("<b>SET LOGIS PLUS</b>",
+                      ParagraphStyle("H", parent=styles["Normal"], fontSize=13, textColor=colors.white)),
+            Paragraph("Consulta Individual de Ruta",
+                      ParagraphStyle("HR", parent=styles["Normal"], fontSize=9,
+                                     textColor=colors.white, alignment=TA_RIGHT)),
+        ]], colWidths=[4.5 * inch, 2.5 * inch])
+        hdr.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#1B2266")),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ("LEFTPADDING",   (0, 0), (0, -1),  12),
+            ("RIGHTPADDING",  (-1, 0), (-1, -1), 12),
+        ]))
+        story.append(hdr)
+        story.append(Spacer(1, 10))
+
+        # ── Datos generales ──────────────────────────────────────────────────────
+        story.append(Paragraph("Datos de la Ruta", sub_s))
+        gen_data = [
+            ["Campo",        "Valor",                          "Campo",        "Valor"],
+            ["ID Ruta",      str(ruta.get("ID_Ruta", "")),     "Fecha",        str(ruta.get("Fecha", ""))],
+            ["Tipo",         str(ruta.get("Tipo_Viaje", "")),  "Modo",         str(ruta.get("Modo", ""))],
+            ["Cliente",      str(ruta.get("Cliente", "")),     "Modalidad",    str(ruta.get("Modalidad", ""))],
+            ["Ruta USA",     str(ruta.get("Ruta_USA", "")),    "Tipo Cruce",   str(ruta.get("Tipo_Cruce", ""))],
+        ]
+        origen_mx = str(ruta.get("Origen_MX", "")).strip()
+        if origen_mx:
+            gen_data.append(["Origen MX", origen_mx, "Destino MX", str(ruta.get("Destino_MX", ""))])
+
+        t_gen = Table(gen_data, colWidths=[1.3 * inch, 2.1 * inch, 1.3 * inch, 2.1 * inch])
+        t_gen.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("BACKGROUND",    (0, 1), (0, -1),  colors.HexColor("#EEF2FF")),
+            ("BACKGROUND",    (2, 1), (2, -1),  colors.HexColor("#EEF2FF")),
+            ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
+            ("FONTNAME",      (2, 1), (2, -1),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ]))
+        story.append(t_gen)
+        story.append(Spacer(1, 8))
+
+        # ── Millas y PxM ────────────────────────────────────────────────────────
+        story.append(Paragraph("Millas y Precio por Milla", sub_s))
+        mil_data = [
+            ["Miles Load",  f"{safe(ruta.get('Miles_Load')):.0f} mi",
+             "Short Miles", f"{safe(ruta.get('Short_Miles')):.0f} mi"],
+            ["Miles Empty", f"{safe(ruta.get('Miles_Empty')):.0f} mi",
+             "Millas Totales", f"{safe(r.get('Millas_Totales')):.0f} mi"],
+            ["PxM Cargado", f"${safe(r.get('PxM_Cargado')):.4f}/mi",
+             "PxM Vacío",   f"${safe(r.get('PxM_Vacio')):.4f}/mi"],
+        ]
+        t_mil = Table(mil_data, colWidths=[1.3 * inch, 2.1 * inch, 1.3 * inch, 2.1 * inch])
+        t_mil.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (0, -1),  colors.HexColor("#EEF2FF")),
+            ("BACKGROUND",    (2, 0), (2, -1),  colors.HexColor("#EEF2FF")),
+            ("FONTNAME",      (0, 0), (0, -1),  "Helvetica-Bold"),
+            ("FONTNAME",      (2, 0), (2, -1),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ]))
+        story.append(t_mil)
+        story.append(Spacer(1, 8))
+
+        # ── Ingresos y Costos ────────────────────────────────────────────────────
+        story.append(Paragraph("Ingresos y Costos", sub_s))
+        fin_data = [
+            ["Concepto",          "Monto USD",                        "Concepto",        "Monto USD"],
+            ["Flete USA",         f"${safe(r.get('Flete_USA')):,.2f}",
+             "Owner Cargado",    f"${safe(r.get('Pago_Owner_Cargado')):,.2f}"],
+            ["Fuel",              f"${safe(r.get('Fuel')):,.2f}",
+             "Owner Vacío",      f"${safe(r.get('Pago_Owner_Vacio')):,.2f}"],
+            ["Ingreso Cruce",     f"${safe(r.get('Ingreso_Cruce')):,.2f}",
+             "Costo Cruce",      f"${safe(r.get('Costo_Cruce')):,.2f}"],
+            ["Ingreso MX",        f"${safe(r.get('Ingreso_MX')):,.2f}",
+             "Costo MX",         f"${safe(r.get('Costo_MX')):,.2f}"],
+            ["Extras (cobrados)", f"${safe(r.get('Extras_Ingreso')):,.2f}",
+             "Extras (costo)",   f"${safe(r.get('Extras_Costo')):,.2f}"],
+            ["",                  "",
+             "Costo Indirecto",  f"${safe(r.get('Costo_Indirecto')):,.2f}"],
+        ]
+        t_fin = Table(fin_data, colWidths=[1.5 * inch, 1.8 * inch, 1.5 * inch, 1.8 * inch])
+        t_fin.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("BACKGROUND",    (0, 1), (0, -1),  colors.HexColor("#EEF2FF")),
+            ("BACKGROUND",    (2, 1), (2, -1),  colors.HexColor("#EEF2FF")),
+            ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
+            ("FONTNAME",      (2, 1), (2, -1),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 7),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+            ("ALIGN",         (1, 1), (1, -1),  "RIGHT"),
+            ("ALIGN",         (3, 1), (3, -1),  "RIGHT"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ]))
+        story.append(t_fin)
+        story.append(Spacer(1, 8))
+
+        # ── Resumen financiero ───────────────────────────────────────────────────
+        story.append(Paragraph("Resumen de Utilidad", sub_s))
+        ing  = safe(r.get("Ingreso_Global"))
+        cd   = safe(r.get("Costo_Directo"))
+        ci   = safe(r.get("Costo_Indirecto"))
+        ub   = safe(r.get("Utilidad_Bruta"))
+        un   = safe(r.get("Utilidad_Neta"))
+        pct_cd = safe(r.get("Pct_Costo_Directo"))
+        pct_ub = safe(r.get("Pct_Ut_Bruta"))
+        pct_ci = safe(r.get("Pct_Costo_Indirecto"))
+        pct_un = safe(r.get("Pct_Ut_Neta"))
+
+        color_un_pdf = colors.HexColor("#28a745") if un >= 0 else colors.HexColor("#dc3545")
+        res_data = [
+            ["Concepto",        "Monto (USD)",       "%"],
+            ["Ingreso Total",   f"${ing:,.2f}",      "100.00%"],
+            ["Costo Directo",   f"${cd:,.2f}",       f"{pct_cd:.1f}%"],
+            ["Ut. Bruta",        f"${ub:,.2f}",       f"{pct_ub:.1f}%"],
+            ["Costo Indirecto", f"${ci:,.2f}",       f"{pct_ci:.1f}%"],
+            ["Ut. Neta",         f"${un:,.2f}",       f"{pct_un:.1f}%"],
+        ]
+        t_res = Table(res_data, colWidths=[2.8 * inch, 2.2 * inch, 1.8 * inch])
+        t_res.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+            ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
+            ("BACKGROUND",    (0, 5), (-1, 5),  color_un_pdf),
+            ("TEXTCOLOR",     (0, 5), (-1, 5),  colors.white),
+            ("FONTNAME",      (0, 5), (-1, 5),  "Helvetica-Bold"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ]))
+        story.append(t_res)
+        story.append(Spacer(1, 20))
+
+        # ── Footer ───────────────────────────────────────────────────────────────
+        story.append(Paragraph(
+            f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Set Logis Plus",
+            foot_s,
+        ))
+        doc.build(story)
+        return buf.getvalue()
