@@ -8,8 +8,9 @@ Fórmula tarifa americana (Desglosada):
   Total = Flete + Fuel
 
 Pago owner:
-  Cargado = (Miles_Load + Short_Miles) × PxM_cargado
+  Cargado = Short_Miles × PxM_cargado
   Vacío   = Miles_Empty × PxM_vacio
+  (Miles_Load es solo para ingreso Desglosado — no se usa en pago owner)
 
 Extras:
   extras_costo = extras NO cobrados al cliente (costo puro)
