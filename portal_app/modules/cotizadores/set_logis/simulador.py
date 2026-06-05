@@ -108,27 +108,86 @@ def _coincide(a: str, b: str) -> bool:
     return bool(a and b and _palabras(a) == _palabras(b))
 
 
-def _sugerir_empty(df_empty: pd.DataFrame, ruta_p: pd.Series) -> pd.DataFrame:
+# Tipo de regreso según la principal
+_REGRESO = {
+    "NB":    {"SB", "D2DSB"},
+    "D2DNB": {"SB", "D2DSB"},
+    "SB":    {"NB", "D2DNB"},
+    "D2DSB": {"NB", "D2DNB"},
+}
+
+
+def _sugerir_candidatas(df_all: pd.DataFrame, ruta_p: pd.Series) -> list[dict]:
     """
-    NB/D2DNB → Empty cuyo ORIGEN coincide con DESTINO USA de la ruta principal.
-    SB/D2DSB → Empty cuyo DESTINO coincide con ORIGEN USA de la ruta principal.
-    Ordena de mayor a menor Pct_Ut_Bruta.
+    Genera lista de candidatas de regreso ordenadas por % Ut. Bruta combinada.
+    Cada candidata es un dict con:
+        label       : texto para el selector
+        ut_bruta    : utilidad bruta combinada (principal + regreso [+ empty])
+        pct_ut_bruta: % ut. bruta combinada
+        ruta_r      : dict de la ruta de regreso
+        ruta_e      : dict de la ruta empty (o None si es directo)
     """
-    if df_empty.empty:
-        return pd.DataFrame()
-    tipo = str(ruta_p.get("Tipo_Viaje", ""))
-    ref_p  = _destino_usa(ruta_p) if tipo in TIPOS_SUBIDA else _origen_usa(ruta_p)
+    tipo_p   = str(ruta_p.get("Tipo_Viaje", ""))
+    tipos_r  = _REGRESO.get(tipo_p, set())
+    es_sub   = tipo_p in TIPOS_SUBIDA
 
-    if tipo in TIPOS_SUBIDA:
-        mask = df_empty.apply(lambda r: _coincide(_origen_usa(r), ref_p), axis=1)
-    else:
-        mask = df_empty.apply(lambda r: _coincide(_destino_usa(r), ref_p), axis=1)
+    # Punto de conexión: destino de la principal si sube, origen si baja
+    ref_loc  = _destino_usa(ruta_p) if es_sub else _origen_usa(ruta_p)
 
-    res = df_empty[mask].copy()
-    if res.empty:
-        res = df_empty.copy()
-    return res.sort_values("Pct_Ut_Bruta", ascending=False)
+    ing_p  = safe(ruta_p.get("Ingreso_Global", 0))
+    ub_p   = safe(ruta_p.get("Utilidad_Bruta", 0))
 
+    df_regreso = df_all[df_all["Tipo_Viaje"].isin(tipos_r)].copy() if "Tipo_Viaje" in df_all.columns else pd.DataFrame()
+    df_empty   = df_all[df_all["Tipo_Viaje"] == "Empty"].copy()    if "Tipo_Viaje" in df_all.columns else pd.DataFrame()
+
+    candidatas: list[dict] = []
+
+    # ── Opción A: regreso DIRECTO (sin empty) ────────────────────
+    for _, r in df_regreso.iterrows():
+        # El regreso debe empezar donde termina la principal (o viceversa)
+        origen_r = _origen_usa(r) if es_sub else _destino_usa(r)
+        if not _coincide(origen_r, ref_loc):
+            continue
+        ing_r  = safe(r.get("Ingreso_Global", 0))
+        ub_r   = safe(r.get("Utilidad_Bruta", 0))
+        ing_t  = ing_p + ing_r
+        ub_t   = ub_p + ub_r
+        pct    = (ub_t / ing_t * 100) if ing_t > 0 else 0.0
+        candidatas.append({
+            "label":        f"✅ DIRECTO · {r.get('ID_Ruta','')} | {r.get('Fecha','')} | {r.get('Tipo_Viaje','')} | {r.get('Cliente','—')} | {r.get('Ruta_USA','')} → Ut.B combinada {pct:.1f}%",
+            "ut_bruta":     ub_t,
+            "pct_ut_bruta": pct,
+            "ruta_r":       r.to_dict(),
+            "ruta_e":       None,
+        })
+
+    # ── Opción B: empty + regreso ────────────────────────────────
+    for _, e in df_empty.iterrows():
+        # El empty debe salir del punto de conexión de la principal
+        origen_e = _origen_usa(e) if es_sub else _destino_usa(e)
+        if not _coincide(origen_e, ref_loc):
+            continue
+        # Destino del empty = nuevo punto de conexión para el regreso
+        dest_e   = _destino_usa(e) if es_sub else _origen_usa(e)
+        ing_e    = safe(e.get("Ingreso_Global", 0))
+        ub_e     = safe(e.get("Utilidad_Bruta", 0))
+
+        for _, r in df_regreso.iterrows():
+            origen_r = _origen_usa(r) if es_sub else _destino_usa(r)
+            if not _coincide(origen_r, dest_e):
+                continue
+            ing_r  = safe(r.get("Ingreso_Global", 0))
+            ub_r   = safe(r.get("Utilidad_Bruta", 0))
+            ing_t  = ing_p + ing_e + ing_r
+            ub_t   = ub_p + ub_e + ub_r
+            pct    = (ub_t / ing_t * 100) if ing_t > 0 else 0.0
+            candidatas.append({
+                "label":        f"🔄 CON VACÍO · {e.get('ID_Ruta','')} ({e.get('Ruta_USA','')}) + {r.get('ID_Ruta','')} | {r.get('Cliente','—')} | {r.get('Ruta_USA','')} → Ut.B combinada {pct:.1f}%",
+                "ut_bruta":     ub_t,
+                "pct_ut_bruta": pct,
+                "ruta_r":       r.to_dict(),
+                "ruta_e":       e.to_dict(),
+            })
 
 # ─────────────────────────────────────────────
 # RUTA VISUAL
