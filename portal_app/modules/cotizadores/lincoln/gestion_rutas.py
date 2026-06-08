@@ -1,834 +1,637 @@
-from ui.components import section_header, alert, divider
 """
 gestion_rutas.py – Lincoln Freight (USA/MX)
-Vista tabular, edición con historial y exportación
-Versión actualizada con estructura Igloo + formulario Lincoln 2026
+Tipos de ruta: NB, SB, D2DNB, D2DSB, Empty.
+Flujo edición: form → Revisar Cambios → preview → Guardar (fuera del form).
+Patrón alineado con Set Logis Plus.
 """
 
-import os
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from io import BytesIO
-import re
 
 import pandas as pd
 import streamlit as st
 
-from services.supabase_client import get_supabase_client, get_authed_client, current_user
+from services.supabase_client import get_supabase_client, current_user
+from ui.components import (
+    section_header, alert, divider, kpi_row,
+    semaforos_ruta, desglose_ruta,
+)
 from ._shared import (
-    TABLE_RUTAS, TIPOS_RUTA, EXTRAS_USA,
-    DEFAULTS, cargar_datos_generales,
-    limpiar_fila_json, safe,
+    TABLE_RUTAS,
+    TIPOS_RUTA,
+    EXTRAS_USA,
+    cargar_datos_generales,
+    limpiar_fila_json,
+    safe,
+    calcular_ruta_lincoln,
+    obtener_config_tipo_ruta,
+    normalizar,
+    a_usd,
+    get_profile_name,
 )
 
 
-def _get_profile_name(user_id: str) -> str:
-    if not user_id:
-        return ""
-    try:
-        supabase = get_authed_client()
-        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
-        return (res.data or {}).get("full_name") or ""
-    except Exception:
-        return ""
-
-
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def normalizar_texto(texto):
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = re.sub(r'\s+', ' ', texto)
-    texto = re.sub(r'\s*,\s*', ', ', texto)
-    return texto
-
-
 @st.cache_data(show_spinner=False, ttl=120)
-def _load_rutas_lincoln_cached(table_name: str):
-    supabase = get_supabase_client()
-    if supabase is None:
+def _cargar_rutas(table: str) -> pd.DataFrame:
+    sb = get_supabase_client()
+    if sb is None:
         return pd.DataFrame()
     try:
-        resp = supabase.table(table_name).select("*").order("Fecha", desc=True).execute()
-        if resp.data:
-            return pd.DataFrame(resp.data)
-        return pd.DataFrame()
+        resp = sb.table(table).select("*").order("Fecha", desc=True).execute()
+        df = pd.DataFrame(resp.data or [])
+        if not df.empty and "Fecha" in df.columns:
+            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
+        return df
     except Exception:
         return pd.DataFrame()
 
 
-def obtener_config_tipo_ruta(tipo_ruta: str) -> dict:
-    configs = {
-        "NB": {"parte_usa": True, "cruce": "opcional", "parte_mx": False},
-        "SB": {"parte_usa": True, "cruce": "opcional", "parte_mx": False},
-        "D2DNB": {"parte_usa": True, "cruce": True, "parte_mx": True},
-        "D2DSB": {"parte_usa": True, "cruce": True, "parte_mx": True},
-        "DOM USA": {"parte_usa": True, "cruce": False, "parte_mx": False},
-        "DOM MEX": {"parte_usa": False, "cruce": False, "parte_mx": True}
-    }
-    return configs.get(tipo_ruta, configs["NB"])
-
-
-def calcular_ruta_lincoln(millas_usa, millas_vacias, ingreso_x_milla_usd, fuel_surcharge_usd,
-                          ingreso_cruce_usd, aplica_cruce, modo_viaje, tipo_cruce, tipo_carga_cruce,
-                          costo_cruce_tercero_usd, ingreso_flete_mx_mxp, costo_flete_mx_mxp,
-                          linea_mx, otros_cargos, otros_cargos_pagados, valores):
-    """Calcula todos los valores de la ruta"""
-    tc = float(valores.get("Tipo de Cambio USD/MXP", 18.5))
-    mpg = float(valores.get("Truck Performance (mpg)", 7.0))
-    diesel_precio = float(valores.get("Diesel Price ($/gal)", 3.60))
-    isr_imss = float(valores.get("ISR/IMSS", 462.66))
-    bono_por_milla = float(valores.get("Bono por milla cargada", 0.01))
-    
-    # Ingresos USA
-    ingreso_flete_usa = ingreso_x_milla_usd * millas_usa
-    ingreso_fuel_usa = fuel_surcharge_usd * millas_usa
-    ingreso_total_usa = ingreso_flete_usa + ingreso_fuel_usa
-    
-    # Otros Cargos
-    otros_cargos_ingreso = sum(otros_cargos.values())
-    otros_cargos_costo = sum(
-        monto for nombre, monto in otros_cargos.items() 
-        if otros_cargos_pagados.get(nombre, False) and monto > 0
+def _label(row) -> str:
+    return (
+        f"{row.get('ID_Ruta', '')} | "
+        f"{row.get('Fecha', '')} | "
+        f"{row.get('Tipo', '')} | "
+        f"{row.get('Cliente', '')} | "
+        f"{row.get('Origen', '')} → {row.get('Destino', '')}"
     )
-    
-    # Sueldo operador
-    if modo_viaje == "Team":
-        cxm_cargado = float(valores.get("CXM Team USA", 0.30))
-        cxm_vacio = float(valores.get("CXM Team USA (Empty)", 0.25))
-        factor = 2
+
+
+def _to_excel(df: pd.DataFrame) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        df.to_excel(w, index=False, sheet_name="Rutas Lincoln")
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────
+# FILTROS
+# ─────────────────────────────────────────────
+def _filtrar(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    with st.expander("🔎 Filtros (opcional)", expanded=False):
+        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+
+        tipos    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
+        clientes = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
+
+        f_tipo = fc1.selectbox("Tipo",           tipos,    key=f"{prefix}_ftipo")
+        f_cli  = fc2.selectbox("Cliente",         clientes, key=f"{prefix}_fcli")
+        f_id   = fc3.text_input("ID Ruta",                  key=f"{prefix}_fid",   placeholder="LN000001").strip().upper()
+        f_orig = fc4.text_input("Origen contiene",           key=f"{prefix}_forig").strip().upper()
+        f_dest = fc5.text_input("Destino contiene",          key=f"{prefix}_fdest").strip().upper()
+
+    out = df.copy()
+    if f_tipo != "Todos":
+        out = out[out["Tipo"] == f_tipo]
+    if f_cli != "Todos":
+        out = out[out["Cliente"].astype(str) == f_cli]
+    if f_id:
+        out = out[out["ID_Ruta"].astype(str).str.upper().str.contains(f_id, na=False)]
+    if f_orig:
+        out = out[out["Origen"].astype(str).str.upper().str.contains(f_orig, na=False)]
+    if f_dest:
+        out = out[out["Destino"].astype(str).str.upper().str.contains(f_dest, na=False)]
+    return out
+
+
+# ─────────────────────────────────────────────
+# PREVIEW DE EDICIÓN
+# ─────────────────────────────────────────────
+def _preview_edicion(r: dict, tipo_ruta: str, millas_usa: float, millas_vac: float) -> None:
+    kpi_row([
+        ("💰 Ingreso Total",     f"${r['ingreso_total']:,.2f}",     None),
+        ("💸 Costo Directo",     f"${r['costo_directo_total']:,.2f}", None),
+        ("📈 Utilidad Bruta",    f"${r['utilidad_bruta']:,.2f}",    f"{r['pct_bruta']:.1f}%"),
+        ("📉 Costos Indirectos", f"${r['costos_ind']:,.2f}",         None),
+        ("✅ Utilidad Neta",     f"${r['utilidad_neta']:,.2f}",      f"{r['pct_neta']:.1f}%"),
+    ])
+    semaforos_ruta(r)
+
+    es_empty = (tipo_ruta == "Empty")
+    if es_empty:
+        filas = [
+            (f"Operador Vacío ({millas_vac:.0f} mi × ${r['cxm_vacio']:.4f})", r["sueldo_base"]),
+            ("Diesel (millas vacías)", r["diesel_usa"]),
+        ]
     else:
-        cxm_cargado = float(valores.get("CXM Operador USA", 0.48))
-        cxm_vacio = float(valores.get("CXM Operador USA (Empty)", 0.30))
-        factor = 1
-    
-    sueldo_base = (millas_usa * cxm_cargado + millas_vacias * cxm_vacio) * factor
-    bono_millas = (millas_usa * bono_por_milla) * factor
-    sueldo_usa = sueldo_base + bono_millas
-    
-    # Diesel
-    diesel_usa = ((millas_usa + millas_vacias) / mpg) * diesel_precio if mpg else 0.0
-    
-    # Cruce
-    if aplica_cruce:
-        if tipo_cruce == "Propio":
-            if tipo_carga_cruce == "Cargado":
-                costo_cruce = float(valores.get("Cruce Propio (Cargado)", 50.0))
-            else:
-                costo_cruce = float(valores.get("Cruce Propio (Vacío)", 30.0))
-        else:
-            costo_cruce = costo_cruce_tercero_usd
-    else:
-        costo_cruce = 0.0
-        ingreso_cruce_usd = 0.0
-    
-    # Tramo MX
-    ingreso_mx_usd = ingreso_flete_mx_mxp / tc if tc else 0.0
-    costo_mx_usd = costo_flete_mx_mxp / tc if tc else 0.0
-    
-    # TOTALES
-    ingreso_total = ingreso_total_usa + ingreso_cruce_usd + ingreso_mx_usd + otros_cargos_ingreso
-    costo_directo = sueldo_usa + diesel_usa + costo_cruce + costo_mx_usd + otros_cargos_costo
-    costo_directo_total = costo_directo + isr_imss
-    
-    utilidad_bruta = ingreso_total - costo_directo_total
-    pct_bruta = (utilidad_bruta / ingreso_total * 100) if ingreso_total > 0 else 0.0
-    
-    costos_ind = ingreso_total * 0.42
-    utilidad_neta = utilidad_bruta - costos_ind
-    pct_neta = (utilidad_neta / ingreso_total * 100) if ingreso_total > 0 else 0.0
-    
-    return {
-        "ingreso_flete_usa": ingreso_flete_usa,
-        "ingreso_fuel_usa": ingreso_fuel_usa,
-        "ingreso_total_usa": ingreso_total_usa,
-        "ingreso_cruce": ingreso_cruce_usd,
-        "ingreso_mx_usd": ingreso_mx_usd,
-        "otros_cargos_ingreso": otros_cargos_ingreso,
-        "ingreso_total": ingreso_total,
-        "sueldo_base": sueldo_base,
-        "bono_millas": bono_millas,
-        "sueldo_usa": sueldo_usa,
-        "diesel_usa": diesel_usa,
-        "costo_cruce": costo_cruce,
-        "costo_mx_usd": costo_mx_usd,
-        "otros_cargos_costo": otros_cargos_costo,
-        "isr_imss": isr_imss,
-        "costo_directo_total": costo_directo_total,
-        "utilidad_bruta": utilidad_bruta,
-        "pct_bruta": pct_bruta,
-        "costos_ind": costos_ind,
-        "utilidad_neta": utilidad_neta,
-        "pct_neta": pct_neta,
-        "tc": tc,
-        "mpg": mpg,
-        "diesel": diesel_precio,
-        "cxm_cargado": cxm_cargado,
-        "cxm_vacio": cxm_vacio,
-        "bono_por_milla": bono_por_milla,
-    }
+        filas = [
+            (f"Sueldo Base ({millas_usa:.0f} mi carg + {millas_vac:.0f} mi vac)", r["sueldo_base"]),
+            ("Bono por millas cargadas", r["bono_millas"]),
+            ("Diesel (cargado + vacío)",  r["diesel_usa"]),
+            ("ISR/IMSS",                  r["isr_imss"]),
+        ]
+        if r.get("otros_cargos_costo", 0) > 0:
+            filas.append(("Otros Cargos (pagados)", r["otros_cargos_costo"]))
+
+    desglose_ruta(r, filas_costo_americana=filas)
 
 
-def _to_excel_bytes(df_exportar):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_exportar.to_excel(writer, index=False, sheet_name="Rutas Lincoln")
-    output.seek(0)
-    return output.getvalue()
-
-
-def render():
-    st.title("🗂️ Gestión de Rutas Guardadas (Lincoln)")
-
-    supabase = get_supabase_client()
-    if supabase is None:
-        alert("warn", "⚠️ Supabase no configurado.")
+# ─────────────────────────────────────────────
+# RENDER
+# ─────────────────────────────────────────────
+def render() -> None:
+    sb = get_supabase_client()
+    if sb is None:
+        alert("error", "Supabase no configurado.")
         return
 
-    u = current_user() or {}
-    user_id = u.get("id") or u.get("sub") or ""
-    nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
+    u              = current_user() or {}
+    user_id        = u.get("id") or u.get("sub") or ""
+    nombre_usuario = get_profile_name(user_id) or u.get("email") or "Desconocido"
 
-    c1, c2 = st.columns([1, 3])
-    with c1:
-        if st.button("🔄 Recargar rutas", key="lincoln_gestion_reload"):
-            _load_rutas_lincoln_cached.clear()
+    c_reload, c_tip = st.columns([1, 4])
+    with c_reload:
+        if st.button("🔄 Recargar rutas", key="ln_gest_reload"):
+            _cargar_rutas.clear()
             st.rerun()
-    with c2:
-        st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar/editar algo.")
+    c_tip.caption("Caché 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
     valores = cargar_datos_generales()
-    df = _load_rutas_lincoln_cached(TABLE_RUTAS)
+    df      = _cargar_rutas(TABLE_RUTAS)
 
     if df.empty:
         alert("info", "No hay rutas guardadas aún.")
         return
 
     # ══════════════════════════════════════════════════════════════
-    # FILTROS
-    # ══════════════════════════════════════════════════════════════
-    def _filtrar_rutas(df, prefix_key):
-        with st.expander("🔍 Filtros de búsqueda (opcional)", expanded=False):
-            fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-
-            with fc1:
-                tipos_disp = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())
-                filtro_tipo = st.selectbox("Tipo", tipos_disp, key=f"{prefix_key}_ftipo")
-
-            with fc2:
-                clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist())
-                filtro_cliente = st.selectbox("Cliente", clientes_disp, key=f"{prefix_key}_fcliente")
-
-            with fc3:
-                filtro_origen = st.text_input("Origen contiene", key=f"{prefix_key}_forigen")
-
-            with fc4:
-                filtro_destino = st.text_input("Destino contiene", key=f"{prefix_key}_fdestino")
-
-            with fc5:
-                filtro_id = st.text_input("ID Ruta", key=f"{prefix_key}_fid", placeholder="LN000123")
-
-        resultado = df.copy()
-
-        if filtro_tipo != "Todos":
-            resultado = resultado[resultado["Tipo"] == filtro_tipo]
-
-        if filtro_cliente != "Todos":
-            resultado = resultado[resultado["Cliente"].astype(str) == filtro_cliente]
-
-        if filtro_origen.strip():
-            resultado = resultado[resultado["Origen"].astype(str).str.contains(filtro_origen.strip(), case=False, na=False)]
-
-        if filtro_destino.strip():
-            resultado = resultado[resultado["Destino"].astype(str).str.contains(filtro_destino.strip(), case=False, na=False)]
-
-        if filtro_id.strip():
-            resultado = resultado[resultado["ID_Ruta"].astype(str).str.contains(filtro_id.strip(), case=False, na=False)]
-
-        return resultado
-
-    # ══════════════════════════════════════════════════════════════
     # TABLA DE RUTAS
     # ══════════════════════════════════════════════════════════════
     section_header("📋", "Rutas Registradas")
+    df_tabla = _filtrar(df, "ln_tab")
 
-    df_filtrado_tabla = _filtrar_rutas(df, "gestion_tabla")
-
-    columnas_orden = [
-        "ID_Ruta", "Fecha", "Tipo", "Cliente", "Modo_Viaje", "Origen", "Destino",
-        "Millas_USA", "Millas_Vacias", "CXM_Flete", "CXM_Fuel",
-        "Ingreso Total", "Sueldo_Operador", "Diesel_USA",
-        "Costo_Total_Ruta", "Utilidad_Bruta", "Pct_Utilidad_Bruta",
-        "Utilidad_Neta", "Pct_Utilidad_Neta",
-        "created_by", "created_at", "updated_by", "updated_at"
+    COLS = [
+        "ID_Ruta", "Fecha", "Tipo", "Cliente", "Modo_Viaje",
+        "Origen", "Destino", "Millas_USA", "Millas_Vacias",
+        "Ingreso_Total", "Costo_Directo_Total", "Utilidad_Bruta",
+        "Pct_Utilidad_Bruta", "Costos_Indirectos", "Utilidad_Neta",
+        "Pct_Utilidad_Neta", "Capturado_Por", "Fecha",
     ]
-
-    columnas_disponibles = [col for col in columnas_orden if col in df_filtrado_tabla.columns]
-    df_tabla = df_filtrado_tabla[columnas_disponibles].copy()
-
-    for col in df_tabla.columns:
-        if df_tabla[col].dtype in ['float64', 'int64']:
-            df_tabla[col] = df_tabla[col].round(2)
-
-    st.dataframe(
-        df_tabla,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.caption(f"Total de rutas mostradas: {len(df_tabla)} de {len(df)}")
-
-    excel_data = _to_excel_bytes(df_tabla)
+    cols_disp = [c for c in COLS if c in df_tabla.columns]
+    st.dataframe(df_tabla[cols_disp] if cols_disp else df_tabla,
+                 use_container_width=True, hide_index=True)
+    st.caption(f"Mostrando {len(df_tabla)} de {len(df)} rutas")
 
     st.download_button(
-        label="📥 Descargar rutas en Excel (.xlsx)",
-        data=excel_data,
+        "📥 Descargar Excel",
+        data=_to_excel(df_tabla[cols_disp] if cols_disp else df_tabla),
         file_name=f"rutas_lincoln_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="ln_dl_excel",
     )
 
     # ══════════════════════════════════════════════════════════════
     # EDITAR RUTA
     # ══════════════════════════════════════════════════════════════
     divider()
-    section_header("✏️", "Editar Ruta Existente")
+    section_header("✏️", "Editar Ruta")
 
-    df_filtrado_edicion = _filtrar_rutas(df, "gestion_edicion")
-    
-    if df_filtrado_edicion.empty:
+    df_ed = _filtrar(df, "ln_ed")
+    if df_ed.empty:
         alert("info", "No hay rutas con los filtros aplicados.")
         return
 
-    ids_disponibles = sorted(df_filtrado_edicion["ID_Ruta"].dropna().astype(str).unique().tolist(), reverse=True)
-    ruta_seleccionada = st.selectbox(
-        "Selecciona ruta a editar:",
-        ids_disponibles,
-        key="lincoln_ruta_editar_select"
-    )
+    if "ID_Ruta" not in df_ed.columns:
+        return
+    df_ed = df_ed.set_index("ID_Ruta", drop=False)
 
-    if not ruta_seleccionada:
+    idx_sel = st.selectbox(
+        f"Selecciona ruta a editar ({len(df_ed)} encontrada/s)",
+        options=[""] + df_ed.index.tolist(),
+        format_func=lambda i: "— Elige una ruta —" if i == "" else _label(df_ed.loc[i]),
+        key="ln_ed_select",
+    )
+    if not idx_sel:
+        alert("info", "Selecciona una ruta para editarla.")
         return
 
-    ruta = df[df["ID_Ruta"] == ruta_seleccionada].iloc[0]
+    ruta = df_ed.loc[idx_sel].to_dict()
+    k    = str(idx_sel)   # se usa en las keys del form para evitar DuplicateElementKey
 
-    with st.form("lincoln_editar_ruta_form", clear_on_submit=False):
-        
-        # Datos Generales
-        st.markdown("### 📋 Información General")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            fecha_val = pd.to_datetime(ruta.get("Fecha"), errors="coerce")
-            if pd.isna(fecha_val):
-                fecha_val = datetime.today()
-            fecha = st.date_input("📅 Fecha", value=fecha_val.date(), key="ln_edit_fecha")
-        with col2:
-            tipo = st.selectbox("🗺️ Tipo", TIPOS_RUTA, index=TIPOS_RUTA.index(ruta.get("Tipo", "NB")) if ruta.get("Tipo") in TIPOS_RUTA else 0, key="ln_edit_tipo")
-        with col3:
-            cliente = st.text_input("👤 Cliente", value=str(ruta.get("Cliente", "")), key="ln_edit_cliente")
-        with col4:
-            modo_viaje = st.selectbox("🚛 Modo", ["Sencillo", "Team"], index=["Sencillo", "Team"].index(ruta.get("Modo_Viaje", "Sencillo")) if ruta.get("Modo_Viaje") in ["Sencillo", "Team"] else 0, key="ln_edit_modo")
+    # ── Auditoría e historial (solo lectura) ──────────────────────
+    if ruta.get("Capturado_Por"):
+        st.caption(f"👤 Capturada por: **{ruta.get('Capturado_Por')}** · Fecha: **{ruta.get('Fecha', '—')}**")
 
-        config_ruta = obtener_config_tipo_ruta(tipo)
+    historial = ruta.get("historial") or []
+    if historial:
+        with st.expander(f"📜 Historial de modificaciones ({len(historial)})", expanded=False):
+            for entrada in reversed(historial):
+                ts  = str(entrada.get("timestamp", ""))[:16].replace("T", " ")
+                usr = entrada.get("usuario", "—")
+                mot = entrada.get("motivo", "—")
+                st.caption(f"**{ts}** · {usr} · _{mot}_")
+                prev = entrada.get("valores_anteriores", {})
+                if prev:
+                    c1, c2 = st.columns(2)
+                    c1.caption(f"Ingreso: **${safe(prev.get('Ingreso_Total')):,.2f}**")
+                    c1.caption(f"Costo Directo: **${safe(prev.get('Costo_Directo_Total')):,.2f}**")
+                    c2.caption(f"Ut. Bruta: **${safe(prev.get('Utilidad_Bruta')):,.2f}** ({safe(prev.get('Pct_Utilidad_Bruta')):.1f}%)")
+                    c2.caption(f"Ut. Neta: **${safe(prev.get('Utilidad_Neta')):,.2f}** ({safe(prev.get('Pct_Utilidad_Neta')):.1f}%)")
+                st.divider()
+    else:
+        st.caption("📜 Sin modificaciones previas.")
 
-        # Ruta Americana
-        if config_ruta["parte_usa"]:
-            divider()
-            st.markdown("### 🇺🇸 Ruta Americana")
-            
-            col_usa1, col_usa2 = st.columns(2)
-            with col_usa1:
-                origen_usa = st.text_input("📍 Origen", value=str(ruta.get("Origen", "")), key="ln_edit_ori_usa")
-                destino_usa = st.text_input("📍 Destino", value=str(ruta.get("Destino", "")), key="ln_edit_dest_usa")
-                millas_usa = st.number_input("🛣️ Millas Cargadas", value=float(safe(ruta.get("Millas_USA", 0))), step=10.0, key="ln_edit_mi_usa")
-                millas_vacias = st.number_input("🛣️ Millas Vacías", value=float(safe(ruta.get("Millas_Vacias", 0))), step=10.0, key="ln_edit_mi_vac")
-            
-            with col_usa2:
-                moneda_usa = st.selectbox("💵 Moneda", ["USD", "MXP"], index=["USD", "MXP"].index(ruta.get("Moneda_Ingreso_USA", "USD")) if ruta.get("Moneda_Ingreso_USA") in ["USD", "MXP"] else 0, key="ln_edit_moneda_usa")
-                modalidad = st.radio("💰 Modalidad:", ["🔢 Desglosada", "💵 Flat"], index=0 if "Desglosada" in str(ruta.get("Modalidad_Tarifa", "Desglosada")) else 1, key="ln_edit_mod", horizontal=True)
-                
-                if "Desglosada" in modalidad:
-                    cxm_flete = st.number_input("CXM Flete", value=float(safe(ruta.get("CXM_Flete", 0))), step=0.01, key="ln_edit_cxm_f")
-                    cxm_fuel = st.number_input("CXM Fuel", value=float(safe(ruta.get("CXM_Fuel", 0.61))), step=0.01, key="ln_edit_cxm_fu")
-                    tarifa_flat = 0.0
-                else:
-                    tarifa_flat = st.number_input("Tarifa Total", value=float(safe(ruta.get("Tarifa_Flat", 0))), step=50.0, key="ln_edit_flat")
-                    cxm_flete = 0.0
-                    cxm_fuel = 0.0
-        else:
-            origen_usa = destino_usa = ""
-            millas_usa = millas_vacias = 0.0
-            moneda_usa = "USD"
-            modalidad = "Desglosada"
-            cxm_flete = cxm_fuel = tarifa_flat = 0.0
+    # ── Formulario de edición ─────────────────────────────────────
+    tipo_actual = ruta.get("Tipo", "NB")
+    es_empty_actual = (tipo_actual == "Empty")
 
-        # Cruce
-        if config_ruta["cruce"] != False:
-            divider()
-            st.markdown("### 🛃 Cruce")
-            
-            if config_ruta["cruce"] == "opcional":
-                aplica_cruce = st.checkbox("✅ Incluye cruce", value=bool(ruta.get("Aplica_Cruce", False)), key="ln_edit_apl_cruce")
-            else:
-                aplica_cruce = True
-                alert("info", "ℹ️ Siempre incluye cruce")
-            
-            if aplica_cruce:
-                col_cr1, col_cr2 = st.columns(2)
-                with col_cr1:
-                    tipo_cruce = st.selectbox("🚛 Tipo", ["Propio", "Tercero"], index=["Propio", "Tercero"].index(ruta.get("Tipo_Cruce", "Propio")) if ruta.get("Tipo_Cruce") in ["Propio", "Tercero"] else 0, key="ln_edit_t_cruce")
-                    tipo_carga = st.selectbox("📦 Carga", ["Cargado", "Vacío"], index=["Cargado", "Vacío"].index(ruta.get("Tipo_Carga_Cruce", "Cargado")) if ruta.get("Tipo_Carga_Cruce") in ["Cargado", "Vacío"] else 0, key="ln_edit_carga")
-                    moneda_cruce = st.selectbox("💵 Moneda", ["USD", "MXP"], index=["USD", "MXP"].index(ruta.get("Moneda_Cruce", "USD")) if ruta.get("Moneda_Cruce") in ["USD", "MXP"] else 0, key="ln_edit_mon_cruce")
-                with col_cr2:
-                    ingreso_cruce = st.number_input(f"💵 Ingreso ({moneda_cruce})", value=float(safe(ruta.get("Ingreso_Cruce", 0))), step=10.0, key="ln_edit_ing_cruce")
-                    if tipo_cruce == "Tercero":
-                        costo_cruce_terc = st.number_input(f"💸 Costo ({moneda_cruce})", value=float(safe(ruta.get("Costo_Cruce_Tercero", 0))), step=10.0, key="ln_edit_c_cruce")
-                    else:
-                        alert("info", "ℹ️ Propio: sin costo")
-                        costo_cruce_terc = 0.0
-            else:
-                tipo_cruce = tipo_carga = None
-                moneda_cruce = "USD"
-                ingreso_cruce = costo_cruce_terc = 0.0
-        else:
-            aplica_cruce = False
-            tipo_cruce = tipo_carga = None
-            moneda_cruce = "USD"
-            ingreso_cruce = costo_cruce_terc = 0.0
+    with st.form(f"ln_edit_form_{k}", clear_on_submit=False):
 
-        # Ruta Mexicana
-        if config_ruta["parte_mx"]:
-            divider()
-            st.markdown("### 🇲🇽 Ruta Mexicana")
-            
-            col_mx1, col_mx2 = st.columns(2)
-            with col_mx1:
-                linea_mx = st.selectbox("🚚 Línea", ["Propia", "Tercero"], index=["Propia", "Tercero"].index(ruta.get("Linea_MX", "Propia")) if ruta.get("Linea_MX") in ["Propia", "Tercero"] else 0, key="ln_edit_linea")
-                origen_mx = st.text_input("📍 Origen", value=str(ruta.get("Origen_MX", "")), key="ln_edit_ori_mx")
-                destino_mx = st.text_input("📍 Destino", value=str(ruta.get("Destino_MX", "")), key="ln_edit_dest_mx")
-                moneda_mx = st.selectbox("💵 Moneda", ["MXP", "USD"], index=["MXP", "USD"].index(ruta.get("Moneda_MX", "MXP")) if ruta.get("Moneda_MX") in ["MXP", "USD"] else 0, key="ln_edit_mon_mx")
-            with col_mx2:
-                ingreso_mx = st.number_input(f"💵 Ingreso ({moneda_mx})", value=float(safe(ruta.get("Ingreso_Flete_MX", 0))), step=100.0, key="ln_edit_ing_mx")
-                if linea_mx == "Tercero":
-                    costo_mx = st.number_input(f"💸 Costo ({moneda_mx})", value=float(safe(ruta.get("Costo_Flete_MX", 0))), step=100.0, key="ln_edit_c_mx")
-                else:
-                    alert("info", "ℹ️ Propia: calculado")
-                    costo_mx = 0.0
-        else:
-            linea_mx = None
-            origen_mx = destino_mx = ""
-            moneda_mx = "MXP"
-            ingreso_mx = costo_mx = 0.0
-
-        # Otros Cargos
-        divider()
-        st.markdown("### 💵 Otros Cargos")
-        
-        otros_cargos = {}
-        otros_cargos_pagados = {}
-        
-        cols = st.columns(3)
-        for idx, campo in enumerate(EXTRAS_USA):
-            with cols[idx % 3]:
-                campo_db = f"Extra_{campo.replace(' ','_')}"
-                monto = st.number_input(campo, value=float(safe(ruta.get(campo_db, 0))), step=10.0, key=f"ln_edit_oc_{idx}")
-                otros_cargos[campo] = monto
-                if monto > 0:
-                    campo_pag = f"{campo_db}_Pagado"
-                    pagado = st.checkbox(f"☑️ Se pagó", value=bool(ruta.get(campo_pag, False)), key=f"ln_edit_pag_{idx}")
-                    otros_cargos_pagados[campo] = pagado
-                else:
-                    otros_cargos_pagados[campo] = False
-
-        # Motivo de edición
-        divider()
-        st.markdown("### 📝 Motivo de Edición")
-        motivo_edicion = st.text_area(
-            "¿Por qué se está editando esta ruta? (Obligatorio)",
-            placeholder="Ej: Corrección de millas incorrectas, actualización de tarifas, etc.",
-            key="ln_edit_motivo"
+        # Motivo (obligatorio)
+        motivo = st.text_input(
+            "✏️ Motivo de modificación (obligatorio)",
+            placeholder="Describe el motivo del cambio...",
+            key=f"ln_ed_motivo_{k}",
         )
 
         divider()
-        submitted = st.form_submit_button("🔎 **Revisar Cambios**", type="primary", use_container_width=True)
+        st.markdown("**Información General**")
+        g1, g2, g3, g4 = st.columns(4)
 
-    # Procesamiento
-    if submitted:
-        if not motivo_edicion.strip():
-            alert("error", "⚠️ Debes especificar el motivo de la edición.")
-            return
+        fecha_val = pd.to_datetime(ruta.get("Fecha"), errors="coerce")
+        fecha_val = datetime.today() if pd.isna(fecha_val) else fecha_val
+
+        fecha      = g1.date_input("Fecha", value=fecha_val.date(), key=f"ln_ed_fecha_{k}")
+        tipo_idx   = TIPOS_RUTA.index(tipo_actual) if tipo_actual in TIPOS_RUTA else 0
+        tipo       = g2.selectbox("Tipo de Ruta", TIPOS_RUTA, index=tipo_idx, key=f"ln_ed_tipo_{k}")
+        cliente    = g3.text_input("Cliente", value=str(ruta.get("Cliente", "")), key=f"ln_ed_cli_{k}")
+        modo_list  = ["Sencillo", "Team"]
+        modo_idx   = modo_list.index(ruta.get("Modo_Viaje", "Sencillo")) if ruta.get("Modo_Viaje") in modo_list else 0
+        modo_viaje = g4.selectbox("Modo", modo_list, index=modo_idx, key=f"ln_ed_modo_{k}")
+
+        config   = obtener_config_tipo_ruta(tipo)
+        es_empty = (tipo == "Empty")
+
+        # ── Ruta Americana ────────────────────────────────────────
+        divider()
+        st.markdown("**Ruta Americana**")
+        ru1, ru2 = st.columns(2)
+
+        with ru1:
+            origen_usa  = st.text_input("Origen USA",  value=str(ruta.get("Origen", "")),  key=f"ln_ed_ori_{k}")
+            destino_usa = st.text_input("Destino USA",  value=str(ruta.get("Destino", "")), key=f"ln_ed_dest_{k}")
+            if es_empty:
+                millas_usa    = 0.0
+                millas_vacias = st.number_input("Millas Vacías",
+                                                 value=float(safe(ruta.get("Millas_Vacias", 0))),
+                                                 step=10.0, key=f"ln_ed_mi_vac_{k}")
+            else:
+                millas_usa    = st.number_input("Millas Cargadas",
+                                                 value=float(safe(ruta.get("Millas_USA", 0))),
+                                                 step=10.0, key=f"ln_ed_mi_usa_{k}")
+                millas_vacias = st.number_input("Millas Vacías",
+                                                 value=float(safe(ruta.get("Millas_Vacias", 0))),
+                                                 step=10.0, key=f"ln_ed_mi_vac_{k}")
+
+        with ru2:
+            if es_empty:
+                moneda_usa  = "USD"
+                modalidad   = "Flat"
+                cxm_flete   = 0.0
+                cxm_fuel    = 0.0
+                tarifa_flat = 0.0
+                st.info("ℹ️ Empty: sin tarifa al cliente.")
+            else:
+                mon_list   = ["USD", "MXP"]
+                mon_idx    = mon_list.index(ruta.get("Moneda_USA", "USD")) if ruta.get("Moneda_USA") in mon_list else 0
+                moneda_usa = st.selectbox("Moneda", mon_list, index=mon_idx, key=f"ln_ed_moneda_{k}")
+                mod_list   = ["Desglosada", "Flat"]
+                mod_idx    = mod_list.index(ruta.get("Modalidad", "Desglosada")) if ruta.get("Modalidad") in mod_list else 0
+                modalidad  = st.selectbox("Modalidad", mod_list, index=mod_idx, key=f"ln_ed_modal_{k}")
+                if modalidad == "Desglosada":
+                    cxm_flete   = st.number_input("CXM Flete ($/mi)",
+                                                   value=float(safe(ruta.get("CXM_Flete", 0))),
+                                                   step=0.01, format="%.4f", key=f"ln_ed_cxmf_{k}")
+                    cxm_fuel    = st.number_input("CXM Fuel ($/mi)",
+                                                   value=float(safe(ruta.get("CXM_Fuel", 0))),
+                                                   step=0.01, format="%.4f", key=f"ln_ed_cxmfuel_{k}")
+                    tarifa_flat = 0.0
+                else:
+                    tarifa_flat = st.number_input("Tarifa Flat (USD)",
+                                                   value=float(safe(ruta.get("Tarifa_Flat", 0))),
+                                                   step=50.0, key=f"ln_ed_flat_{k}")
+                    cxm_flete   = 0.0
+                    cxm_fuel    = 0.0
+
+        # ── Cruce ─────────────────────────────────────────────────
+        aplica_cruce     = False
+        tipo_cruce       = ""
+        tipo_carga       = ""
+        moneda_cruce     = "USD"
+        ingreso_cruce    = 0.0
+        costo_cruce_terc = 0.0
+
+        if not es_empty and config.get("cruce") in ("opcional", True):
+            divider()
+            st.markdown("**Cruce Fronterizo**")
+            aplica_cruce = st.checkbox("¿Aplica cruce?",
+                                        value=bool(ruta.get("Aplica_Cruce", False)),
+                                        key=f"ln_ed_aplcr_{k}")
+            if aplica_cruce:
+                cx1, cx2 = st.columns(2)
+                tc_list  = ["Propio", "Tercero"]
+                tc_idx   = tc_list.index(ruta.get("Tipo_Cruce", "Propio")) if ruta.get("Tipo_Cruce") in tc_list else 0
+                tipo_cruce    = cx1.selectbox("Tipo de Cruce", tc_list, index=tc_idx, key=f"ln_ed_tcruce_{k}")
+                tca_list = ["Cargado", "Vacío"]
+                tca_idx  = tca_list.index(ruta.get("Tipo_Carga_Cruce", "Cargado")) if ruta.get("Tipo_Carga_Cruce") in tca_list else 0
+                tipo_carga    = cx1.selectbox("Carga", tca_list, index=tca_idx, key=f"ln_ed_tcarga_{k}")
+                mon_cr_list   = ["USD", "MXP"]
+                mon_cr_idx    = mon_cr_list.index(ruta.get("Moneda_Cruce", "USD")) if ruta.get("Moneda_Cruce") in mon_cr_list else 0
+                moneda_cruce  = cx2.selectbox("Moneda Cruce", mon_cr_list, index=mon_cr_idx, key=f"ln_ed_moncruce_{k}")
+                ingreso_cruce = cx2.number_input("Ingreso Cruce",
+                                                  value=float(safe(ruta.get("Ingreso_Cruce", 0))),
+                                                  step=5.0, key=f"ln_ed_ingcruce_{k}")
+                if tipo_cruce == "Tercero":
+                    costo_cruce_terc = cx2.number_input("Costo Cruce Tercero",
+                                                         value=float(safe(ruta.get("Costo_Cruce", 0))),
+                                                         step=5.0, key=f"ln_ed_costocruce_{k}")
+
+        # ── Tramo México ──────────────────────────────────────────
+        linea_mx   = ""
+        origen_mx  = ""
+        destino_mx = ""
+        moneda_mx  = "MXP"
+        ingreso_mx = 0.0
+        costo_mx   = 0.0
+
+        if config.get("parte_mx") and not es_empty:
+            divider()
+            st.markdown("**Tramo México**")
+            mx1, mx2 = st.columns(2)
+            lmx_list = ["Propia", "Tercero"]
+            lmx_idx  = lmx_list.index(ruta.get("Linea_MX", "Propia")) if ruta.get("Linea_MX") in lmx_list else 0
+            linea_mx   = mx1.selectbox("Línea MX", lmx_list, index=lmx_idx, key=f"ln_ed_linmx_{k}")
+            origen_mx  = mx1.text_input("Origen MX",  value=str(ruta.get("Origen_MX", "")),  key=f"ln_ed_orimx_{k}")
+            destino_mx = mx1.text_input("Destino MX", value=str(ruta.get("Destino_MX", "")), key=f"ln_ed_destmx_{k}")
+            monmx_list = ["MXP", "USD"]
+            monmx_idx  = monmx_list.index(ruta.get("Moneda_MX", "MXP")) if ruta.get("Moneda_MX") in monmx_list else 0
+            moneda_mx  = mx2.selectbox("Moneda MX", monmx_list, index=monmx_idx, key=f"ln_ed_monmx_{k}")
+            ingreso_mx = mx2.number_input("Ingreso Flete MX",
+                                           value=float(safe(ruta.get("Ingreso_MX_MXP", 0))),
+                                           step=100.0, key=f"ln_ed_ingmx_{k}")
+            if linea_mx == "Tercero":
+                costo_mx = mx2.number_input("Costo Flete MX",
+                                             value=float(safe(ruta.get("Costo_MX_MXP", 0))),
+                                             step=100.0, key=f"ln_ed_costomx_{k}")
+
+        # ── Otros Cargos ──────────────────────────────────────────
+        otros_cargos         = {}
+        otros_cargos_pagados = {}
+
+        if not es_empty:
+            divider()
+            st.markdown("**Otros Cargos (USD)**")
+            cols3 = st.columns(3)
+            for i, extra in enumerate(EXTRAS_USA):
+                with cols3[i % 3]:
+                    monto  = st.number_input(extra, min_value=0.0, step=10.0, format="%.2f",
+                                             key=f"ln_ed_ext_{extra}_{k}")
+                    pagado = st.checkbox("Lincoln pagó", key=f"ln_ed_pag_{extra}_{k}")
+                    if monto > 0:
+                        otros_cargos[extra]         = monto
+                        otros_cargos_pagados[extra] = pagado
+
+        divider()
+        revisar = st.form_submit_button("🔍 Revisar Cambios", type="primary",
+                                        use_container_width=True)
+
+    # ── Post-form: calcular y guardar en session_state ─────────────────────
+    if revisar:
+        if not motivo.strip():
+            alert("error", "⚠️ El motivo de modificación es obligatorio.")
+            st.stop()
 
         tc = float(valores.get("Tipo de Cambio USD/MXP", 18.5))
 
-        # Convertir todo a USD
-        if "Desglosada" in modalidad:
-            ing_x_milla = cxm_flete
-            fuel_sc = cxm_fuel
-        else:
-            ing_x_milla = tarifa_flat / millas_usa if millas_usa > 0 else 0.0
-            fuel_sc = 0.0
-
-        if moneda_usa == "MXP":
-            ing_x_milla_usd = ing_x_milla / tc
-            fuel_sc_usd = fuel_sc / tc
-        else:
-            ing_x_milla_usd = ing_x_milla
-            fuel_sc_usd = fuel_sc
-
-        if aplica_cruce:
-            if moneda_cruce == "MXP":
-                ing_cruce_usd = ingreso_cruce / tc
-                costo_cruce_usd = costo_cruce_terc / tc if tipo_cruce == "Tercero" else 0.0
+        if not es_empty:
+            if modalidad == "Desglosada":
+                ing_x_milla = cxm_flete if moneda_usa == "USD" else a_usd(cxm_flete, tc)
+                fuel_sc     = cxm_fuel  if moneda_usa == "USD" else a_usd(cxm_fuel, tc)
             else:
-                ing_cruce_usd = ingreso_cruce
-                costo_cruce_usd = costo_cruce_terc if tipo_cruce == "Tercero" else 0.0
-        else:
-            ing_cruce_usd = costo_cruce_usd = 0.0
-            tipo_cruce = tipo_cruce or "Propio"
-            tipo_carga = tipo_carga or "Cargado"
+                ing_x_milla = (tarifa_flat if moneda_usa == "USD" else a_usd(tarifa_flat, tc)) / millas_usa if millas_usa else 0.0
+                fuel_sc     = 0.0
 
-        if config_ruta["parte_mx"]:
-            if moneda_mx == "USD":
-                ing_mx_mxp = ingreso_mx * tc
-                costo_mx_mxp = costo_mx * tc if linea_mx == "Tercero" else 0.0
-            else:
-                ing_mx_mxp = ingreso_mx
-                costo_mx_mxp = costo_mx if linea_mx == "Tercero" else 0.0
+            ing_cruce_usd = ingreso_cruce if moneda_cruce == "USD" else a_usd(ingreso_cruce, tc)
         else:
-            ing_mx_mxp = costo_mx_mxp = 0.0
-            linea_mx = linea_mx or "Propia"
+            ing_x_milla   = 0.0
+            fuel_sc       = 0.0
+            ing_cruce_usd = 0.0
+
+        if config.get("parte_mx") and not es_empty:
+            ing_mx_mxp   = ingreso_mx * tc if moneda_mx == "USD" else ingreso_mx
+            costo_mx_mxp = costo_mx * tc   if moneda_mx == "USD" else costo_mx
+            if linea_mx != "Tercero":
+                costo_mx_mxp = 0.0
+        else:
+            ing_mx_mxp   = 0.0
+            costo_mx_mxp = 0.0
 
         r = calcular_ruta_lincoln(
-            millas_usa, millas_vacias, ing_x_milla_usd, fuel_sc_usd,
-            ing_cruce_usd, aplica_cruce, modo_viaje, tipo_cruce, tipo_carga,
-            costo_cruce_usd, ing_mx_mxp, costo_mx_mxp, linea_mx,
-            otros_cargos, otros_cargos_pagados, valores
+            tipo_ruta            = tipo,
+            millas_usa           = millas_usa,
+            millas_vacias        = millas_vacias,
+            ingreso_x_milla_usd  = ing_x_milla,
+            fuel_surcharge_usd   = fuel_sc,
+            ingreso_cruce_usd    = ing_cruce_usd,
+            aplica_cruce         = aplica_cruce,
+            modo_viaje           = modo_viaje,
+            tipo_cruce           = tipo_cruce,
+            tipo_carga_cruce     = tipo_carga,
+            costo_cruce_tercero_usd = costo_cruce_terc,
+            ingreso_flete_mx_mxp = ing_mx_mxp,
+            costo_flete_mx_mxp   = costo_mx_mxp,
+            linea_mx             = linea_mx,
+            otros_cargos         = otros_cargos,
+            otros_cargos_pagados = otros_cargos_pagados,
+            valores              = valores,
         )
 
-        # Guardar en session_state
-        st.session_state["lincoln_datos_edicion"] = {
-            "id_ruta": ruta_seleccionada,
-            "fecha": str(fecha),
-            "tipo": tipo,
-            "cliente": normalizar_texto(cliente),
-            "modo_viaje": modo_viaje,
-            "origen_usa": normalizar_texto(origen_usa),
-            "destino_usa": normalizar_texto(destino_usa),
-            "millas_usa": millas_usa,
-            "millas_vacias": millas_vacias,
-            "moneda_usa": moneda_usa,
-            "modalidad": modalidad,
-            "cxm_flete": cxm_flete,
-            "cxm_fuel": cxm_fuel,
-            "tarifa_flat": tarifa_flat,
-            "aplica_cruce": aplica_cruce,
-            "tipo_cruce": tipo_cruce,
-            "tipo_carga": tipo_carga,
-            "moneda_cruce": moneda_cruce,
-            "ingreso_cruce": ingreso_cruce,
-            "costo_cruce_terc": costo_cruce_terc,
-            "linea_mx": linea_mx,
-            "origen_mx": normalizar_texto(origen_mx),
-            "destino_mx": normalizar_texto(destino_mx),
-            "moneda_mx": moneda_mx,
-            "ingreso_mx": ingreso_mx,
-            "costo_mx": costo_mx,
-            "otros_cargos": otros_cargos,
+        st.session_state["ln_ed_resultado"] = r
+        st.session_state["ln_ed_datos"]     = {
+            "id_ruta":            idx_sel,
+            "motivo":             motivo.strip(),
+            "fecha":              str(fecha),
+            "tipo":               tipo,
+            "cliente":            normalizar(cliente),
+            "modo_viaje":         modo_viaje,
+            "origen_usa":         normalizar(origen_usa),
+            "destino_usa":        normalizar(destino_usa),
+            "millas_usa":         millas_usa,
+            "millas_vacias":      millas_vacias,
+            "moneda_usa":         moneda_usa,
+            "modalidad":          modalidad,
+            "cxm_flete":          cxm_flete,
+            "cxm_fuel":           cxm_fuel,
+            "tarifa_flat":        tarifa_flat,
+            "aplica_cruce":       aplica_cruce,
+            "tipo_cruce":         tipo_cruce,
+            "tipo_carga":         tipo_carga,
+            "moneda_cruce":       moneda_cruce,
+            "ingreso_cruce":      ing_cruce_usd,
+            "costo_cruce_terc":   costo_cruce_terc,
+            "linea_mx":           linea_mx,
+            "origen_mx":          normalizar(origen_mx),
+            "destino_mx":         normalizar(destino_mx),
+            "moneda_mx":          moneda_mx,
+            "ingreso_mx":         ingreso_mx,
+            "costo_mx":           costo_mx,
+            "ing_mx_mxp":         ing_mx_mxp,
+            "costo_mx_mxp":       costo_mx_mxp,
+            "otros_cargos":       otros_cargos,
             "otros_cargos_pagados": otros_cargos_pagados,
-            "motivo": motivo_edicion.strip(),
         }
-        st.session_state["lincoln_calc_edicion"] = r
-        st.session_state.lincoln_revisar_edicion = True
 
-    # ══════════════════════════════════════════════════════════════
-    # MOSTRAR RESUMEN DE CAMBIOS
-    # ══════════════════════════════════════════════════════════════
-    if st.session_state.get("lincoln_revisar_edicion", False):
-        r = st.session_state.get("lincoln_calc_edicion", {})
-        
+    # ── Mostrar resultado y botón guardar (fuera del form) ─────────────────
+    r_prev = st.session_state.get("ln_ed_resultado")
+    d_prev = st.session_state.get("ln_ed_datos", {})
+
+    if r_prev and d_prev.get("id_ruta") == idx_sel:
         divider()
-        section_header("📊", "Resumen de Cambios")
-        
-        # Resumen tipo Igloo
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("💰 Ingreso Total", f"${r['ingreso_total']:,.2f}")
-        with col2:
-            color = "normal" if r["utilidad_bruta"] >= 0 else "inverse"
-            st.metric("📊 Utilidad Bruta", f"${r['utilidad_bruta']:,.2f}", f"{r['pct_bruta']:.2f}%", delta_color=color)
-        
-        col3, col4 = st.columns(2)
-        with col3:
-            st.metric("💸 Costo Total", f"${r['costo_directo_total']:,.2f}")
-        with col4:
-            st.metric("📈 Costos Indirectos (42%)", f"${r['costos_ind']:,.2f}")
-        
-        color_neta = "normal" if r["utilidad_neta"] >= 0 else "inverse"
-        st.metric("✨ Utilidad Neta", f"${r['utilidad_neta']:,.2f}", f"{r['pct_neta']:.2f}%", delta_color=color_neta)
+        section_header("📊", "Vista Previa de Cambios")
+        _preview_edicion(r_prev, d_prev["tipo"], d_prev["millas_usa"], d_prev["millas_vacias"])
 
-    # ══════════════════════════════════════════════════════════════
-    # GUARDAR CAMBIOS
-    # ══════════════════════════════════════════════════════════════
-    if st.session_state.get("lincoln_revisar_edicion", False):
-        if st.button("💾 Guardar Cambios", key="lincoln_confirmar_edicion"):
-            d = st.session_state.get("lincoln_datos_edicion", {})
-            calc = st.session_state.get("lincoln_calc_edicion", {})
-            
-            if not d:
-                alert("error", "No hay datos de edición.")
-                return
+        divider()
+        col_g, col_x = st.columns([2, 1])
+        with col_g:
+            if st.button("💾 Guardar Cambios", type="primary",
+                         use_container_width=True, key="ln_ed_guardar"):
 
-            # Historial
-            historial_anterior = ruta.get("historial", [])
-            if historial_anterior is None:
-                historial_anterior = []
+                # Construir historial
+                historial_ant = list(ruta.get("historial") or [])
+                historial_ant.append({
+                    "timestamp": _now_iso(),
+                    "usuario":   nombre_usuario,
+                    "motivo":    d_prev["motivo"],
+                    "valores_anteriores": {
+                        "Ingreso_Total":        safe(ruta.get("Ingreso_Total")),
+                        "Costo_Directo_Total":  safe(ruta.get("Costo_Directo_Total")),
+                        "Utilidad_Bruta":       safe(ruta.get("Utilidad_Bruta")),
+                        "Pct_Utilidad_Bruta":   safe(ruta.get("Pct_Utilidad_Bruta")),
+                        "Utilidad_Neta":        safe(ruta.get("Utilidad_Neta")),
+                        "Pct_Utilidad_Neta":    safe(ruta.get("Pct_Utilidad_Neta")),
+                    },
+                })
 
-            nueva_entrada_historial = {
-                "timestamp": _now_iso(),
-                "usuario": nombre_usuario,
-                "motivo": d["motivo"],
-                "cambios_anteriores": {
-                    "Cliente": ruta.get("Cliente"),
-                    "Origen": ruta.get("Origen"),
-                    "Destino": ruta.get("Destino"),
-                    "Millas_USA": ruta.get("Millas_USA"),
-                    "Ingreso Total": ruta.get("Ingreso Total"),
-                    "Costo_Total_Ruta": ruta.get("Costo_Total_Ruta"),
-                    "Utilidad_Neta": ruta.get("Utilidad_Neta"),
+                payload = {
+                    "Fecha":              d_prev["fecha"],
+                    "Tipo":               d_prev["tipo"],
+                    "Cliente":            d_prev["cliente"],
+                    "Modo_Viaje":         d_prev["modo_viaje"],
+                    "Origen":             d_prev["origen_usa"],
+                    "Destino":            d_prev["destino_usa"],
+                    "Millas_USA":         d_prev["millas_usa"],
+                    "Millas_Vacias":      d_prev["millas_vacias"],
+                    "Moneda_USA":         d_prev["moneda_usa"],
+                    "Modalidad":          d_prev["modalidad"],
+                    "CXM_Flete":          d_prev["cxm_flete"],
+                    "CXM_Fuel":           d_prev["cxm_fuel"],
+                    "Tarifa_Flat":        d_prev["tarifa_flat"],
+                    "Aplica_Cruce":       d_prev["aplica_cruce"],
+                    "Tipo_Cruce":         d_prev["tipo_cruce"],
+                    "Tipo_Carga_Cruce":   d_prev["tipo_carga"],
+                    "Moneda_Cruce":       d_prev["moneda_cruce"],
+                    "Ingreso_Cruce":      d_prev["ingreso_cruce"],
+                    "Costo_Cruce":        safe(r_prev.get("costo_cruce")),
+                    "Linea_MX":           d_prev["linea_mx"],
+                    "Origen_MX":          d_prev["origen_mx"],
+                    "Destino_MX":         d_prev["destino_mx"],
+                    "Moneda_MX":          d_prev["moneda_mx"],
+                    "Ingreso_MX_MXP":     d_prev["ing_mx_mxp"],
+                    "Costo_MX_MXP":       d_prev["costo_mx_mxp"],
+                    "Ingreso_MX_USD":     r_prev["ingreso_mx_usd"],
+                    "Costo_MX_USD":       r_prev["costo_mx_usd"],
+                    "Otros_Cargos_Ingreso": r_prev["otros_cargos_ingreso"],
+                    "Otros_Cargos_Costo":   r_prev["otros_cargos_costo"],
+                    "Ingreso_Flete_USA":  r_prev["ingreso_flete_usa"],
+                    "Ingreso_Fuel_USA":   r_prev["ingreso_fuel_usa"],
+                    "Sueldo_Base":        r_prev["sueldo_base"],
+                    "Bono_Millas":        r_prev["bono_millas"],
+                    "Sueldo_Operador":    r_prev["sueldo_usa"],
+                    "Diesel_USA":         r_prev["diesel_usa"],
+                    "ISR_IMSS":           r_prev["isr_imss"],
+                    "Costo_Directo":      r_prev["costo_directo"],
+                    "Costo_Directo_Total": r_prev["costo_directo_total"],
+                    "Ingreso_Total":      r_prev["ingreso_total"],
+                    "Utilidad_Bruta":     r_prev["utilidad_bruta"],
+                    "Pct_Utilidad_Bruta": r_prev["pct_bruta"],
+                    "Costos_Indirectos":  r_prev["costos_ind"],
+                    "Utilidad_Neta":      r_prev["utilidad_neta"],
+                    "Pct_Utilidad_Neta":  r_prev["pct_neta"],
+                    "Tipo_Cambio":        r_prev["tc"],
+                    "updated_by":         nombre_usuario,
+                    "updated_at":         _now_iso(),
+                    "historial":          historial_ant,
                 }
-            }
-            historial_actualizado = historial_anterior + [nueva_entrada_historial]
 
-            # Construir ruta actualizada
-            ruta_actualizada = {
-                "Fecha": d["fecha"],
-                "Tipo": d["tipo"],
-                "Cliente": d["cliente"],
-                "Modo_Viaje": d["modo_viaje"],
-                "Origen": d["origen_usa"],
-                "Destino": d["destino_usa"],
-                "Millas_USA": d["millas_usa"],
-                "Millas_Vacias": d["millas_vacias"],
-                "Moneda_Ingreso_USA": d["moneda_usa"],
-                "Modalidad_Tarifa": d["modalidad"],
-                "CXM_Flete": d["cxm_flete"],
-                "CXM_Fuel": d["cxm_fuel"],
-                "Tarifa_Flat": d["tarifa_flat"],
-                "Aplica_Cruce": d["aplica_cruce"],
-                "Tipo_Cruce": d.get("tipo_cruce", ""),
-                "Tipo_Carga_Cruce": d.get("tipo_carga", ""),
-                "Moneda_Cruce": d["moneda_cruce"],
-                "Ingreso_Cruce": d["ingreso_cruce"],
-                "Costo_Cruce_Tercero": d["costo_cruce_terc"],
-                "Linea_MX": d.get("linea_mx", ""),
-                "Origen_MX": d["origen_mx"],
-                "Destino_MX": d["destino_mx"],
-                "Moneda_MX": d["moneda_mx"],
-                "Ingreso_Flete_MX": d["ingreso_mx"],
-                "Costo_Flete_MX": d["costo_mx"],
-                "Ingreso_Flete_USA": calc["ingreso_flete_usa"],
-                "Ingreso_Fuel_USA": calc["ingreso_fuel_usa"],
-                "Ingreso_Total_USA": calc["ingreso_total_usa"],
-                "Ingreso_MX_USD": calc["ingreso_mx_usd"],
-                "Ingreso Total": calc["ingreso_total"],
-                "Sueldo_Base": calc["sueldo_base"],
-                "Bono_Millas": calc["bono_millas"],
-                "Sueldo_Operador": calc["sueldo_usa"],
-                "Diesel_USA": calc["diesel_usa"],
-                "Costo_Cruce": calc["costo_cruce"],
-                "Costo_MX_USD": calc["costo_mx_usd"],
-                "Otros_Cargos_Ingreso": calc["otros_cargos_ingreso"],
-                "Otros_Cargos_Costo": calc["otros_cargos_costo"],
-                "ISR_IMSS": calc["isr_imss"],
-                "Costo_Total_Ruta": calc["costo_directo_total"],
-                "Utilidad_Bruta": calc["utilidad_bruta"],
-                "Pct_Utilidad_Bruta": calc["pct_bruta"],
-                "Costos_Indirectos": calc["costos_ind"],
-                "Utilidad_Neta": calc["utilidad_neta"],
-                "Pct_Utilidad_Neta": calc["pct_neta"],
-                "TC_USD_MXP": calc["tc"],
-                "MPG": calc["mpg"],
-                "Precio_Diesel_USD": calc["diesel"],
-                "CXM_Operador": calc["cxm_cargado"],
-                "CXM_Vacio": calc["cxm_vacio"],
-                "Bono_Por_Milla": calc["bono_por_milla"],
-                **{f"Extra_{k.replace(' ','_')}": v for k, v in d["otros_cargos"].items()},
-                **{f"Extra_{k.replace(' ','_')}_Pagado": v for k, v in d["otros_cargos_pagados"].items()},
-                "updated_by": nombre_usuario,
-                "updated_at": _now_iso(),
-                "historial": historial_actualizado,
-            }
+                try:
+                    sb.table(TABLE_RUTAS).update(
+                        limpiar_fila_json(payload)
+                    ).eq("ID_Ruta", idx_sel).execute()
 
-            try:
-                supabase.table(TABLE_RUTAS).update(limpiar_fila_json(ruta_actualizada)).eq("ID_Ruta", d["id_ruta"]).execute()
-                
-                st.session_state.lincoln_ruta_editada_id = d["id_ruta"]
-                st.session_state.lincoln_mostrar_modal_edicion = True
-                
-                _load_rutas_lincoln_cached.clear()
+                    st.success(f"✅ Ruta **{idx_sel}** actualizada correctamente.")
+                    st.session_state.pop("ln_ed_resultado", None)
+                    st.session_state.pop("ln_ed_datos", None)
+                    _cargar_rutas.clear()
+                    st.rerun()
+                except Exception as e:
+                    alert("error", f"Error al guardar: {e}")
+
+        with col_x:
+            if st.button("🗑️ Cancelar edición", use_container_width=True, key="ln_ed_cancel"):
+                st.session_state.pop("ln_ed_resultado", None)
+                st.session_state.pop("ln_ed_datos", None)
                 st.rerun()
-                
-            except Exception as e:
-                st.error(f"❌ Error al actualizar: {e}")
-                st.exception(e)
-
-    # ══════════════════════════════════════════════════════════════
-    # HISTORIAL DE MODIFICACIONES
-    # ══════════════════════════════════════════════════════════════
-    if ruta_seleccionada:
-        divider()
-        section_header("📝", "Historial de modificaciones")
-        
-        historial = ruta.get("historial", [])
-        
-        if historial and len(historial) > 0:
-            for i, entrada in enumerate(reversed(historial), 1):
-                with st.expander(f"Modificación #{len(historial) - i + 1} - {entrada.get('timestamp', 'N/A')[:10]}", expanded=False):
-                    st.write(f"**Usuario:** {entrada.get('usuario', 'N/A')}")
-                    st.write(f"**Fecha/Hora:** {entrada.get('timestamp', 'N/A')}")
-                    st.write(f"**Motivo:** {entrada.get('motivo', 'N/A')}")
-                    
-                    if "cambios_anteriores" in entrada:
-                        st.write("**Valores anteriores:**")
-                        cambios = entrada["cambios_anteriores"]
-                        col_hist1, col_hist2 = st.columns(2)
-                        with col_hist1:
-                            st.caption(f"Cliente: {cambios.get('Cliente', 'N/A')}")
-                            st.caption(f"Origen: {cambios.get('Origen', 'N/A')}")
-                            st.caption(f"Destino: {cambios.get('Destino', 'N/A')}")
-                            st.caption(f"Millas USA: {cambios.get('Millas_USA', 'N/A')}")
-                        with col_hist2:
-                            st.caption(f"Ingreso Total: {cambios.get('Ingreso Total', 'N/A')}")
-                            st.caption(f"Costo Total: {cambios.get('Costo_Total_Ruta', 'N/A')}")
-                            st.caption(f"Utilidad Neta: {cambios.get('Utilidad_Neta', 'N/A')}")
-        else:
-            alert("info", "Esta ruta no tiene modificaciones registradas.")
-
-    # ══════════════════════════════════════════════════════════════
-    # MODAL DE CONFIRMACIÓN
-    # ══════════════════════════════════════════════════════════════
-    @st.dialog("✅ Ruta Actualizada", width="small")
-    def mostrar_modal_edicion(id_ruta):
-        alert("success", "**¡La ruta se actualizó correctamente!**")
-        st.info(f"### 🆔 ID: `{id_ruta}`")
-        st.caption("Los cambios se guardaron en el historial")
-        
-        if st.button("✅ Aceptar", type="primary", use_container_width=True):
-            st.session_state.pop("lincoln_ruta_editada_id", None)
-            st.session_state.pop("lincoln_mostrar_modal_edicion", None)
-            st.session_state.pop("lincoln_datos_edicion", None)
-            st.session_state.pop("lincoln_calc_edicion", None)
-            st.session_state.lincoln_revisar_edicion = False
-            st.rerun()
-    
-    if st.session_state.get("lincoln_mostrar_modal_edicion") and st.session_state.get("lincoln_ruta_editada_id"):
-        mostrar_modal_edicion(st.session_state.lincoln_ruta_editada_id)
 
     # ══════════════════════════════════════════════════════════════
     # ELIMINAR RUTA
     # ══════════════════════════════════════════════════════════════
     divider()
     section_header("🗑️", "Eliminar Ruta")
-    
-    with st.expander("⚠️ Zona de Peligro - Eliminar Ruta", expanded=False):
-        alert("warn", "⚠️ **ADVERTENCIA:** Esta acción es permanente y no se puede deshacer.")
-        
-        col_del1, col_del2 = st.columns(2)
-        
-        with col_del1:
-            id_eliminar = st.text_input(
-                "ID de ruta a eliminar (escribe exacto):",
-                key="lincoln_del_id",
-                placeholder="LN000123"
-            ).strip()
-        
-        with col_del2:
-            if id_eliminar:
-                # Verificar si existe
-                if id_eliminar in df["ID_Ruta"].astype(str).values:
-                    ruta_eliminar = df[df["ID_Ruta"] == id_eliminar].iloc[0]
-                    st.info(f"**Ruta encontrada:**\n- Cliente: {ruta_eliminar.get('Cliente', 'N/A')}\n- Fecha: {ruta_eliminar.get('Fecha', 'N/A')}\n- Utilidad: ${safe(ruta_eliminar.get('Utilidad_Neta', 0)):,.2f}")
-                else:
-                    alert("error", "❌ ID no encontrado")
-        
-        confirmar_eliminacion = st.checkbox(
-            "✅ Confirmo que quiero eliminar esta ruta PERMANENTEMENTE",
-            key="lincoln_del_confirmar"
-        )
-        
-        motivo_eliminacion = st.text_area(
-            "Motivo de eliminación (Obligatorio):",
-            placeholder="Ej: Ruta duplicada, creada por error, datos incorrectos irrecuperables, etc.",
-            key="lincoln_del_motivo"
-        )
-        
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
-        
-        with col_btn1:
-            if st.button("🗑️ **ELIMINAR**", key="lincoln_del_btn", type="primary"):
-                if not id_eliminar:
-                    alert("error", "❌ Debes escribir el ID de la ruta.")
-                elif not confirmar_eliminacion:
-                    alert("error", "❌ Debes marcar la casilla de confirmación.")
-                elif not motivo_eliminacion.strip():
-                    alert("error", "❌ Debes especificar el motivo de eliminación.")
-                elif id_eliminar not in df["ID_Ruta"].astype(str).values:
-                    st.error(f"❌ La ruta {id_eliminar} no existe.")
-                else:
-                    try:
-                        # Obtener datos de la ruta antes de eliminar
-                        ruta_a_eliminar = df[df["ID_Ruta"] == id_eliminar].iloc[0]
-                        
-                        # Registrar eliminación (opcional: guardar en tabla de auditoría)
-                        registro_eliminacion = {
-                            "id_ruta_eliminada": id_eliminar,
-                            "cliente": ruta_a_eliminar.get("Cliente"),
-                            "fecha_ruta": str(ruta_a_eliminar.get("Fecha")),
-                            "ingreso_total": safe(ruta_a_eliminar.get("Ingreso Total")),
-                            "utilidad_neta": safe(ruta_a_eliminar.get("Utilidad_Neta")),
-                            "motivo_eliminacion": motivo_eliminacion.strip(),
-                            "eliminado_por": nombre_usuario,
-                            "eliminado_en": _now_iso(),
-                        }
-                        
-                        # Eliminar de la base de datos
-                        supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", id_eliminar).execute()
-                        
-                        # Limpiar cache
-                        _load_rutas_lincoln_cached.clear()
-                        
-                        # Mostrar modal de confirmación
-                        st.session_state.lincoln_ruta_eliminada_id = id_eliminar
-                        st.session_state.lincoln_mostrar_modal_eliminacion = True
-                        
-                        st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error al eliminar la ruta: {e}")
-                        st.exception(e)
-        
-        with col_btn2:
-            if st.button("❌ Cancelar", key="lincoln_del_cancel"):
-                alert("info", "Operación cancelada")
 
-    # ══════════════════════════════════════════════════════════════
-    # MODAL DE CONFIRMACIÓN DE ELIMINACIÓN
-    # ══════════════════════════════════════════════════════════════
-    @st.dialog("✅ Ruta Eliminada", width="small")
-    def mostrar_modal_eliminacion(id_ruta):
-        alert("success", "**¡La ruta se eliminó correctamente!**")
-        st.info(f"### 🗑️ Ruta eliminada\n`{id_ruta}`")
-        st.caption("Esta acción no se puede deshacer")
-        
-        if st.button("✅ Aceptar", type="primary", use_container_width=True):
-            st.session_state.pop("lincoln_ruta_eliminada_id", None)
-            st.session_state.pop("lincoln_mostrar_modal_eliminacion", None)
-            st.rerun()
-    
-    if st.session_state.get("lincoln_mostrar_modal_eliminacion") and st.session_state.get("lincoln_ruta_eliminada_id"):
-        mostrar_modal_eliminacion(st.session_state.lincoln_ruta_eliminada_id)
+    with st.expander("⚠️ Zona de Peligro — Eliminar Ruta", expanded=False):
+        alert("warn", "⚠️ Esta acción es **permanente** e irreversible.")
 
+        d1, d2 = st.columns(2)
+        id_del = d1.text_input("ID de ruta a eliminar (escribe exacto)",
+                                placeholder="LN000001", key="ln_del_id").strip()
+        if id_del and id_del in df["ID_Ruta"].astype(str).values:
+            rd = df[df["ID_Ruta"].astype(str) == id_del].iloc[0]
+            d2.info(
+                f"**Encontrada:** {rd.get('Cliente', '')} | "
+                f"{rd.get('Tipo', '')} | {rd.get('Fecha', '')} | "
+                f"Ut. Neta ${safe(rd.get('Utilidad_Neta', 0)):,.2f}"
+            )
+        elif id_del:
+            d2.error("ID no encontrado.")
 
-if __name__ == "__main__":
-    render()
+        motivo_del = st.text_area("Motivo de eliminación (obligatorio)",
+                                   placeholder="Ej: duplicada, creada por error…",
+                                   key="ln_del_motivo")
+        confirmar  = st.checkbox("Confirmo que quiero eliminar esta ruta permanentemente",
+                                  key="ln_del_confirmar")
+
+        if st.button("🗑️ ELIMINAR", type="primary", key="ln_del_btn"):
+            if not id_del:
+                alert("error", "Escribe el ID de la ruta.")
+            elif id_del not in df["ID_Ruta"].astype(str).values:
+                alert("error", "ID no encontrado.")
+            elif not motivo_del.strip():
+                alert("error", "El motivo es obligatorio.")
+            elif not confirmar:
+                alert("warn", "Activa la casilla de confirmación.")
+            else:
+                try:
+                    sb.table(TABLE_RUTAS).delete().eq("ID_Ruta", id_del).execute()
+                    st.success(f"✅ Ruta **{id_del}** eliminada.")
+                    _cargar_rutas.clear()
+                    st.rerun()
+                except Exception as e:
+                    alert("error", f"Error al eliminar: {e}")
