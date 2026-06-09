@@ -5,7 +5,7 @@ import re
 from io import BytesIO
 import io
 
-# Imports opcionales (para HTML "tipo Excel")
+# Imports opcionales (para HTML “tipo Excel”)
 try:
     from bs4 import BeautifulSoup
 except Exception:
@@ -31,7 +31,7 @@ def _to_num_safe(x):
         return 0.0
 
 
-def _drop_summary_rows(df: pd.DataFrame, cols: list | None = None) -> pd.DataFrame:
+def _drop_summary_rows(df: pd.DataFrame, cols: list[str] | None = None) -> pd.DataFrame:
     if cols is None:
         cols = list(df.columns)
 
@@ -76,7 +76,7 @@ def _read_excel_any(uploaded_file):
             bio.seek(0)
             return _as_str(pd.read_excel(bio, sheet_name=0, header=None))
 
-    # 3) HTML (incluye .xls "disfrazado")
+    # 3) HTML (incluye .xls “disfrazado”)
     is_html = (
         head_stripped.startswith(b"<!doctype html")
         or head_stripped.startswith(b"<html")
@@ -84,61 +84,163 @@ def _read_excel_any(uploaded_file):
         or (b"xmlns:x=\"urn:schemas-microsoft-com:office:excel\"" in head)
     )
     if is_html:
+        # Si no existen dependencias, avisa bonito
         if BeautifulSoup is None or etree is None:
             raise ValueError(
                 "El archivo parece HTML tipo Excel, pero faltan dependencias: "
                 "instala 'beautifulsoup4' y 'lxml'."
             )
-        text = raw.decode("utf-8", errors="replace")
-        tables = pd.read_html(io.StringIO(text), header=None)
-        if not tables:
-            raise ValueError("No se encontraron tablas en el HTML.")
-        return _as_str(tables[0])
 
-    # 4) Fallback: intentar como xlsx
+        # 3.a: intento con read_html
+        bio.seek(0)
+        try:
+            tables = pd.read_html(bio, header=None, flavor="lxml")
+            if tables:
+                return _as_str(tables[0])
+        except Exception:
+            pass
+
+        # 3.b: BeautifulSoup primera tabla
+        bio.seek(0)
+        soup = BeautifulSoup(bio.read(), "lxml")
+
+        def _is_table(tag):
+            if not getattr(tag, "name", None):
+                return False
+            name = tag.name.lower()
+            return name == "table" or name.endswith(":table")
+
+        table = soup.find(_is_table)
+        if table:
+            def _match(tag, names):
+                if not getattr(tag, "name", None):
+                    return False
+                n = tag.name.lower()
+                return (n in names) or any(n.endswith(":" + nm) for nm in names)
+
+            rows = []
+            for tr in table.find_all(lambda t: _match(t, {"tr"})):
+                cells = [td.get_text(strip=True) for td in tr.find_all(lambda t: _match(t, {"td", "th"}))]
+                if cells:
+                    rows.append(cells)
+            if rows:
+                width = max(len(r) for r in rows)
+                rows = [r + [""] * (width - len(r)) for r in rows]
+                return _as_str(pd.DataFrame(rows))
+
+        # 3.c: SpreadsheetML incrustado
+        xml_block = soup.find("xml")
+        if xml_block and ("urn:schemas-microsoft-com:office:spreadsheet" in xml_block.text):
+            xml_bytes = xml_block.text.encode("utf-8", errors="ignore")
+            try:
+                tree = etree.fromstring(xml_bytes)
+            except Exception:
+                try:
+                    tree = etree.XML(xml_bytes)
+                except Exception:
+                    tree = None
+
+            if tree is not None:
+                ns = {"ss": "urn:schemas-microsoft-com:office:spreadsheet"}
+                table = tree.find(".//ss:Worksheet/ss:Table", namespaces=ns)
+                if table is not None:
+                    rows = []
+                    for row in table.findall("ss:Row", namespaces=ns):
+                        row_vals, cur_col = [], 1
+                        for cell in row.findall("ss:Cell", namespaces=ns):
+                            idx = cell.get("{urn:schemas-microsoft-com:office:spreadsheet}Index")
+                            if idx is not None:
+                                idx = int(idx)
+                                while cur_col < idx:
+                                    row_vals.append("")
+                                    cur_col += 1
+                            data_el = cell.find("ss:Data", namespaces=ns)
+                            val = data_el.text if data_el is not None else ""
+                            row_vals.append(val if val is not None else "")
+                            cur_col += 1
+                        rows.append(row_vals)
+                    if rows:
+                        width = max(len(r) for r in rows)
+                        rows = [r + [""] * (width - len(r)) for r in rows]
+                        return _as_str(pd.DataFrame(rows))
+
+        raise ValueError("El archivo es HTML pero no contiene una tabla utilizable.")
+
+    # 4) SpreadsheetML (XML plano)
+    if (b"<Workbook" in head) or (b"urn:schemas-microsoft-com:office:spreadsheet" in head):
+        if etree is None:
+            raise ValueError("El archivo es XML SpreadsheetML pero falta 'lxml'.")
+        bio.seek(0)
+        tree = etree.parse(bio)
+        ns = {"ss": "urn:schemas-microsoft-com:office:spreadsheet"}
+        table = tree.find(".//ss:Worksheet/ss:Table", namespaces=ns)
+        if table is None:
+            raise ValueError("XML SpreadsheetML sin <Worksheet>/<Table>.")
+        rows = []
+        for row in table.findall("ss:Row", namespaces=ns):
+            row_vals, cur_col = [], 1
+            for cell in row.findall("ss:Cell", namespaces=ns):
+                idx = cell.get("{urn:schemas-microsoft-com:office:spreadsheet}Index")
+                if idx is not None:
+                    idx = int(idx)
+                    while cur_col < idx:
+                        row_vals.append("")
+                        cur_col += 1
+                data_el = cell.find("ss:Data", namespaces=ns)
+                val = data_el.text if data_el is not None else ""
+                row_vals.append(val if val is not None else "")
+                cur_col += 1
+            rows.append(row_vals)
+        if rows:
+            width = max(len(r) for r in rows)
+            rows = [r + [""] * (width - len(r)) for r in rows]
+            return _as_str(pd.DataFrame(rows))
+
+    # 5) Último intento
     bio.seek(0)
     try:
         return _as_str(pd.read_excel(bio, sheet_name=0, engine="openpyxl", header=None))
     except Exception:
         bio.seek(0)
-        return _as_str(pd.read_excel(bio, sheet_name=0, header=None))
+        return _as_str(pd.read_excel(bio, sheet_name=0, engine="xlrd", header=None))
 
 
 # =====================================================
-# --- DETECCIÓN DE MODO ---
+# --- DETECCIÓN DEL MODO ---
 # =====================================================
 
 def _detect_mode(df_raw: pd.DataFrame) -> str:
-    """
-    Detecta si el archivo es STAR 1 (todas las cuentas juntas) o STAR 2.0 (por cuenta).
-    Heurística: si hay filas que empiezan con 'Cuenta:' → star1.
-    """
-    sample = df_raw.head(60).astype(str)
-    cuenta_re = re.compile(r"^\s*(cuenta\s*:)\s*", re.IGNORECASE)
-    acct_pat  = re.compile(r"^\s*\d{3}-\d{2}-\d{2}-\d{3}-\d{2}-\d{3}-\d{4}\s+-\s+", re.IGNORECASE)
+    try:
+        df_guess, _ = _guess_header(df_raw.copy())
+    except Exception:
+        df_guess = df_raw.copy()
 
-    for _, row in sample.iterrows():
-        for val in row.values:
-            v = str(val).replace("\xa0", " ").strip()
-            if cuenta_re.match(v) or acct_pat.match(v):
-                return "star1"
-    return "star2"
+    cols_norm = [str(c).strip().lower().replace("\xa0", " ") for c in df_guess.columns]
+
+    if any(c == "poliza" for c in cols_norm):
+        return "star2"
+
+    if len(df_guess.index) >= 1 and len(df_guess.columns) >= 1:
+        a2 = str(df_guess.iloc[0, 0] if df_guess.shape[1] > 0 else "")
+        if a2.replace("\xa0", " ").strip().startswith(":"):
+            return "star2"
+
+    header_join = " ".join(cols_norm)
+    if ("poliza" in header_join and "concepto" in header_join) or ("poliza" in header_join and "fecha" in header_join):
+        return "star2"
+
+    return "star1"
 
 
-# =====================================================
-# --- DETECCIÓN DE ENCABEZADO ---
-# =====================================================
-
-def _guess_header(df: pd.DataFrame):
-    """
-    Busca la fila de encabezado buscando palabras clave contables.
-    Devuelve (df_con_header, lista_columnas).
-    """
+def _guess_header(df):
     header_idx = None
-    for i, row in df.iterrows():
-        row_join = " ".join(str(v) for v in row.values).lower().replace("\xa0", " ")
+    limit = min(12, len(df))
 
-        if re.search(r"cuenta.{0,20}concepto", row_join, re.IGNORECASE) and re.search(
+    for i in range(limit):
+        row_vals = df.iloc[i].astype(str).str.replace("\xa0", " ", regex=False).str.strip().tolist()
+        row_join = " ".join([v for v in row_vals if v and v.lower() != "nan"])
+
+        if re.search(r"cuenta.*concepto", row_join, re.IGNORECASE) and re.search(
             r"(saldo|cargos|abonos)", row_join, re.IGNORECASE
         ):
             header_idx = i
@@ -222,54 +324,75 @@ def process_star2_single(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     df = df.rename(columns={c: _norm_name(c) for c in df.columns})
 
+    # Asegurar columna Cuenta
     if "Cuenta" not in df.columns:
         df.insert(0, "Cuenta", "")
 
+    # ✅ NUEVO: detectar encabezados "Cuenta: ...." dentro del mismo archivo y propagar por bloque
     cuenta_col = "Poliza" if "Poliza" in df.columns else df.columns[0]
 
-    cuenta_re    = re.compile(r"^\s*(cuenta\s*:)\s*(.+)$", re.IGNORECASE)
-    acct_code_re = re.compile(r"^\s*\d{3}-\d{2}-\d{2}-\d{3}-\d{2}-\d{3}-\d{4}\b", re.IGNORECASE)
+    cuenta_re = re.compile(r"^\s*(cuenta\s*:)\s*(.+)$", re.IGNORECASE)
+    # Formato típico: 200-03-99-001-02850 ...
+    acct_code_re = re.compile(r"^\s*\d{3}-\d{2}-\d{2}-\d{3}-\d{5}\b.*", re.IGNORECASE)
 
-    last_cuenta  = None
+    last_cuenta = None
     rows_to_drop = []
+    in_cuenta_block = False
 
-    for idx, row in df.iterrows():
-        val_cc = str(df.at[idx, cuenta_col]).replace("\xa0", " ").strip()
+    for idx, val in df[cuenta_col].astype(str).items():
+        text = val.replace("\xa0", " ").strip()
 
-        m_label = cuenta_re.match(val_cc)
-        m_code  = acct_code_re.match(val_cc)
-
-        if m_label:
-            last_cuenta = m_label.group(2).strip()
-            rows_to_drop.append(idx)
+        m = cuenta_re.match(text)
+        if m:
+            last_cuenta = m.group(2).strip()
+            rows_to_drop.append(idx)   # eliminamos la fila "Cuenta: ..."
+            in_cuenta_block = True
             continue
 
-        if m_code:
-            last_cuenta = val_cc
-            rows_to_drop.append(idx)
-            continue
+        # Por si alguna vez llega SIN "Cuenta:" pero con el código al inicio y sin otros datos
+        if acct_code_re.match(text):
+            other_has = any(
+                str(df.at[idx, c]).strip() not in {"", "nan", "None"}
+                for c in df.columns if c != cuenta_col
+            )
+            if not other_has:
+                last_cuenta = text
+                rows_to_drop.append(idx)
+                in_cuenta_block = True
+                continue
 
-        skip_words = {"saldo inicial", "saldo", "sumas totales", "total"}
-        if val_cc.lower().strip() in skip_words:
-            rows_to_drop.append(idx)
-            continue
+        # Verificar si llegamos al Total (fin del bloque de cuenta)
+        if in_cuenta_block and "Fecha" in df.columns:
+            fecha_val = str(df.at[idx, "Fecha"]).replace("\xa0", " ").strip().lower()
+            if fecha_val == "total":
+                rows_to_drop.append(idx)  # eliminamos la fila "Total"
+                in_cuenta_block = False
+                last_cuenta = None  # resetear cuenta para el siguiente bloque
+                continue
 
-        df.at[idx, "Cuenta"] = last_cuenta if last_cuenta else "__SIN_CUENTA_DETECTADA__"
+        if last_cuenta and in_cuenta_block:
+            df.at[idx, "Cuenta"] = last_cuenta
 
     df = df.drop(index=rows_to_drop).reset_index(drop=True)
+
+    # Eliminar filas-resumen (Total / Saldo inicial / etc.)
     df = _drop_summary_rows(df)
 
+    # Filtrar conceptos vacíos
     if "Concepto" in df.columns:
         df = df[df["Concepto"].astype(str).str.strip().ne("")]
 
+    # Montos a numérico
     for col in ["Cargos", "Abonos", "Saldo"]:
         if col in df.columns:
             df[col] = df[col].apply(_to_num_safe)
 
+    # Mantener filas con algún monto (si existen columnas de monto)
     amt_cols = [c for c in ["Cargos", "Abonos", "Saldo"] if c in df.columns]
     if amt_cols:
         df = df[df[amt_cols].fillna(0).abs().sum(axis=1) > 0].reset_index(drop=True)
 
+    # Normalizar fechas si existe la columna
     if "Fecha" in df.columns:
         df["Fecha"] = _normalize_date_series(df["Fecha"])
 
@@ -311,7 +434,7 @@ def process_report(df_raw):
                 return c
         return default
 
-    col_cc     = find_col(r"cuenta.{0,20}concepto", df.columns[1] if len(df.columns) > 1 else df.columns[0])
+    col_cc     = find_col(r"cuenta.*concepto", df.columns[1] if len(df.columns) > 1 else df.columns[0])
     col_cheque = find_col(r"cheq")
     col_traf   = find_col(r"traf")
     col_fact   = find_col(r"fact")
@@ -392,15 +515,14 @@ _CUENTA_NUM_RE = re.compile(
 def _aplicar_formato2(df: pd.DataFrame) -> pd.DataFrame:
     """
     Sustituye la columna 'Cuenta' por dos columnas:
-      - 'Numero Cuenta'     → solo el código  (ej. 100-01-01-001-01-051-9591)
-      - 'Concepto de Cuenta' → solo el texto  (ej. COSTO SS MANIOBRAS DE CARGA Y DESCARGA ...)
+      - 'Numero Cuenta'      → solo el código  (ej. 100-01-01-001-01-051-9591)
+      - 'Concepto de Cuenta' → solo el texto   (ej. COSTO SS MANIOBRAS DE CARGA Y DESCARGA ...)
     Si el valor no coincide con el patrón, ambas columnas heredan el texto original.
     """
     if "Cuenta" not in df.columns:
         return df
 
     df = df.copy()
-
     num_cuenta = []
     concepto   = []
 
@@ -434,11 +556,27 @@ def render():
         "La página eliminará encabezados/sumarios, propagará la cuenta y te dará un archivo limpio."
     )
 
-    mode = st.selectbox(
-        "Selecciona el modo de procesamiento",
-        ["Auto", "STAR 1 (todas las cuentas en un archivo)", "STAR 2.0 (por cuenta, múltiples archivos)"],
-        index=0
-    )
+    col_modo, col_formato = st.columns(2)
+
+    with col_modo:
+        mode = st.selectbox(
+            "Modo de procesamiento",
+            ["Auto", "STAR 1 (todas las cuentas en un archivo)", "STAR 2.0 (por cuenta, múltiples archivos)"],
+            index=0,
+            key="ra_mode"
+        )
+
+    with col_formato:
+        formato_reporte = st.selectbox(
+            "Tipo de reporte",
+            ["Formato Auditoría", "Formato 2"],
+            index=0,
+            key="ra_formato",
+            help=(
+                "Formato Auditoría: columna Cuenta con código y nombre completo.\n\n"
+                "Formato 2: separa en Numero Cuenta y Concepto de Cuenta."
+            ),
+        )
 
     uploaded_files = st.file_uploader(
         "Sube uno o varios archivos (.xls, .xlsx, .html, .htm)",
@@ -467,17 +605,7 @@ def render():
         else:
             df_clean = process_star2_many(raws)
 
-        # ── Selector de formato de salida ──────────────────────────────────
-        formato_reporte = st.radio(
-            "Formato del reporte",
-            ["Formato Auditoría", "Formato 2"],
-            horizontal=True,
-            help=(
-                "**Formato Auditoría**: columna Cuenta con el texto completo.\n\n"
-                "**Formato 2**: divide Cuenta en Numero Cuenta y Concepto de Cuenta."
-            ),
-        )
-
+        # Aplicar formato seleccionado
         df_out = _aplicar_formato2(df_clean) if formato_reporte == "Formato 2" else df_clean
 
         st.success(f"✅ Listo. Filas finales: {len(df_out):,}")
