@@ -184,11 +184,11 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
         moneda_flete = td1.selectbox("💱 Moneda", ["USD", "MXP"], key="ln_mon_flete")
         cxm_flete    = td2.number_input(
             "CXM Flete ($/mi)", min_value=0.0, step=0.001, format="%.4f", key="ln_cxm_flete",
-            value=float(valores.get("CXM Operador USA", 0.48)),
+            value=float(valores.get("CXM Operador USA", 0.00)),
         )
         cxm_fuel     = td3.number_input(
             "Fuel Surcharge ($/mi)", min_value=0.0, step=0.001, format="%.4f", key="ln_cxm_fuel",
-            value=float(valores.get("Fuel Surcharge ($/mi)", 0.61)),
+            value=float(valores.get("Fuel Surcharge ($/mi)", 0.00)),
         )
         if miles_load > 0:
             preview = (safe(cxm_flete) + safe(cxm_fuel)) * safe(miles_load)
