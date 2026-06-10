@@ -127,6 +127,11 @@ def construir_navegacion() -> dict:
     if ventas_pages:
         secciones["Ventas"] = ventas_pages
 
+    
+    if _tiene("operaciones:bono_rendimiento") and _existe("pages/pg_operaciones.py"):
+        secciones["Operaciones"] = [
+            st.Page("pages/pg_operaciones.py", title="⚙️ Operaciones", url_path="operaciones"),
+        ]
     return secciones
 
 
