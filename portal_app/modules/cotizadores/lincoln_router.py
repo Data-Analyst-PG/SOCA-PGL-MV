@@ -32,5 +32,3 @@ def render():
     with tabs[2]: gestion_rutas.render()
     with tabs[3]: simulador.render()
     with tabs[4]: cotizacion.render()
-    with tabs[5]: programacion_viajes.render()
-    with tabs[6]: viajes_concluidos.render()
