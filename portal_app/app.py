@@ -102,7 +102,7 @@ def construir_navegacion() -> dict:
     _EMPRESAS = [
         ("picus",       "🚚 Picus",       "pages/pg_cot_picus.py",       "cot-picus"),
         ("igloo",       "🚛 Igloo",       "pages/pg_cot_igloo.py",       "cot-igloo"),
-        ("lincoln",     "🏴 Lincoln",     "pages/pg_cot_lincoln.py",     "cot-lincoln"),
+        ("lincoln",     "🚛 Lincoln",     "pages/pg_cot_lincoln.py",     "cot-lincoln"),
         ("set_logis",   "🚚 Set Logis",   "pages/pg_cot_set_logis.py",   "cot-set-logis"),
         ("set_freight", "📦 Set Freight", "pages/pg_cot_set_freight.py", "cot-set-freight"),
     ]
