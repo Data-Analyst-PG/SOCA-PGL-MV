@@ -1,7 +1,16 @@
 """
-_shared.py  –  Lincoln Freight (USA/MX)
+_shared.py – Lincoln Freight (USA/MX)
 Helpers, defaults y lógica de cálculo central.
-Tipos de ruta: NB, SB, D2DNB, D2DSB, Empty  (alineado con Set Logis Plus)
+Tipos de ruta: NB, SB, D2DNB, D2DSB, Empty
+
+Millas:
+  Miles Load  → ingreso al cliente (CXM Flete × Miles Load + Fuel × Miles Load)
+  Short Miles → pago operador cargado + bono
+  Miles Empty → pago operador vacío
+  Diesel      → (Short Miles + Miles Empty) / MPG × precio_galón
+
+Cruce Team: costo no se duplica (solo paga 1 operador al cruzar)
+Empty: sin bono, sin ISR/IMSS, sin ingreso cliente
 """
 
 from __future__ import annotations
@@ -45,18 +54,18 @@ EXTRAS_USA = [
 # ─────────────────────────────────────────────
 DEFAULTS: dict[str, float] = {
     # Operador USA (por milla) — camión propio
-    "CXM Operador USA":           0.48,   # $/milla cargado sencillo
-    "CXM Operador USA (Empty)":   0.30,   # $/milla vacío sencillo
-    "CXM Team USA":               0.30,   # $/milla cargado team (x operador)
-    "CXM Team USA (Empty)":       0.25,   # $/milla vacío team
+    "CXM Operador USA":           0.48,   # $/short mile cargado sencillo
+    "CXM Operador USA (Empty)":   0.30,   # $/mile vacío sencillo
+    "CXM Team USA":               0.30,   # $/short mile cargado team (× operador)
+    "CXM Team USA (Empty)":       0.25,   # $/mile vacío team
     # Rendimiento / diesel USA
     "Truck Performance (mpg)":    7.0,
     "Diesel Price ($/gal)":       3.60,
+    # Fuel surcharge al cliente
+    "Fuel Surcharge ($/mi)":      0.61,
     # Cruce fronterizo
     "Cruce Propio (Cargado)":    50.0,
     "Cruce Propio (Vacío)":      30.0,
-    # Fuel surcharge al cliente
-    "Fuel Surcharge ($/mi)":      0.61,
     # Operador MX
     "CXM Operador MX (Expo)":   963.84,
     "CXM Operador MX (Impo)":   963.84,
@@ -64,21 +73,32 @@ DEFAULTS: dict[str, float] = {
     "Tipo de Cambio USD/MXP":    18.50,
     # Prestaciones / bonos
     "ISR/IMSS":                  462.66,
-    "Bono por milla cargada":      0.01,
+    "Bono por milla cargada":      0.01,   # sobre Short Miles
     # Costo indirecto (solo %)
     "% Costo Indirecto":           0.42,
 }
 
 # ─────────────────────────────────────────────
 # CONFIG POR TIPO DE RUTA
+# Orden visual de secciones en el formulario:
+#   NB    → cruce, americana
+#   SB    → americana, cruce
+#   D2DNB → mx, cruce, americana
+#   D2DSB → americana, cruce, mx
+#   Empty → americana (sin cruce ni mx)
 # ─────────────────────────────────────────────
 def obtener_config_tipo_ruta(tipo_ruta: str) -> dict:
     configs = {
-        "NB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False},
-        "SB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False},
-        "D2DNB": {"parte_usa": True,  "cruce": True,       "parte_mx": True},
-        "D2DSB": {"parte_usa": True,  "cruce": True,       "parte_mx": True},
-        "Empty": {"parte_usa": True,  "cruce": False,      "parte_mx": False},
+        "NB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
+                  "orden": ["cruce", "americana"]},
+        "SB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
+                  "orden": ["americana", "cruce"]},
+        "D2DNB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
+                  "orden": ["mx", "cruce", "americana"]},
+        "D2DSB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
+                  "orden": ["americana", "cruce", "mx"]},
+        "Empty": {"parte_usa": True,  "cruce": False,      "parte_mx": False,
+                  "orden": ["americana"]},
     }
     return configs.get(tipo_ruta, configs["NB"])
 
@@ -124,7 +144,6 @@ def cargar_datos_generales() -> dict:
                         out[k] = float(v)
                     except Exception:
                         out[k] = v
-                # Garantizar campos nuevos
                 for k, v in DEFAULTS.items():
                     if k not in out:
                         out[k] = v
@@ -229,36 +248,37 @@ def generar_id_ruta() -> str:
 
 # ─────────────────────────────────────────────
 # CÁLCULO CENTRAL
-# Reglas Empty:
-#   - Solo millas vacías para diesel y pago operador
-#   - Sin bono por milla
-#   - Sin ISR/IMSS
+#
+# Millas:
+#   miles_load  → ingreso cliente (flete + fuel)
+#   short_miles → pago operador cargado + bono
+#   miles_empty → pago operador vacío
+#   Diesel      → (short_miles + miles_empty) / mpg × diesel_precio
+#
+# Empty:  solo diesel(short+empty) + pago vacío — sin bono, sin ISR/IMSS
+# Team:   cruce no se duplica (1 operador cruza)
 # ─────────────────────────────────────────────
 def calcular_ruta_lincoln(
     tipo_ruta: str,
-    millas_usa: float,
-    millas_vacias: float,
-    ingreso_x_milla_usd: float,
-    fuel_surcharge_usd: float,
+    miles_load: float,
+    short_miles: float,
+    miles_empty: float,
+    ingreso_x_milla_usd: float,    # CXM flete × miles_load  (o 0 si Flat)
+    tarifa_flat_usd: float,        # monto fijo (solo Flat, 0 si Desglosada)
+    fuel_surcharge_usd: float,     # fuel surcharge × miles_load
     ingreso_cruce_usd: float,
     aplica_cruce: bool,
-    modo_viaje: str,
-    tipo_cruce: str,
-    tipo_carga_cruce: str,
+    modo_viaje: str,               # "Sencillo" | "Team"
+    tipo_cruce: str,               # "Propio" | "Tercero"
+    tipo_carga_cruce: str,         # "Cargado" | "Vacío"
     costo_cruce_tercero_usd: float,
     ingreso_flete_mx_mxp: float,
     costo_flete_mx_mxp: float,
     linea_mx: str,
-    otros_cargos: dict,
-    otros_cargos_pagados: dict,
+    otros_cargos: dict,            # {nombre: monto_usd}
+    otros_cargos_cobrados: dict,   # {nombre: bool} → True = se cobró al cliente
     valores: dict,
 ) -> dict:
-    """
-    Calcula todos los ingresos, costos y utilidades de una ruta Lincoln.
-
-    Empty:  solo diesel (millas_vacias) + pago_operador_vacio — sin bono, sin ISR/IMSS.
-    NB/SB/D2D: cálculo completo con bono e ISR/IMSS.
-    """
     tc            = safe(valores.get("Tipo de Cambio USD/MXP", 18.50))
     mpg           = safe(valores.get("Truck Performance (mpg)", 7.0))
     diesel_precio = safe(valores.get("Diesel Price ($/gal)", 3.60))
@@ -267,74 +287,80 @@ def calcular_ruta_lincoln(
     pct_ind       = safe(valores.get("% Costo Indirecto", 0.42))
 
     es_empty = (tipo_ruta == "Empty")
+    es_team  = (modo_viaje == "Team")
 
-    # ── Modo de viaje (factor team = 2 operadores) ────────────────────────
-    if modo_viaje == "Team":
+    # ── CXM por modo ─────────────────────────────────────────────
+    if es_team:
         cxm_cargado = safe(valores.get("CXM Team USA", 0.30))
         cxm_vacio   = safe(valores.get("CXM Team USA (Empty)", 0.25))
-        factor      = 2
     else:
         cxm_cargado = safe(valores.get("CXM Operador USA", 0.48))
         cxm_vacio   = safe(valores.get("CXM Operador USA (Empty)", 0.30))
-        factor      = 1
 
-    # ── Ingresos USA ──────────────────────────────────────────────────────
+    # ── Ingreso USA ───────────────────────────────────────────────
     if es_empty:
-        # En Empty no hay flete ni fuel cobrado al cliente
         ingreso_flete_usa = 0.0
         ingreso_fuel_usa  = 0.0
     else:
-        ingreso_flete_usa = ingreso_x_milla_usd * millas_usa
-        ingreso_fuel_usa  = fuel_surcharge_usd  * millas_usa
+        if tarifa_flat_usd > 0:
+            ingreso_flete_usa = tarifa_flat_usd
+            ingreso_fuel_usa  = 0.0
+        else:
+            ingreso_flete_usa = ingreso_x_milla_usd * miles_load
+            ingreso_fuel_usa  = fuel_surcharge_usd  * miles_load
 
     ingreso_total_usa = ingreso_flete_usa + ingreso_fuel_usa
 
-    # ── Otros Cargos ──────────────────────────────────────────────────────
-    otros_cargos_ingreso = sum(otros_cargos.values())
-    otros_cargos_costo   = sum(
-        monto for nombre, monto in otros_cargos.items()
-        if otros_cargos_pagados.get(nombre, False) and monto > 0
+    # ── Otros cargos ─────────────────────────────────────────────
+    # Todo monto capturado = Lincoln lo pagó (costo)
+    # Si se marcó "cobrado al cliente" = suma también al ingreso
+    otros_cargos_costo    = sum(safe(v) for v in otros_cargos.values())
+    otros_cargos_ingreso  = sum(
+        safe(monto) for nombre, monto in otros_cargos.items()
+        if otros_cargos_cobrados.get(nombre, False)
     )
 
-    # ── Sueldo operador ───────────────────────────────────────────────────
+    # ── Sueldo operador ───────────────────────────────────────────
     if es_empty:
-        # Solo pago por millas vacías, sin bono
-        sueldo_base = millas_vacias * cxm_vacio * factor
+        # Solo vacío, sin bono
+        if es_team:
+            sueldo_base = miles_empty * cxm_vacio * 2
+        else:
+            sueldo_base = miles_empty * cxm_vacio
         bono_millas = 0.0
     else:
-        sueldo_base = (millas_usa * cxm_cargado + millas_vacias * cxm_vacio) * factor
-        bono_millas = millas_usa * bono_cfg * factor
+        if es_team:
+            sueldo_base = (short_miles * cxm_cargado + miles_empty * cxm_vacio) * 2
+        else:
+            sueldo_base = short_miles * cxm_cargado + miles_empty * cxm_vacio
+        bono_millas = short_miles * bono_cfg   # bono sobre short miles
 
     sueldo_usa = sueldo_base + bono_millas
 
-    # ── Diesel ────────────────────────────────────────────────────────────
-    if es_empty:
-        # Solo millas vacías
-        diesel_usa = (millas_vacias / mpg) * diesel_precio if mpg else 0.0
-    else:
-        diesel_usa = ((millas_usa + millas_vacias) / mpg) * diesel_precio if mpg else 0.0
+    # ── Diesel ────────────────────────────────────────────────────
+    # (Short Miles + Miles Empty) / MPG × precio_galón
+    diesel_usa = ((short_miles + miles_empty) / mpg) * diesel_precio if mpg else 0.0
 
-    # ── ISR / IMSS ────────────────────────────────────────────────────────
+    # ── ISR / IMSS ────────────────────────────────────────────────
     isr_imss = 0.0 if es_empty else isr_imss_cfg
 
-    # ── Cruce ─────────────────────────────────────────────────────────────
+    # ── Cruce ─────────────────────────────────────────────────────
     if aplica_cruce and not es_empty:
         if tipo_cruce == "Propio":
-            if tipo_carga_cruce == "Cargado":
-                costo_cruce = safe(valores.get("Cruce Propio (Cargado)", 50.0))
-            else:
-                costo_cruce = safe(valores.get("Cruce Propio (Vacío)", 30.0))
+            clave = "Cruce Propio (Cargado)" if tipo_carga_cruce == "Cargado" else "Cruce Propio (Vacío)"
+            costo_cruce = safe(valores.get(clave, 50.0))
         else:
             costo_cruce = costo_cruce_tercero_usd
+        # Team: costo de cruce NO se duplica (solo cruza 1 operador)
     else:
         costo_cruce       = 0.0
         ingreso_cruce_usd = 0.0
 
-    # ── Tramo MX ──────────────────────────────────────────────────────────
+    # ── Tramo MX ──────────────────────────────────────────────────
     ingreso_mx_usd = a_usd(ingreso_flete_mx_mxp, tc)
-    costo_mx_usd   = a_usd(costo_flete_mx_mxp, tc)
+    costo_mx_usd   = a_usd(costo_flete_mx_mxp,   tc)
 
-    # ── Totales ───────────────────────────────────────────────────────────
+    # ── Totales ───────────────────────────────────────────────────
     ingreso_total = (
         ingreso_total_usa
         + ingreso_cruce_usd
@@ -374,23 +400,27 @@ def calcular_ruta_lincoln(
         "isr_imss":             isr_imss,
         "costo_directo":        costo_directo,
         "costo_directo_total":  costo_directo_total,
-        # Utilidades / semáforos
+        # Utilidades
         "utilidad_bruta":       utilidad_bruta,
         "pct_bruta":            pct_bruta,
         "costos_ind":           costos_ind,
         "utilidad_neta":        utilidad_neta,
         "pct_neta":             pct_neta,
-        # Porcentajes para semáforos (nombres alineados con components.py)
+        # Para semaforos_ruta() en components.py
         "Pct_Costo_Directo":    pct_cd,
         "Pct_Ut_Bruta":         pct_bruta,
         "Pct_Costo_Indirecto":  pct_ind_real,
         "Pct_Ut_Neta":          pct_neta,
-        # Parámetros usados (para simulador y PDF)
-        "tc":                   tc,
-        "mpg":                  mpg,
-        "diesel":               diesel_precio,
-        "cxm_cargado":          cxm_cargado,
-        "cxm_vacio":            cxm_vacio,
-        "bono_por_milla":       bono_cfg,
-        "pct_ind":              pct_ind,
+        # Parámetros usados (para simulador, PDF y desglose)
+        "tc":               tc,
+        "mpg":              mpg,
+        "diesel":           diesel_precio,
+        "cxm_cargado":      cxm_cargado,
+        "cxm_vacio":        cxm_vacio,
+        "bono_por_milla":   bono_cfg,
+        "pct_ind":          pct_ind,
+        # Millas (para desglose visual)
+        "miles_load":       miles_load,
+        "short_miles":      short_miles,
+        "miles_empty":      miles_empty,
     }
