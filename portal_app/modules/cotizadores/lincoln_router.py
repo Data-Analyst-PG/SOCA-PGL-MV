@@ -17,7 +17,7 @@ from .lincoln import (
 
 
 def render():
-    page_banner("🏴", "Cotizador Lincoln Freight", "Captura, análisis y programación de rutas USA/MX")
+    page_banner("🚛", "Cotizador Lincoln Freight", "Captura, análisis y programación de rutas USA/MX")
 
     tabs = st.tabs([
         "🛣️ Captura de Rutas",
