@@ -97,65 +97,60 @@ def _filtrar(df: pd.DataFrame) -> pd.DataFrame:
 # ─────────────────────────────────────────────
 def _recalcular(ruta: pd.Series, valores: dict) -> dict:
     """
-    Recalcula KPIs de una ruta guardada usando calcular_ruta_lincoln del _shared.
-    Los ingresos USA se toman tal como fueron guardados (no se recalculan por CXM),
-    pero diesel, sueldo, bono e ISR/IMSS sí se recalculan con los parámetros actuales.
+    Recalcula KPIs de una ruta guardada con la firma nueva de calcular_ruta_lincoln.
+    Ingresos USA se preservan tal cual. Diesel/sueldo/bono/ISR recalculan con params actuales.
     """
-    tipo_ruta   = str(ruta.get("Tipo", "NB"))
-    es_empty    = (tipo_ruta == "Empty")
-    modo_viaje  = str(ruta.get("Modo_Viaje", "Sencillo"))
-    millas_usa  = safe(ruta.get("Millas_USA", 0))
-    millas_vac  = safe(ruta.get("Millas_Vacias", 0))
+    tipo_ruta  = str(ruta.get("Tipo", "NB"))
+    modo_viaje = str(ruta.get("Modo_Viaje", "Sencillo"))
 
-    # Ingresos guardados — se respetan tal cual
+    # Millas — columnas nuevas (pueden ser None en rutas antiguas → fallback a columnas viejas)
+    miles_load  = safe(ruta.get("Miles_Load")  or ruta.get("Millas_USA", 0))
+    short_miles = safe(ruta.get("Short_Miles") or ruta.get("Millas_USA", 0))
+    miles_empty = safe(ruta.get("Miles_Empty") or ruta.get("Millas_Vacias", 0))
+
+    # Ingresos guardados — se respetan tal cual (no se recalculan desde CXM)
     ingreso_flete_usa = safe(ruta.get("Ingreso_Flete_USA", 0))
-    ingreso_fuel_usa  = safe(ruta.get("Ingreso_Fuel_USA", 0))
-    ingreso_cruce     = safe(ruta.get("Ingreso_Cruce", 0))
-    ingreso_mx_usd    = safe(ruta.get("Ingreso_MX_USD", 0))
+    ingreso_fuel_usa  = safe(ruta.get("Ingreso_Fuel_USA",  0))
+    ingreso_cruce     = safe(ruta.get("Ingreso_Cruce",     0))
+    ing_mx_mxp        = safe(ruta.get("Ingreso_MX_MXP",   0))
+    costo_mx_mxp      = safe(ruta.get("Costo_MX_MXP",     0))
     otros_ing         = safe(ruta.get("Otros_Cargos_Ingreso", 0))
+    otros_costo       = safe(ruta.get("Otros_Cargos_Costo",   0))
 
-    # Para que calcular_ruta_lincoln no recalcule ingresos desde CXM,
-    # derivamos el ingreso_x_milla_usd equivalente
-    ing_x_milla = (ingreso_flete_usa / millas_usa) if millas_usa else 0.0
-    fuel_sc     = (ingreso_fuel_usa  / millas_usa) if millas_usa else 0.0
+    # Derivar CXM equivalente desde ingresos guardados para que el cálculo
+    # reconstruya correctamente Flete_USA y Fuel en el return (para desglose_ruta)
+    ing_x_milla = (ingreso_flete_usa / miles_load) if miles_load else 0.0
+    fuel_sc     = (ingreso_fuel_usa  / miles_load) if miles_load else 0.0
 
-    # Costos guardados para cruce y MX (no cambian con simulación de parámetros)
+    # Cruce
     aplica_cruce  = bool(ruta.get("Aplica_Cruce", False))
-    tipo_cruce    = str(ruta.get("Tipo_Cruce", "Propio"))
-    tipo_carga    = str(ruta.get("Tipo_Carga_Cruce", "Cargado"))
-    costo_cruce_t = safe(ruta.get("Costo_Cruce", 0))   # tercero guardado
-    ing_mx_mxp    = safe(ruta.get("Ingreso_MX_MXP", 0))
-    costo_mx_mxp  = safe(ruta.get("Costo_MX_MXP", 0))
+    tipo_cruce    = str(ruta.get("Tipo_Cruce",      "Propio"))
+    tipo_carga    = str(ruta.get("Tipo_Carga_Cruce","Cargado"))
+    costo_cruce_t = safe(ruta.get("Costo_Cruce", 0))
     linea_mx      = str(ruta.get("Linea_MX", "Propia"))
-    otros_costo   = safe(ruta.get("Otros_Cargos_Costo", 0))
 
-    # Si el cruce fue tercero ya tenemos el costo guardado,
-    # así que lo pasamos como tercero para que lo use directamente
-    if tipo_cruce == "Tercero":
-        tipo_cruce_calc = "Tercero"
-        costo_terc_calc = costo_cruce_t
-    else:
-        tipo_cruce_calc = tipo_cruce
-        costo_terc_calc = 0.0
+    costo_terc = costo_cruce_t if tipo_cruce == "Tercero" else 0.0
 
     return calcular_ruta_lincoln(
-        tipo_ruta            = tipo_ruta,
-        millas_usa           = millas_usa,
-        millas_vacias        = millas_vac,
-        ingreso_x_milla_usd  = ing_x_milla,
-        fuel_surcharge_usd   = fuel_sc,
-        ingreso_cruce_usd    = ingreso_cruce,
-        aplica_cruce         = aplica_cruce,
-        modo_viaje           = modo_viaje,
-        tipo_cruce           = tipo_cruce_calc,
-        tipo_carga_cruce     = tipo_carga,
-        costo_cruce_tercero_usd = costo_terc_calc,
-        ingreso_flete_mx_mxp = ing_mx_mxp,
-        costo_flete_mx_mxp   = costo_mx_mxp,
-        linea_mx             = linea_mx,
-        otros_cargos         = {"Otros": otros_ing} if otros_ing > 0 else {},
-        otros_cargos_pagados = {"Otros": True}       if otros_costo > 0 else {},
-        valores              = valores,
+        tipo_ruta               = tipo_ruta,
+        miles_load              = miles_load,
+        short_miles             = short_miles,
+        miles_empty             = miles_empty,
+        ingreso_x_milla_usd     = ing_x_milla,
+        tarifa_flat_usd         = 0.0,          # ya está reflejado en ingreso_flete_usa
+        fuel_surcharge_usd      = fuel_sc,
+        ingreso_cruce_usd       = ingreso_cruce,
+        aplica_cruce            = aplica_cruce,
+        modo_viaje              = modo_viaje,
+        tipo_cruce              = tipo_cruce,
+        tipo_carga_cruce        = tipo_carga,
+        costo_cruce_tercero_usd = costo_terc,
+        ingreso_flete_mx_mxp    = ing_mx_mxp,
+        costo_flete_mx_mxp      = costo_mx_mxp,
+        linea_mx                = linea_mx,
+        otros_cargos            = {"Otros": otros_ing}  if otros_ing  > 0 else {},
+        otros_cargos_cobrados   = {"Otros": True}       if otros_costo > 0 else {},
+        valores                 = valores,
     )
 
 
