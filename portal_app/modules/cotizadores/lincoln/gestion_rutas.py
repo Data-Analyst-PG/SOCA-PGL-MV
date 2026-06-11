@@ -170,10 +170,10 @@ def render() -> None:
 
     COLS = [
         "ID_Ruta", "Fecha", "Tipo", "Cliente", "Modo_Viaje",
-        "Origen", "Destino", "Millas_USA", "Millas_Vacias",
+        "Origen", "Destino", "Miles_Load", "Short_Miles", "Miles_Empty",
         "Ingreso_Total", "Costo_Directo_Total", "Utilidad_Bruta",
         "Pct_Utilidad_Bruta", "Costos_Indirectos", "Utilidad_Neta",
-        "Pct_Utilidad_Neta", "Capturado_Por", "Fecha",
+        "Pct_Utilidad_Neta", "Capturado_Por",
     ]
     cols_disp = [c for c in COLS if c in df_tabla.columns]
     st.dataframe(df_tabla[cols_disp] if cols_disp else df_tabla,
