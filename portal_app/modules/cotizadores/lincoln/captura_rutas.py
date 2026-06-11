@@ -200,7 +200,7 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
             )
     else:
         tf1, tf2 = mod2.columns(2)
-        moneda_flete = tf1.selectbox("💱 Moneda", ["USD", "MXP"], key="ln_mon_flete")
+        moneda_flete = tf1.selectbox("💱 Moneda", ["USD", "MXP"], key="ln_mon_flete_flat")
         tarifa_flat  = tf2.number_input(
             "Tarifa Total (Flat)", min_value=0.0, step=50.0, key="ln_tarifa_flat"
         )
