@@ -184,11 +184,11 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
         moneda_flete = td1.selectbox("💱 Moneda", ["USD", "MXP"], key="ln_mon_flete")
         cxm_flete    = td2.number_input(
             "CXM Flete ($/mi)", min_value=0.0, step=0.001, format="%.4f", key="ln_cxm_flete",
-            value=float(valores.get("CXM Operador USA", 0.00)),
+            value=float(valores.get("CXM Operador USA", 0.48)),
         )
         cxm_fuel     = td3.number_input(
             "Fuel Surcharge ($/mi)", min_value=0.0, step=0.001, format="%.4f", key="ln_cxm_fuel",
-            value=float(valores.get("Fuel Surcharge ($/mi)", 0.00)),
+            value=float(valores.get("Fuel Surcharge ($/mi)", 0.61)),
         )
         if miles_load > 0:
             preview = (safe(cxm_flete) + safe(cxm_fuel)) * safe(miles_load)
@@ -300,11 +300,11 @@ def _mostrar_resultados(r: dict, fd: dict) -> None:
     section_header("📊", "Resultado del Cálculo")
 
     kpi_row([
-        ("💰 Ingreso Total",     f"${r['ingreso_total']:,.2f}",      None),
-        ("💸 Costo Directo",     f"${r['costo_directo_total']:,.2f}", None),
-        ("📈 Utilidad Bruta",    f"${r['utilidad_bruta']:,.2f}",     f"{r['pct_bruta']:.1f}%"),
-        ("📉 Costos Indirectos", f"${r['costos_ind']:,.2f}",          None),
-        ("✅ Utilidad Neta",     f"${r['utilidad_neta']:,.2f}",       f"{r['pct_neta']:.1f}%"),
+        dict(icono="💰", label="Ingreso Total",     valor=f"${r['ingreso_total']:,.2f}",      color="#1B2266"),
+        dict(icono="💸", label="Costo Directo",     valor=f"${r['costo_directo_total']:,.2f}", color="#DC2626"),
+        dict(icono="📈", label="Utilidad Bruta",    valor=f"${r['utilidad_bruta']:,.2f}",     sub=f"{r['pct_bruta']:.1f}%",  color="#059669"),
+        dict(icono="📉", label="Costos Indirectos", valor=f"${r['costos_ind']:,.2f}",          color="#D97706"),
+        dict(icono="✅", label="Utilidad Neta",     valor=f"${r['utilidad_neta']:,.2f}",       sub=f"{r['pct_neta']:.1f}%",  color="#059669" if r['utilidad_neta'] >= 0 else "#DC2626"),
     ])
 
     semaforos_ruta(r)
