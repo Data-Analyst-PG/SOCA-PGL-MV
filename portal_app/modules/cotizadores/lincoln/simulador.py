@@ -632,11 +632,11 @@ def render() -> None:
         res = _resumen_vr(rutas_series)
 
         kpi_row([
-            ("💰 Ingreso Total",     f"${res['ing']:,.2f}",  None),
-            ("💸 Costo Directo",     f"${res['cd']:,.2f}",   None),
-            ("📈 Ut. Bruta",         f"${res['ub']:,.2f}",   f"{res['pct_ub']:.1f}%"),
-            ("📉 Costo Indirecto",   f"${res['ci']:,.2f}",   None),
-            ("✅ Ut. Neta",          f"${res['un']:,.2f}",   f"{res['pct_un']:.1f}%"),
+            dict(icono="💰", label="Ingreso Total",    valor=f"${res['ing']:,.2f}", color="#1B2266"),
+            dict(icono="💸", label="Costo Directo",    valor=f"${res['cd']:,.2f}", color="#DC2626"),
+            dict(icono="📈", label="Ut. Bruta",        valor=f"${res['ub']:,.2f}", sub=f"{res['pct_ub']:.1f}%", color="#059669"),
+            dict(icono="📉", label="Costo Indirecto",  valor=f"${res['ci']:,.2f}", color="#D97706"),
+            dict(icono="✅", label="Ut. Neta",         valor=f"${res['un']:,.2f}", sub=f"{res['pct_un']:.1f}%", color="#059669" if res['un'] >= 0 else "#DC2626"),
         ])
 
         # Semáforo combinado manual (usa el dict de res)
