@@ -436,6 +436,8 @@ def _modal_guardado(id_ruta: str) -> None:
     if st.button("✅ Aceptar", type="primary", use_container_width=True, key="ln_modal_ok"):
         st.session_state.pop("ln_ruta_guardada_id", None)
         st.session_state.pop("ln_mostrar_modal", None)
+        # Incrementar sufijo de form para forzar que todos los widgets queden vacíos
+        st.session_state["ln_form_key"] = st.session_state.get("ln_form_key", 0) + 1
         st.rerun()
 
 
@@ -454,6 +456,8 @@ def render() -> None:
 
     st.session_state.setdefault("ln_resultado", None)
     st.session_state.setdefault("ln_form_data", {})
+    # Sufijo de sesión: cambia al limpiar el formulario, forzando recreación de widgets
+    st.session_state.setdefault("ln_form_key", 0)
 
     # Mostrar modal de éxito si acaba de guardar
     if st.session_state.get("ln_mostrar_modal") and st.session_state.get("ln_ruta_guardada_id"):
@@ -471,7 +475,8 @@ def render() -> None:
     orden            = config.get("orden", ["americana"])
     es_empty         = (tipo_ruta_actual == "Empty")
 
-    with st.form("ln_captura_ruta", clear_on_submit=False):
+    _k = st.session_state.get("ln_form_key", 0)
+    with st.form(f"ln_captura_ruta_{_k}", clear_on_submit=False):
 
         # ── Info General siempre primera ──────────────────────────────────────
         fecha, tipo_ruta, cliente, modo_viaje = _seccion_info_general(
