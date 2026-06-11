@@ -108,11 +108,11 @@ def _filtrar(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
 # ─────────────────────────────────────────────
 def _preview_edicion(r: dict, tipo_ruta: str, millas_usa: float, millas_vac: float) -> None:
     kpi_row([
-        ("💰 Ingreso Total",     f"${r['ingreso_total']:,.2f}",     None),
-        ("💸 Costo Directo",     f"${r['costo_directo_total']:,.2f}", None),
-        ("📈 Utilidad Bruta",    f"${r['utilidad_bruta']:,.2f}",    f"{r['pct_bruta']:.1f}%"),
-        ("📉 Costos Indirectos", f"${r['costos_ind']:,.2f}",         None),
-        ("✅ Utilidad Neta",     f"${r['utilidad_neta']:,.2f}",      f"{r['pct_neta']:.1f}%"),
+        dict(icono="💰", label="Ingreso Total",     valor=f"${r['ingreso_total']:,.2f}",      color="#1B2266"),
+        dict(icono="💸", label="Costo Directo",     valor=f"${r['costo_directo_total']:,.2f}", color="#DC2626"),
+        dict(icono="📈", label="Utilidad Bruta",    valor=f"${r['utilidad_bruta']:,.2f}",     sub=f"{r['pct_bruta']:.1f}%",  color="#059669"),
+        dict(icono="📉", label="Costos Indirectos", valor=f"${r['costos_ind']:,.2f}",          color="#D97706"),
+        dict(icono="✅", label="Utilidad Neta",     valor=f"${r['utilidad_neta']:,.2f}",       sub=f"{r['pct_neta']:.1f}%",  color="#059669" if r['utilidad_neta'] >= 0 else "#DC2626"),
     ])
     semaforos_ruta(r)
 
