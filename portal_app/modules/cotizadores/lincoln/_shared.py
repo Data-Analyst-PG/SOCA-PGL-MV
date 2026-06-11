@@ -320,29 +320,27 @@ def calcular_ruta_lincoln(
         if otros_cargos_cobrados.get(nombre, False)
     )
 
+    # ── Factor operadores ─────────────────────────────────────────
+    # Team = 2 operadores: sueldo, bono e ISR/IMSS se pagan × 2
+    factor = 2 if es_team else 1
+
     # ── Sueldo operador ───────────────────────────────────────────
     if es_empty:
-        # Solo vacío, sin bono
-        if es_team:
-            sueldo_base = miles_empty * cxm_vacio * 2
-        else:
-            sueldo_base = miles_empty * cxm_vacio
+        sueldo_base = miles_empty * cxm_vacio * factor
         bono_millas = 0.0
     else:
-        if es_team:
-            sueldo_base = (short_miles * cxm_cargado + miles_empty * cxm_vacio) * 2
-        else:
-            sueldo_base = short_miles * cxm_cargado + miles_empty * cxm_vacio
-        bono_millas = short_miles * bono_cfg   # bono sobre short miles
+        sueldo_base = (short_miles * cxm_cargado + miles_empty * cxm_vacio) * factor
+        bono_millas = short_miles * bono_cfg * factor
 
     sueldo_usa = sueldo_base + bono_millas
 
     # ── Diesel ────────────────────────────────────────────────────
-    # (Short Miles + Miles Empty) / MPG × precio_galón
+    # (Short Miles + Miles Empty) / MPG × precio_galón (no se duplica)
     diesel_usa = ((short_miles + miles_empty) / mpg) * diesel_precio if mpg else 0.0
 
     # ── ISR / IMSS ────────────────────────────────────────────────
-    isr_imss = 0.0 if es_empty else isr_imss_cfg
+    # Team = 2 operadores → ISR/IMSS × 2; Empty = 0
+    isr_imss = 0.0 if es_empty else isr_imss_cfg * factor
 
     # ── Cruce ─────────────────────────────────────────────────────
     if aplica_cruce and not es_empty:
@@ -423,4 +421,20 @@ def calcular_ruta_lincoln(
         "miles_load":       miles_load,
         "short_miles":      short_miles,
         "miles_empty":      miles_empty,
+        # ── Alias para desglose_ruta en components.py (espera claves Set Logis) ──
+        # Ingresos americanos
+        "Flete_USA":        ingreso_flete_usa,
+        "Fuel":             ingreso_fuel_usa,
+        "Extras_Ingreso":   otros_cargos_ingreso,
+        # Cruce
+        "Ingreso_Cruce":    ingreso_cruce_usd,
+        "Costo_Cruce":      costo_cruce,
+        "Tipo_Cruce":       tipo_cruce,
+        # MX
+        "Ingreso_MX":       ingreso_mx_usd,
+        "Costo_MX":         costo_mx_usd,
+        # Millas (nombres Set Logis para que el componente calcule preview)
+        "Miles_Load":       miles_load,
+        "Short_Miles":      short_miles,
+        "Miles_Empty":      miles_empty,
     }
