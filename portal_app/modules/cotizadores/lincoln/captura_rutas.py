@@ -359,6 +359,7 @@ def _guardar_ruta(r: dict, fd: dict, id_ruta: str, user_id: str, nombre_usuario:
         "Modo_Viaje":           fd["modo_viaje"],
         "Origen":               fd["origen_usa"],
         "Destino":              fd["destino_usa"],
+        # Millas — nombres nuevos (columnas agregadas en migración)
         "Miles_Load":           fd["miles_load"],
         "Short_Miles":          fd["short_miles"],
         "Miles_Empty":          fd["miles_empty"],
@@ -408,11 +409,34 @@ def _guardar_ruta(r: dict, fd: dict, id_ruta: str, user_id: str, nombre_usuario:
 
     try:
         supabase.table(TABLE_RUTAS).insert(limpiar_fila_json(fila)).execute()
-        st.success(f"✅ Ruta **{id_ruta}** guardada correctamente.")
+        # Limpiar cache si existe
+        try:
+            from . import consulta_ruta as _cr
+            _cr._cargar_rutas.clear()
+        except Exception:
+            pass
+        # Activar modal de éxito y limpiar estado del formulario
+        st.session_state["ln_ruta_guardada_id"]  = id_ruta
+        st.session_state["ln_mostrar_modal"]     = True
         st.session_state.pop("ln_resultado", None)
         st.session_state.pop("ln_form_data", None)
+        st.rerun()
     except Exception as e:
         alert("error", f"Error al guardar: {e}")
+
+
+# ─────────────────────────────────────────────
+# MODAL CONFIRMACIÓN
+# ─────────────────────────────────────────────
+@st.dialog("✅ Ruta Guardada Exitosamente", width="small")
+def _modal_guardado(id_ruta: str) -> None:
+    alert("success", "**¡La ruta se guardó correctamente!**")
+    st.info(f"### 🆔 ID de la ruta\n`{id_ruta}`")
+    st.caption("Puedes consultarla en 'Consulta Ruta' o 'Gestión de Rutas'.")
+    if st.button("✅ Aceptar", type="primary", use_container_width=True, key="ln_modal_ok"):
+        st.session_state.pop("ln_ruta_guardada_id", None)
+        st.session_state.pop("ln_mostrar_modal", None)
+        st.rerun()
 
 
 # ─────────────────────────────────────────────
@@ -430,6 +454,10 @@ def render() -> None:
 
     st.session_state.setdefault("ln_resultado", None)
     st.session_state.setdefault("ln_form_data", {})
+
+    # Mostrar modal de éxito si acaba de guardar
+    if st.session_state.get("ln_mostrar_modal") and st.session_state.get("ln_ruta_guardada_id"):
+        _modal_guardado(st.session_state["ln_ruta_guardada_id"])
 
     valores = cargar_datos_generales()
     valores = _panel_datos_generales(valores)
