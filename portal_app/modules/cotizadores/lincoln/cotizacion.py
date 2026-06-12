@@ -1,27 +1,18 @@
 """
 cotizacion.py – Lincoln Freight (USA/MX)
-Generador de cotización formal en PDF para enviar al cliente.
-- Solo muestra conceptos de INGRESO (no costos internos)
-- PDF con reportlab (io.BytesIO, sin archivos temporales)
-- Columnas alineadas al nuevo _shared.py
+Generador de cotización con plantilla PNG igual que Igloo/Picus/Set Logis.
+Plantillas: portal_app/img/2.0 ADT PGL LINCOLN (2/3/4).png
 """
 
 from __future__ import annotations
 
-import io
 import os
+import re
 from datetime import date
 
 import pandas as pd
 import streamlit as st
-from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import mm
-from reportlab.platypus import (
-    Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
-)
+from fpdf import FPDF
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
@@ -34,20 +25,104 @@ from ._shared import TABLE_RUTAS, cargar_datos_generales, safe
 def _project_root() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
+def _img_dir() -> str:
+    return os.path.join(_project_root(), "img")
 
-def _find_logo() -> str | None:
-    img_dir = os.path.join(_project_root(), "img")
-    for name in [
-        "Lincoln Original.png", "Lincoln White.png",
-        "LicolnF Original.png", "LicolnF White.png",
-        "ADT PGL GRAL NO TXT.png",
-    ]:
-        path = os.path.join(img_dir, name)
-        if os.path.exists(path):
-            return path
-    return None
+def _fonts_dir() -> str:
+    return os.path.join(_project_root(), "fonts")
+
+def safe_text(text: str) -> str:
+    return str(text).encode("latin-1", "replace").decode("latin-1")
 
 
+# ─────────────────────────────────────────────
+# SISTEMA DE PLANTILLAS (idéntico a Igloo)
+# ─────────────────────────────────────────────
+def _get_template(pagina_actual: int, total_paginas: int) -> str | None:
+    img_dir = _img_dir()
+    if total_paginas == 1:
+        nombre = "2.0 ADT PGL LINCOLN.png"
+    elif total_paginas == 2:
+        nombre = "2.0 ADT PGL LINCOLN (2).png" if pagina_actual == 1 else "2.0 ADT PGL LINCOLN (4).png"
+    else:
+        if pagina_actual == 1:
+            nombre = "2.0 ADT PGL LINCOLN (2).png"
+        elif pagina_actual == total_paginas:
+            nombre = "2.0 ADT PGL LINCOLN (4).png"
+        else:
+            nombre = "2.0 ADT PGL LINCOLN (3).png"
+
+    path = os.path.join(img_dir, nombre)
+    return path if os.path.exists(path) else None
+
+
+def _estimar_paginas(lineas: int) -> int:
+    if lineas <= 20:
+        return 1
+    return 1 + (lineas - 20 + 29) // 30
+
+
+def _contar_lineas(rutas_config: dict, ids_sel: list, df: pd.DataFrame) -> int:
+    total = 0
+    for ruta_sel in ids_sel:
+        id_ruta = ruta_sel.split(" | ")[0]
+        if id_ruta not in df.index:
+            continue
+        total += 2  # header tipo + origen-destino
+        cfg = rutas_config.get(ruta_sel, {"cobrar": [], "mostrar": []})
+        for campo in cfg["cobrar"] + cfg["mostrar"]:
+            val = df.loc[id_ruta].get(campo, 0)
+            if val and not pd.isna(val) and float(val) != 0:
+                total += 1
+    return total
+
+
+# ─────────────────────────────────────────────
+# CLASE PDF (idéntica a Igloo)
+# ─────────────────────────────────────────────
+class PDF(FPDF):
+    def __init__(self, fecha_str: str = "", total_pages: int = 1, **kwargs):
+        super().__init__(**kwargs)
+        self.fecha_str   = fecha_str
+        self.total_pages = total_pages
+        self.has_montserrat = False
+        try:
+            fonts = _fonts_dir()
+            reg  = os.path.join(fonts, "Montserrat-Regular.ttf")
+            bold = os.path.join(fonts, "Montserrat-Bold.ttf")
+            it   = os.path.join(fonts, "Montserrat-Italic.ttf")
+            if os.path.exists(reg):
+                self.add_font("Montserrat", "",  reg,  uni=True); self.has_montserrat = True
+            if os.path.exists(bold):
+                self.add_font("Montserrat", "B", bold, uni=True)
+            if os.path.exists(it):
+                self.add_font("Montserrat", "I", it,   uni=True)
+        except Exception:
+            self.has_montserrat = False
+
+    def set_body_font(self, bold: bool = False, italic: bool = False, size: float = 7):
+        style = ("B" if bold else "") + ("I" if italic else "")
+        if self.has_montserrat:
+            try:
+                self.set_font("Montserrat", style, size)
+            except Exception:
+                self.set_font("Montserrat", "", size)
+        else:
+            self.set_font("Helvetica", style, size)
+
+    def header(self):
+        page = self.page_no()
+        tpl  = _get_template(page, self.total_pages)
+        if tpl:
+            self.image(tpl, x=0, y=0, w=8.5, h=11)
+
+    def footer(self):
+        pass   # El número de página va en la plantilla
+
+
+# ─────────────────────────────────────────────
+# CACHE DE RUTAS
+# ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=120)
 def _cargar_rutas(table: str) -> pd.DataFrame:
     sb = get_supabase_client()
@@ -55,7 +130,7 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
         return pd.DataFrame()
     try:
         resp = sb.table(table).select("*").execute()
-        df = pd.DataFrame(resp.data or [])
+        df   = pd.DataFrame(resp.data or [])
         if not df.empty and "Fecha" in df.columns:
             df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
         return df
@@ -63,227 +138,20 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# Conceptos de ingreso por columna guardada
-# (nombre visible al cliente, columna en Supabase, mostrar por defecto)
-CONCEPTOS_INGRESO: list[tuple[str, str, bool]] = [
-    ("Flete USA",       "Ingreso_Flete_USA",  True),
-    ("Fuel Surcharge",  "Ingreso_Fuel_USA",   True),
-    ("Cruce",           "Ingreso_Cruce",      True),
-    ("Flete MX",        "Ingreso_MX_USD",     False),
-]
-
-EXTRAS_CAMPOS: list[tuple[str, str]] = [
-    ("Stop Off",          "Otros_Cargos_Ingreso"),   # fallback genérico
-]
-
-
 # ─────────────────────────────────────────────
-# GENERADOR PDF
+# CONCEPTOS POR RUTA
+# Cobrar → suma al total de la cotización
+# Mostrar → solo visual, en gris (no suma)
 # ─────────────────────────────────────────────
-def _generar_pdf(
-    *,
-    fecha_cot: date,
-    cli_nombre: str,
-    cli_dir: str,
-    cli_mail: str,
-    emp_nombre: str,
-    emp_mail: str,
-    emp_tel: str,
-    moneda: str,
-    tc: float,
-    filas: list[dict],   # [{ruta_label, conceptos: [{nombre, valor_usd}]}]
-    notas: str,
-    logo_path: str | None,
-) -> bytes:
-    """
-    Genera cotización en PDF usando reportlab.
-    filas: cada elemento tiene ruta_label y una lista de conceptos con nombre y valor_usd.
-    """
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=15 * mm, rightMargin=15 * mm,
-        topMargin=12 * mm,  bottomMargin=12 * mm,
-    )
-
-    styles = getSampleStyleSheet()
-    AZUL   = colors.HexColor("#1B2266")
-    AZUL_L = colors.HexColor("#dee6f5")
-    GRIS   = colors.HexColor("#f5f5ff")
-    BLANCO = colors.white
-
-    h1_s  = ParagraphStyle("H1",  parent=styles["Normal"],  fontSize=16, textColor=AZUL,
-                             fontName="Helvetica-Bold", spaceAfter=2)
-    h2_s  = ParagraphStyle("H2",  parent=styles["Normal"],  fontSize=10, textColor=AZUL,
-                             fontName="Helvetica-Bold", spaceAfter=2)
-    sub_s = ParagraphStyle("Sub", parent=styles["Normal"],  fontSize=8,  textColor=colors.HexColor("#555"),
-                             spaceAfter=1)
-    norm  = ParagraphStyle("N",   parent=styles["Normal"],  fontSize=9,  leading=13)
-    foot  = ParagraphStyle("F",   parent=styles["Normal"],  fontSize=7,
-                             textColor=colors.HexColor("#888"), alignment=TA_CENTER)
-
-    story: list = []
-
-    # ── Encabezado (logo + datos empresa) ────────────────────────
-    logo_cell: list = []
-    if logo_path and os.path.exists(logo_path):
-        try:
-            logo_cell = [Image(logo_path, width=45 * mm, height=18 * mm)]
-        except Exception:
-            logo_cell = [Paragraph("LINCOLN FREIGHT", h1_s)]
-    else:
-        logo_cell = [Paragraph("<b>LINCOLN FREIGHT</b>", h1_s)]
-
-    empresa_info = [
-        Paragraph(f"<b>{emp_nombre}</b>", h2_s),
-        Paragraph(emp_mail,  sub_s),
-        Paragraph(emp_tel,   sub_s),
-    ]
-
-    hdr_tbl = Table(
-        [[logo_cell, empresa_info]],
-        colWidths=[80 * mm, None],
-    )
-    hdr_tbl.setStyle(TableStyle([
-        ("VALIGN",  (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN",   (1, 0), (1, 0),   "RIGHT"),
-    ]))
-    story.append(hdr_tbl)
-    story.append(Spacer(1, 6 * mm))
-
-    # ── Título + datos cliente ────────────────────────────────────
-    cot_hdr = Table([[
-        Paragraph("<b>COTIZACIÓN DE FLETE</b>",
-                  ParagraphStyle("CH", parent=styles["Normal"], fontSize=13,
-                                 textColor=BLANCO, fontName="Helvetica-Bold")),
-        Paragraph(f"Fecha: {fecha_cot}",
-                  ParagraphStyle("CF", parent=styles["Normal"], fontSize=9,
-                                 textColor=BLANCO, alignment=TA_RIGHT)),
-    ]], colWidths=[110 * mm, None])
-    cot_hdr.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), AZUL),
-        ("TOPPADDING",    (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("LEFTPADDING",   (0, 0), (0, -1),  10),
-        ("RIGHTPADDING",  (-1, 0), (-1, -1), 10),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    story.append(cot_hdr)
-    story.append(Spacer(1, 4 * mm))
-
-    cli_rows = [
-        ["Cliente:", cli_nombre],
-        ["Dirección:", cli_dir or "—"],
-        ["Email:", cli_mail  or "—"],
-    ]
-    cli_tbl = Table(cli_rows, colWidths=[25 * mm, None])
-    cli_tbl.setStyle(TableStyle([
-        ("FONTNAME",  (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTSIZE",  (0, 0), (-1, -1), 9),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
-    story.append(cli_tbl)
-    story.append(Spacer(1, 5 * mm))
-
-    # ── Tabla de conceptos ────────────────────────────────────────
-    col_w_desc = 115 * mm
-    col_w_val  = 55  * mm
-
-    # Encabezado de tabla
-    tbl_data: list[list] = [[
-        Paragraph("RUTA / CONCEPTO",
-                  ParagraphStyle("TH", parent=styles["Normal"], fontSize=9,
-                                 textColor=BLANCO, fontName="Helvetica-Bold")),
-        Paragraph(f"TARIFA ({moneda})",
-                  ParagraphStyle("THR", parent=styles["Normal"], fontSize=9,
-                                 textColor=BLANCO, fontName="Helvetica-Bold", alignment=TA_RIGHT)),
-    ]]
-
-    total_general = 0.0
-    row_styles: list[tuple] = [
-        ("BACKGROUND",    (0, 0), (-1, 0),  AZUL),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),  BLANCO),
-        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 9),
-        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
-    ]
-    fill = True
-    row_idx = 1   # 0 es el header
-
-    for fila in filas:
-        subtotal_usd = sum(c["valor_usd"] for c in fila["conceptos"])
-        subtotal_show = subtotal_usd * tc if moneda == "MXP" else subtotal_usd
-
-        # Fila de ruta (subtítulo)
-        tbl_data.append([
-            Paragraph(f"<b>{fila['ruta_label']}</b>",
-                      ParagraphStyle("RL", parent=styles["Normal"], fontSize=9,
-                                     fontName="Helvetica-Bold")),
-            Paragraph(f"<b>${subtotal_show:,.2f}</b>",
-                      ParagraphStyle("RLR", parent=styles["Normal"], fontSize=9,
-                                     fontName="Helvetica-Bold", alignment=TA_RIGHT)),
-        ])
-        row_styles.append(("BACKGROUND", (0, row_idx), (-1, row_idx), AZUL_L))
-        row_idx += 1
-
-        # Líneas de conceptos
-        for concepto in fila["conceptos"]:
-            v_show = concepto["valor_usd"] * tc if moneda == "MXP" else concepto["valor_usd"]
-            bg = GRIS if fill else BLANCO
-            tbl_data.append([
-                Paragraph(f"  · {concepto['nombre']}", norm),
-                Paragraph(f"${v_show:,.2f}",
-                          ParagraphStyle("CR", parent=styles["Normal"], fontSize=9,
-                                         alignment=TA_RIGHT)),
-            ])
-            row_styles.append(("BACKGROUND", (0, row_idx), (-1, row_idx), bg))
-            row_idx += 1
-            fill = not fill
-
-        total_general += subtotal_usd
-
-    # Fila de total
-    total_show = total_general * tc if moneda == "MXP" else total_general
-    tbl_data.append([
-        Paragraph("<b>TOTAL GENERAL</b>",
-                  ParagraphStyle("TOT", parent=styles["Normal"], fontSize=10,
-                                 textColor=BLANCO, fontName="Helvetica-Bold")),
-        Paragraph(f"<b>${total_show:,.2f} {moneda}</b>",
-                  ParagraphStyle("TOTR", parent=styles["Normal"], fontSize=10,
-                                 textColor=BLANCO, fontName="Helvetica-Bold",
-                                 alignment=TA_RIGHT)),
-    ])
-    row_styles += [
-        ("BACKGROUND", (0, row_idx), (-1, row_idx), AZUL),
-        ("TEXTCOLOR",  (0, row_idx), (-1, row_idx), BLANCO),
-        ("FONTNAME",   (0, row_idx), (-1, row_idx), "Helvetica-Bold"),
-    ]
-
-    tbl = Table(tbl_data, colWidths=[col_w_desc, col_w_val])
-    tbl.setStyle(TableStyle(row_styles))
-    story.append(tbl)
-
-    # ── Notas ────────────────────────────────────────────────────
-    if notas.strip():
-        story.append(Spacer(1, 5 * mm))
-        story.append(Paragraph("<b>Notas:</b>", h2_s))
-        story.append(Paragraph(notas.replace("\n", "<br/>"), norm))
-
-    # ── Footer ───────────────────────────────────────────────────
-    story.append(Spacer(1, 8 * mm))
-    story.append(Paragraph(
-        f"Cotización generada por {emp_nombre} · {fecha_cot}",
-        foot,
-    ))
-
-    doc.build(story)
-    return buf.getvalue()
+CONCEPTOS_COBRAR = [
+    ("Flete USA",      "Ingreso_Flete_USA"),
+    ("Fuel Surcharge", "Ingreso_Fuel_USA"),
+    ("Cruce",          "Ingreso_Cruce"),
+    ("Flete MX",       "Ingreso_MX_USD"),
+]
+CONCEPTOS_MOSTRAR = [
+    ("Otros Cargos", "Otros_Cargos_Ingreso"),
+]
 
 
 # ─────────────────────────────────────────────
@@ -303,191 +171,267 @@ def render() -> None:
 
     df = _cargar_rutas(TABLE_RUTAS)
     if df.empty:
-        alert("warn", "No hay rutas guardadas.")
-        alert("info", "Captura rutas primero desde la pestaña Captura de Rutas.")
+        alert("warn", "No hay rutas guardadas. Captura rutas primero.")
         return
+
+    if "ID_Ruta" in df.columns:
+        df.set_index("ID_Ruta", inplace=True, drop=False)
 
     valores = cargar_datos_generales()
 
-    # ── Label para selector ───────────────────────────────────────
-    def _label(row: pd.Series) -> str:
+    # ── Fecha ─────────────────────────────────────────────────────
+    fecha = st.date_input("📅 Fecha de cotización", value=date.today(), key="ln_cot_fecha")
+
+    # ── Datos cliente / empresa ───────────────────────────────────
+    tab_cli, tab_emp = st.tabs(["👤 Datos del Cliente", "🏢 Datos de la Empresa"])
+
+    with tab_cli:
+        c1, c2 = st.columns(2)
+        cliente_nombre    = c1.text_input("Nombre del Cliente *",    key="ln_cot_cli_nom")
+        cliente_direccion = c1.text_input("Dirección",               key="ln_cot_cli_dir")
+        cliente_mail      = c2.text_input("📧 Email",                key="ln_cot_cli_mail")
+        cliente_telefono  = c2.text_input("📞 Teléfono",             key="ln_cot_cli_tel")
+        cliente_ext       = c2.text_input("Ext.",                    key="ln_cot_cli_ext")
+
+    with tab_emp:
+        e1, e2 = st.columns(2)
+        empresa_nombre    = e1.text_input("Nombre Empresa",  value="Lincoln Freight LLC",   key="ln_cot_emp_nom")
+        empresa_direccion = e1.text_input("Dirección",                                       key="ln_cot_emp_dir")
+        empresa_mail      = e2.text_input("📧 Email",                                        key="ln_cot_emp_mail")
+        empresa_telefono  = e2.text_input("📞 Teléfono",                                     key="ln_cot_emp_tel")
+        empresa_ext       = e2.text_input("Ext.",                                            key="ln_cot_emp_ext")
+
+    divider()
+
+    # ── Selección de rutas ────────────────────────────────────────
+    section_header("1.", "Seleccionar rutas a cotizar")
+
+    def _lbl(row) -> str:
         return (
-            f"{row.get('ID_Ruta', '')} | {row.get('Fecha', '')} | "
-            f"{row.get('Tipo', '')} | {row.get('Cliente', '—')} | "
-            f"{row.get('Origen', '')} → {row.get('Destino', '')}"
+            f"{row.get('ID_Ruta','')} | {row.get('Fecha','')} | "
+            f"{row.get('Tipo','')} | {row.get('Cliente','—')} | "
+            f"{row.get('Origen','')} → {row.get('Destino','')}"
         )
 
-    df["_label"] = df.apply(_label, axis=1)
+    df["_label"] = df.apply(_lbl, axis=1)
+    ids_sel = st.multiselect("Rutas disponibles", df["_label"].tolist(), key="ln_cot_rutas")
 
-    # ══════════════════════════════════════════════════════════════
-    # 1. Selección de rutas
-    # ══════════════════════════════════════════════════════════════
-    section_header("1.", "Seleccionar rutas a cotizar")
-    rutas_sel = st.multiselect(
-        "Rutas disponibles",
-        df["_label"].tolist(),
-        key="ln_cot_rutas",
-    )
-    if not rutas_sel:
+    if not ids_sel:
         alert("info", "Selecciona al menos una ruta para continuar.")
         return
 
-    rows_sel = df[df["_label"].isin(rutas_sel)]
-
-    # ══════════════════════════════════════════════════════════════
-    # 2. Conceptos por ruta
-    # ══════════════════════════════════════════════════════════════
+    # ── Configurar conceptos por ruta ─────────────────────────────
     divider()
-    section_header("2.", "Conceptos a incluir por ruta")
-    st.caption("Solo se muestran conceptos con valor > 0. Marca los que quieras incluir.")
+    section_header("2.", "Configurar conceptos por ruta")
+    st.caption("Marca los conceptos que se cobrarán al cliente. Los desmarcados aparecen en gris (solo visual).")
 
-    filas_pdf: list[dict] = []
+    rutas_config: dict = {}
+    moneda_cot = st.selectbox("💱 Moneda de la cotización", ["USD", "MXP"], key="ln_cot_moneda")
+    tc = float(valores.get("Tipo de Cambio USD/MXP", 18.5))
+    if moneda_cot == "MXP":
+        tc_input = st.number_input("Tipo de Cambio USD/MXP", value=tc, step=0.1, key="ln_cot_tc")
+        tc = tc_input
 
-    for _, row in rows_sel.iterrows():
-        id_ruta    = row.get("ID_Ruta", "")
-        ruta_label = (
-            f"{row.get('Tipo', '')} | "
-            f"{row.get('Origen', '')} → {row.get('Destino', '')} | "
-            f"{row.get('Cliente', '')}"
-        )
+    for ruta_lbl in ids_sel:
+        id_ruta = ruta_lbl.split(" | ")[0]
+        if id_ruta not in df.index:
+            continue
+        row = df.loc[id_ruta]
+        tipo = str(row.get("Tipo", ""))
 
-        with st.expander(f"📋 {ruta_label}", expanded=True):
-            conceptos_seleccionados: list[dict] = []
-            col_l, col_r = st.columns(2)
+        with st.expander(f"📋 {ruta_lbl}", expanded=True):
+            cobrar:   list[str] = []
+            mostrar:  list[str] = []
+            c1, c2 = st.columns(2)
 
-            # Conceptos principales
-            with col_l:
+            with c1:
                 st.caption("Conceptos de ingreso:")
-                for nombre, campo, default_on in CONCEPTOS_INGRESO:
+                for nombre, campo in CONCEPTOS_COBRAR:
+                    # Flete MX solo aplica en D2D
+                    if campo == "Ingreso_MX_USD" and tipo not in {"D2DNB", "D2DSB"}:
+                        continue
                     val = safe(row.get(campo, 0))
-                    if val > 0:
-                        checked = st.checkbox(
-                            f"{nombre} (${val:,.2f})",
-                            value=default_on,
-                            key=f"ln_cot_{id_ruta}_{campo}",
-                        )
-                        if checked:
-                            conceptos_seleccionados.append({"nombre": nombre, "valor_usd": val})
-
-            # Otros cargos
-            with col_r:
-                st.caption("Otros cargos extras:")
-                otros_json_str = str(row.get("Otros_Cargos_JSON", "") or "")
-                otros_ing      = safe(row.get("Otros_Cargos_Ingreso", 0))
-
-                # Intentar parsear JSON de otros cargos
-                extras_parseados: dict = {}
-                if otros_json_str and otros_json_str not in ("", "None", "{}"):
-                    try:
-                        import ast
-                        extras_parseados = ast.literal_eval(otros_json_str)
-                    except Exception:
-                        pass
-
-                if extras_parseados:
-                    for nombre_e, monto_e in extras_parseados.items():
-                        if safe(monto_e) > 0:
-                            checked_e = st.checkbox(
-                                f"{nombre_e} (${safe(monto_e):,.2f})",
-                                value=True,
-                                key=f"ln_cot_{id_ruta}_ext_{nombre_e}",
-                            )
-                            if checked_e:
-                                conceptos_seleccionados.append(
-                                    {"nombre": nombre_e, "valor_usd": safe(monto_e)}
-                                )
-                elif otros_ing > 0:
-                    checked_o = st.checkbox(
-                        f"Otros Cargos (${otros_ing:,.2f})",
-                        value=False,
-                        key=f"ln_cot_{id_ruta}_otros",
+                    if val <= 0:
+                        continue
+                    val_show = val * tc if moneda_cot == "MXP" else val
+                    checked = st.checkbox(
+                        f"{nombre}: ${val_show:,.2f} {moneda_cot}",
+                        value=True,
+                        key=f"ln_cot_cobrar_{id_ruta}_{campo}",
                     )
-                    if checked_o:
-                        conceptos_seleccionados.append(
-                            {"nombre": "Otros Cargos", "valor_usd": otros_ing}
-                        )
-                else:
-                    st.caption("Sin extras registrados.")
+                    if checked:
+                        cobrar.append(campo)
+                    else:
+                        mostrar.append(campo)
 
-        filas_pdf.append({"ruta_label": ruta_label, "conceptos": conceptos_seleccionados})
+            with c2:
+                st.caption("Otros cargos extras:")
+                for nombre, campo in CONCEPTOS_MOSTRAR:
+                    val = safe(row.get(campo, 0))
+                    if val <= 0:
+                        st.caption("Sin extras registrados.")
+                        continue
+                    val_show = val * tc if moneda_cot == "MXP" else val
+                    checked_e = st.checkbox(
+                        f"{nombre}: ${val_show:,.2f} {moneda_cot}",
+                        value=False,
+                        key=f"ln_cot_cobrar_{id_ruta}_{campo}",
+                    )
+                    if checked_e:
+                        cobrar.append(campo)
+                    else:
+                        mostrar.append(campo)
 
-    # ══════════════════════════════════════════════════════════════
-    # 3. Datos del cliente
-    # ══════════════════════════════════════════════════════════════
+            rutas_config[ruta_lbl] = {"cobrar": cobrar, "mostrar": mostrar}
+
+    # ── Moneda y notas ────────────────────────────────────────────
     divider()
-    section_header("3.", "Datos del Cliente")
-    c1, c2 = st.columns(2)
-    cli_nombre = c1.text_input("Nombre del cliente *", key="ln_cot_cli")
-    cli_mail   = c2.text_input("Email del cliente",    key="ln_cot_cli_mail")
-    cli_dir    = st.text_input("Dirección (opcional)", key="ln_cot_cli_dir")
-
-    # ══════════════════════════════════════════════════════════════
-    # 4. Datos del emisor y moneda
-    # ══════════════════════════════════════════════════════════════
-    divider()
-    section_header("4.", "Emisor y Moneda")
-    e1, e2, e3 = st.columns(3)
-    emp_nombre = e1.text_input("Empresa emisora", value="Lincoln Freight LLC", key="ln_cot_emp")
-    emp_mail   = e2.text_input("Email empresa",   key="ln_cot_emp_mail")
-    emp_tel    = e3.text_input("Teléfono",        key="ln_cot_tel")
-
-    m1, m2, m3 = st.columns(3)
-    moneda    = m1.selectbox("Moneda", ["USD", "MXP"], key="ln_cot_moneda")
-    tc_raw    = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
-    tc_cot    = m2.number_input("Tipo de Cambio USD/MXP",
-                                 value=tc_raw, step=0.1, format="%.2f", key="ln_cot_tc")
-    fecha_cot = m3.date_input("Fecha de cotización", value=date.today(), key="ln_cot_fecha")
-
-    # ══════════════════════════════════════════════════════════════
-    # 5. Notas y generación
-    # ══════════════════════════════════════════════════════════════
-    divider()
-    notas = st.text_area(
-        "📝 Notas / Términos y Condiciones (opcional)",
-        placeholder="Ej: Vigencia 5 días hábiles. Sujeto a disponibilidad de unidades…",
-        height=80,
-        key="ln_cot_notas",
+    notas_default = (
+        "Precios sujetos a disponibilidad de unidades. "
+        "Cotización válida por 5 días hábiles. "
+        "No aplica IVA en servicios de exportación e importación (tasa 0)."
     )
+    notas = st.text_area("📝 Notas / Términos y Condiciones",
+                          value=notas_default, height=80, key="ln_cot_notas")
 
+    # ── Generar PDF ───────────────────────────────────────────────
     divider()
-    if st.button("📄 Generar PDF de Cotización", type="primary",
-                 use_container_width=True, key="ln_cot_gen"):
+    if st.button("📄 Generar Cotización PDF", type="primary",
+                 use_container_width=True, key="ln_cot_gen",
+                 disabled=(len(ids_sel) == 0 or not cliente_nombre.strip())):
 
-        if not cli_nombre.strip():
-            alert("error", "Ingresa el nombre del cliente.")
-            return
+        # Calcular páginas necesarias
+        lineas      = _contar_lineas(rutas_config, ids_sel, df)
+        num_paginas = _estimar_paginas(lineas)
 
-        tiene_conceptos = any(len(f["conceptos"]) > 0 for f in filas_pdf)
-        if not tiene_conceptos:
-            alert("warn", "Selecciona al menos un concepto para incluir en el PDF.")
-            return
+        pdf = PDF(
+            orientation="P", unit="in", format="Letter",
+            fecha_str=fecha.strftime("%d/%m/%Y"),
+            total_pages=num_paginas,
+        )
+        pdf.set_auto_page_break(auto=False)
+        pdf.add_page()
 
-        try:
-            pdf_bytes = _generar_pdf(
-                fecha_cot      = fecha_cot,
-                cli_nombre     = cli_nombre.strip(),
-                cli_dir        = cli_dir.strip(),
-                cli_mail       = cli_mail.strip(),
-                emp_nombre     = emp_nombre.strip(),
-                emp_mail       = emp_mail.strip(),
-                emp_tel        = emp_tel.strip(),
-                moneda         = moneda,
-                tc             = tc_cot,
-                filas          = filas_pdf,
-                notas          = notas,
-                logo_path      = _find_logo(),
-            )
-            fname = (
-                f"Cotizacion_Lincoln_{cli_nombre.strip().replace(' ','_')}_{fecha_cot}.pdf"
-            )
-            st.download_button(
-                "📥 Descargar Cotización",
-                data      = pdf_bytes,
-                file_name = fname,
-                mime      = "application/pdf",
-                use_container_width=True,
-                key       = "ln_cot_dl",
-            )
-            alert("success", "✅ PDF generado exitosamente.")
-        except Exception as e:
-            alert("error", f"Error generando PDF: {e}")
+        # ── Datos cliente / empresa en pág 1 ─────────────────────
+        pdf.set_body_font(size=10)
+        pdf.set_text_color(0, 0, 0)
+
+        # Cliente
+        pdf.set_xy(0.85, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(cliente_nombre),    align="L")
+        pdf.set_xy(0.85, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(cliente_direccion), align="L")
+        pdf.set_xy(0.85, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(cliente_mail),      align="L")
+        pdf.set_xy(0.85, 3.60); pdf.cell(1.35, 0.31, safe_text(cliente_telefono), align="L")
+        pdf.set_xy(2.39, 3.60); pdf.cell(0.76, 0.31, safe_text(cliente_ext),      align="C")
+
+        # Empresa
+        pdf.set_xy(4.76, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(empresa_nombre),    align="R")
+        pdf.set_xy(4.76, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(empresa_direccion), align="R")
+        pdf.set_xy(4.76, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(empresa_mail),      align="R")
+        pdf.set_xy(5.23, 3.60); pdf.cell(1.35, 0.31, safe_text(empresa_telefono), align="R")
+        pdf.set_xy(7.03, 3.60); pdf.cell(0.76, 0.31, safe_text(empresa_ext),      align="C")
+
+        # ── Conceptos ─────────────────────────────────────────────
+        pdf.set_body_font(size=7)
+        y             = 4.50
+        y_max_pag1    = 8.60
+        y_max_otras   = 9.20
+        total_global  = 0.0
+        pagina_actual = 1
+
+        for ruta_lbl in ids_sel:
+            id_ruta = ruta_lbl.split(" | ")[0]
+            if id_ruta not in df.index:
+                continue
+
+            row      = df.loc[id_ruta]
+            tipo_r   = str(row.get("Tipo", ""))
+            origen   = str(row.get("Origen", ""))
+            destino  = str(row.get("Destino", ""))
+            y_max    = y_max_pag1 if pagina_actual == 1 else y_max_otras
+
+            # Salto si no hay espacio para el header de ruta
+            if y + 0.35 > y_max:
+                pdf.add_page()
+                pagina_actual += 1
+                y = 2.00
+
+            # Header de ruta (gris)
+            pdf.set_body_font(bold=True, size=7)
+            pdf.set_text_color(128, 128, 128)
+            pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(tipo_r), align="L")
+            y = pdf.get_y()
+            pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(f"{origen} - {destino}"), align="L")
+            y = pdf.get_y() + 0.05
+
+            cfg      = rutas_config.get(ruta_lbl, {"cobrar": [], "mostrar": []})
+            todos    = [(c, True) for c in cfg["cobrar"]] + [(c, False) for c in cfg["mostrar"]]
+
+            for campo, es_cobrado in todos:
+                val = safe(row.get(campo, 0))
+                if val <= 0:
+                    continue
+
+                y_max = y_max_pag1 if pagina_actual == 1 else y_max_otras
+                if y > y_max:
+                    pdf.add_page()
+                    pagina_actual += 1
+                    y = 1.40
+
+                val_show = val * tc if moneda_cot == "MXP" else val
+
+                # Color: azul si se cobra, gris si solo visual
+                if es_cobrado:
+                    pdf.set_text_color(37, 45, 128)
+                    pdf.set_body_font(bold=False, size=7)
+                else:
+                    pdf.set_text_color(150, 150, 150)
+                    pdf.set_body_font(bold=False, size=7)
+
+                # Nombre del campo
+                label = campo.replace("_", " ").replace("Ingreso ", "").replace(" USA", "").title()
+                label = safe_text(label[:32])
+
+                pdf.set_xy(0.85, y); pdf.cell(3.20, 0.15, label, border=0, align="L")
+                pdf.set_xy(4.00, y); pdf.cell(0.70, 0.15, "", border=0, align="C")  # KM (N/A para Lincoln)
+                pdf.set_xy(5.10, y); pdf.cell(0.55, 0.15, "1" if es_cobrado else "", border=0, align="C")
+                pdf.set_xy(5.85, y); pdf.cell(0.65, 0.15, moneda_cot, border=0, align="C")
+                pdf.set_xy(6.55, y); pdf.cell(1.05, 0.15, f"${val_show:,.2f}", border=0, align="R")
+
+                if es_cobrado:
+                    total_global += val_show
+
+                y += 0.18
+
+        # ── Total (solo en última página) ─────────────────────────
+        while pdf.page_no() < num_paginas:
+            pdf.add_page()
+
+        pdf.set_body_font(bold=True, size=8)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_xy(5.85, 9.13); pdf.cell(0.70, 0.15, moneda_cot,            border=0, align="C")
+        pdf.set_xy(6.55, 9.13); pdf.cell(1.00, 0.15, f"${total_global:,.2f}", border=0, align="R")
+
+        # Notas
+        pdf.set_body_font(size=6.5)
+        pdf.set_text_color(100, 100, 100)
+        pdf.set_xy(0.90, 9.60); pdf.multi_cell(4.50, 0.12, safe_text(notas), align="L")
+
+        # ── Descargar ─────────────────────────────────────────────
+        nombre_cliente = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
+        file_name      = f"Cotizacion_Lincoln_{nombre_cliente}_{fecha.strftime('%d-%m-%Y')}.pdf"
+        pdf_bytes      = pdf.output(dest="S").encode("latin-1")
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("📄 Páginas",   num_paginas)
+        c2.metric("📊 Líneas",    lineas)
+        c3.metric("💾 Tamaño",   f"{len(pdf_bytes)/1024:.1f} KB")
+
+        st.success("✅ PDF generado exitosamente.")
+        st.download_button(
+            "📥 Descargar Cotización PDF",
+            data=pdf_bytes,
+            file_name=file_name,
+            mime="application/pdf",
+            type="primary",
+            key="ln_cot_dl",
+        )
