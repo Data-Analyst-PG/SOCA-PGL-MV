@@ -12,6 +12,10 @@ Pago owner:
   Vacío   = Miles_Empty × PxM_vacio
   (Miles_Load es solo para ingreso Desglosado — no se usa en pago owner)
 
+Fuel Owner (opcional):
+  Si fuel_owner=True, el valor de Fuel (Miles_Load × CXM_Fuel) se suma
+  como costo adicional al owner — aumenta Costo_Directo y reduce margen.
+
 Extras:
   extras_costo = extras NO cobrados al cliente (costo puro)
   Extras cobrados al cliente ya van sumados en flete_usa al llamar.
@@ -256,6 +260,7 @@ def calcular_ruta_setlogis(
     extras_costo: float,
     modo_costo_indirecto: str,
     valores: dict,
+    fuel_owner: bool = False,
 ) -> dict:
 
     v = valores
@@ -274,6 +279,11 @@ def calcular_ruta_setlogis(
     pago_owner_cargado = millas_short  * pxm_cargado
     pago_owner_vacio   = millas_vacias * pxm_vacio_v
     pago_owner_total   = pago_owner_cargado + pago_owner_vacio
+
+    # ── FUEL OWNER ────────────────────────────────────────────────────────────
+    # Si fuel_owner está activo, el fuel (Miles_Load × CXM_Fuel) se paga al owner
+    # El monto ya viene calculado en el parámetro `fuel` (Flete_USA lo excluye)
+    pago_fuel_owner = safe(fuel) if fuel_owner else 0.0
 
     # ── FLETE / FUEL ─────────────────────────────────────────────────────────
     flete_fuel = safe(flete_usa) + safe(fuel)
@@ -299,6 +309,7 @@ def calcular_ruta_setlogis(
     extras_costo_total  = safe(extras_costo)
     costo_directo_total = (
         pago_owner_total
+        + pago_fuel_owner
         + costo_cruce
         + costo_mx_calc
         + extras_costo_total
@@ -359,6 +370,8 @@ def calcular_ruta_setlogis(
         "Pago_Owner_Cargado":  pago_owner_cargado,
         "Pago_Owner_Vacio":    pago_owner_vacio,
         "Pago_Owner_Total":    pago_owner_total,
+        "Fuel_Owner":          fuel_owner,
+        "Pago_Fuel_Owner":     pago_fuel_owner,
         "Extras_Costo":        extras_costo,
         "Extras_Costo_Total":  extras_costo_total,
         "Costo_Directo":       costo_directo_total,
