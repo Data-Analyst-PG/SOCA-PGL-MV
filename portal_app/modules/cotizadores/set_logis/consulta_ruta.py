@@ -309,6 +309,7 @@ def render() -> None:
         modo_costo_indirecto = "CXM",
         valores              = vals_sim if es_sim else valores,
         fuel_owner           = bool(ruta.get("Fuel_Owner", False)),
+        incluye_cruce        = bool(ruta.get("Incluye_Cruce", False)),
     )
 
     divider()
