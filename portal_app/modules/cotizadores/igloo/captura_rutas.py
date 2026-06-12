@@ -1,8 +1,8 @@
 """
 captura_rutas.py — Cotizador Igloo
-Layout limpio homologado con Lincoln y Set Logis:
-  - Un solo section_header fuera del form
-  - Secciones internas con st.caption() como separador ligero
+Layout homologado con Lincoln:
+  - Secciones con st.markdown("### 🔹 Título") dentro del form
+  - Sin section_header() internos
   - Checkboxes individuales por extra
   - "Sencillo" en lugar de "Operador"
   - Sin st.title()
@@ -143,34 +143,30 @@ def render():
     with st.form("igloo_captura_ruta"):
 
         # ── Información General ───────────────────────────────────
-        st.caption("**INFORMACIÓN GENERAL**")
+        st.markdown("### 📋 Información General")
         c1, c2, c3, c4 = st.columns(4)
-        fecha      = c1.date_input("Fecha", value=datetime.today(), key="igloo_fecha")
-        tipo       = c2.selectbox("Tipo de Ruta", TIPOS_RUTA, key="igloo_tipo")
-        cliente    = c3.text_input("Nombre Cliente", key="igloo_cliente", placeholder="NOMBRE DE LA EMPRESA")
-        modo_viaje = c4.selectbox("Modo de Viaje", ["Sencillo", "Team"], key="igloo_modo")
-
-        st.write("")
+        fecha      = c1.date_input("📅 Fecha", value=datetime.today(), key="igloo_fecha")
+        tipo       = c2.selectbox("🚛 Tipo de Ruta", TIPOS_RUTA, key="igloo_tipo")
+        cliente    = c3.text_input("🏢 Nombre Cliente", key="igloo_cliente", placeholder="NOMBRE DE LA EMPRESA")
+        modo_viaje = c4.selectbox("👥 Modo de Viaje", ["Sencillo", "Team"], key="igloo_modo")
 
         # ── Cruce ─────────────────────────────────────────────────
-        st.caption("**CRUCE**")
+        st.markdown("### 🛂 Cruce")
         c1, c2, c3, c4 = st.columns(4)
         moneda_cruce       = c1.selectbox("Moneda Ingreso Cruce", ["MXP", "USD"], key="igloo_mon_cruce")
         moneda_costo_cruce = c2.selectbox("Moneda Costo Cruce",   ["MXP", "USD"], key="igloo_mon_cc")
         ingreso_cruce      = c3.number_input("Ingreso Cruce",  min_value=0.0, key="igloo_ing_cruce")
         costo_cruce        = c4.number_input("Costo Cruce",    min_value=0.0, key="igloo_cc")
 
-        st.write("")
-
         # ── Ruta Mexicana ─────────────────────────────────────────
-        st.caption("**RUTA MEXICANA**")
+        st.markdown("### 🇲🇽 Ruta Mexicana")
         c1, c2, c3, c4 = st.columns(4)
-        origen  = c1.text_input("Origen",  key="igloo_origen",  placeholder="CIUDAD, ESTADO")
-        destino = c2.text_input("Destino", key="igloo_destino", placeholder="CIUDAD, ESTADO")
-        km      = c3.number_input("Kilómetros",    min_value=0.0, key="igloo_km")
-        casetas = c4.number_input("Casetas (MXP)", min_value=0.0, key="igloo_casetas")
+        origen  = c1.text_input("📍 Origen",  key="igloo_origen",  placeholder="CIUDAD, ESTADO")
+        destino = c2.text_input("📍 Destino", key="igloo_destino", placeholder="CIUDAD, ESTADO")
+        km      = c3.number_input("📏 Kilómetros",    min_value=0.0, key="igloo_km")
+        casetas = c4.number_input("🛣️ Casetas (MXP)", min_value=0.0, key="igloo_casetas")
 
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, _ = st.columns(4)
         moneda_ingreso = c1.selectbox("Moneda Ingreso Flete", ["MXP", "USD"], key="igloo_mon_ing")
         ingreso_flete  = c2.number_input("Ingreso Flete", min_value=0.0, key="igloo_ing_flete")
 
@@ -184,28 +180,25 @@ def render():
         else:
             modo_pago_dom = "km"
 
-        st.write("")
-
         # ── Termo y Costos Fijos ──────────────────────────────────
-        st.caption("**TERMO Y COSTOS FIJOS**")
+        st.markdown("### 🌡️ Termo y Costos Fijos")
         c1, c2, c3, c4 = st.columns(4)
-        horas_termo      = c1.number_input("Horas Termo",            min_value=0.0, key="igloo_horas")
-        lavado_termo     = c2.number_input("Lavado Termo (MXP)",     min_value=0.0, key="igloo_lav")
-        movimiento_local = c3.number_input("Movimiento Local (MXP)", min_value=0.0, key="igloo_mov")
-        puntualidad      = c4.number_input("Puntualidad (MXP)",      min_value=0.0, key="igloo_punt")
+        horas_termo      = c1.number_input("⏱️ Horas Termo",            min_value=0.0, key="igloo_horas")
+        lavado_termo     = c2.number_input("🧼 Lavado Termo (MXP)",     min_value=0.0, key="igloo_lav")
+        movimiento_local = c3.number_input("🔄 Movimiento Local (MXP)", min_value=0.0, key="igloo_mov")
+        puntualidad      = c4.number_input("⏰ Puntualidad (MXP)",      min_value=0.0, key="igloo_punt")
 
         c1, c2, c3, c4 = st.columns(4)
-        pension      = c1.number_input("Pensión (MXP)",     min_value=0.0, key="igloo_pens")
-        estancia     = c2.number_input("Estancia (MXP)",    min_value=0.0, key="igloo_est")
-        fianza_termo = c3.number_input("Fianza Termo (MXP)", min_value=0.0, key="igloo_fianza")
-        renta_termo  = c4.number_input("Renta Termo (MXP)",  min_value=0.0, key="igloo_renta")
-
-        st.write("")
+        pension      = c1.number_input("🏨 Pensión (MXP)",      min_value=0.0, key="igloo_pens")
+        estancia     = c2.number_input("🛌 Estancia (MXP)",     min_value=0.0, key="igloo_est")
+        fianza_termo = c3.number_input("🔒 Fianza Termo (MXP)", min_value=0.0, key="igloo_fianza")
+        renta_termo  = c4.number_input("📦 Renta Termo (MXP)",  min_value=0.0, key="igloo_renta")
 
         # ── Otros Costos ──────────────────────────────────────────
-        st.caption("**OTROS COSTOS** — Marca 'Cobro' si el concepto se le cobra al cliente (suma al ingreso).")
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        st.markdown("### 🧾 Otros Costos")
+        st.caption("Captura el monto del costo. Marca **'Cobro'** si también se le cobra al cliente (suma al ingreso).")
 
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
         with c1:
             pistas_extra = st.number_input("Pistas Extra (MXP)", min_value=0.0, key="igloo_pistas")
             cobra_pistas = st.checkbox("Cobro", key="igloo_cobra_pistas")
@@ -238,44 +231,44 @@ def render():
 
         st.session_state.igloo_revisar_ruta  = True
         st.session_state.igloo_datos_captura = {
-            "fecha":             fecha,
-            "tipo":              tipo,
-            "cliente":           cliente_norm,
-            "origen":            origen_norm,
-            "destino":           destino_norm,
-            "modo_viaje":        modo_viaje,
-            "km":                km,
-            "moneda_ingreso":    moneda_ingreso,
-            "ingreso_flete":     ingreso_flete,
-            "moneda_cruce":      moneda_cruce,
-            "ingreso_cruce":     ingreso_cruce,
+            "fecha":              fecha,
+            "tipo":               tipo,
+            "cliente":            cliente_norm,
+            "origen":             origen_norm,
+            "destino":            destino_norm,
+            "modo_viaje":         modo_viaje,
+            "km":                 km,
+            "moneda_ingreso":     moneda_ingreso,
+            "ingreso_flete":      ingreso_flete,
+            "moneda_cruce":       moneda_cruce,
+            "ingreso_cruce":      ingreso_cruce,
             "moneda_costo_cruce": moneda_costo_cruce,
-            "costo_cruce":       costo_cruce,
-            "horas_termo":       horas_termo,
-            "lavado_termo":      lavado_termo,
-            "movimiento_local":  movimiento_local,
-            "puntualidad":       puntualidad,
-            "pension":           pension,
-            "estancia":          estancia,
-            "fianza_termo":      fianza_termo,
-            "renta_termo":       renta_termo,
-            "casetas":           casetas,
-            "pistas_extra":      pistas_extra,
-            "cobra_pistas":      cobra_pistas,
-            "stop":              stop,
-            "cobra_stop":        cobra_stop,
-            "falso":             falso,
-            "cobra_falso":       cobra_falso,
-            "gatas":             gatas,
-            "cobra_gatas":       cobra_gatas,
-            "accesorios":        accesorios,
-            "cobra_acc":         cobra_acc,
-            "guias":             guias,
-            "cobra_guias":       cobra_guias,
-            "modo_pago_dom":     modo_pago_dom,
+            "costo_cruce":        costo_cruce,
+            "horas_termo":        horas_termo,
+            "lavado_termo":       lavado_termo,
+            "movimiento_local":   movimiento_local,
+            "puntualidad":        puntualidad,
+            "pension":            pension,
+            "estancia":           estancia,
+            "fianza_termo":       fianza_termo,
+            "renta_termo":        renta_termo,
+            "casetas":            casetas,
+            "pistas_extra":       pistas_extra,
+            "cobra_pistas":       cobra_pistas,
+            "stop":               stop,
+            "cobra_stop":         cobra_stop,
+            "falso":              falso,
+            "cobra_falso":        cobra_falso,
+            "gatas":              gatas,
+            "cobra_gatas":        cobra_gatas,
+            "accesorios":         accesorios,
+            "cobra_acc":          cobra_acc,
+            "guias":              guias,
+            "cobra_guias":        cobra_guias,
+            "modo_pago_dom":      modo_pago_dom,
         }
 
-        # Extras: siempre al costo; al ingreso solo si cobrado
+        # Extras: siempre al costo; al ingreso solo si cobrado individualmente
         extras = calcular_extras(pistas_extra, stop, falso, gatas, accesorios, guias)
         ingreso_extras_cobrados = (
             (pistas_extra if cobra_pistas else 0.0) +
@@ -416,7 +409,7 @@ def render():
                 "Cobra_Guias":            d.get("cobra_guias",   False),
                 # Legacy conservada
                 "Extras_Cobrados":        False,
-                # Parámetros
+                # Parámetros guardados con la ruta
                 "Costo Diesel":           float(valores.get("Costo Diesel", 24.0)),
                 "Rendimiento Camion":     float(valores.get("Rendimiento Camion", 2.5)),
                 "Rendimiento Termo":      float(valores.get("Rendimiento Termo", 3.0)),
