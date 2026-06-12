@@ -261,6 +261,7 @@ def calcular_ruta_setlogis(
     modo_costo_indirecto: str,
     valores: dict,
     fuel_owner: bool = False,
+    incluye_cruce: bool = False,
 ) -> dict:
 
     v = valores
@@ -289,8 +290,10 @@ def calcular_ruta_setlogis(
     flete_fuel = safe(flete_usa) + safe(fuel)
 
     # ── CRUCE ────────────────────────────────────────────────────────────────
-    if tipo_cruce == "Propio":
-        key_cruce  = "Cruce Propio Cargado" if tipo_carga_cruce == "Cargado" else "Cruce Propio Vacio"
+    if not incluye_cruce:
+        costo_cruce = 0.0
+    elif tipo_cruce == "Propio":
+        key_cruce   = "Cruce Propio Cargado" if tipo_carga_cruce == "Cargado" else "Cruce Propio Vacio"
         costo_cruce = safe(v.get(key_cruce, 80.0))
     else:
         costo_cruce = safe(costo_cruce_externo)
