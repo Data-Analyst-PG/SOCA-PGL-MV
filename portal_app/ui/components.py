@@ -836,6 +836,8 @@ def desglose_ruta(
             (f"Owner Cargado ({sm:.0f} mi × ${pxc:.4f})", _s("Pago_Owner_Cargado")),
             (f"Owner Vacío ({me:.0f} mi × ${pxv:.4f})",   _s("Pago_Owner_Vacio")),
         ]
+        if _s("Pago_Fuel_Owner") > 0:
+            filas_costo_americana.append(("⛽ Fuel al Owner", _s("Pago_Fuel_Owner")))
         if _s("Extras_Costo") > 0:
             filas_costo_americana.append(("Extras (no cobrados)", _s("Extras_Costo")))
         filas_costo_americana.append(("Costo Indirecto", _s("Costo_Indirecto")))
