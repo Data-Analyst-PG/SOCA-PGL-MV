@@ -459,6 +459,7 @@ def render() -> None:
                 modo_costo_indirecto = modo_ci,
                 valores              = valores,
                 fuel_owner           = fuel_owner_ed,
+                incluye_cruce        = incluye_cruce and not es_empty,
             )
 
             r["Modalidad"]     = modalidad
