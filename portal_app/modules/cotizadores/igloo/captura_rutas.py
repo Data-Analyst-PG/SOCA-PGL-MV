@@ -1,11 +1,11 @@
 """
 captura_rutas.py — Cotizador Igloo
-Layout reorganizado por secciones (homologado con Lincoln y Set Logis):
-  - Info General / Cruce / Ruta Mexicana / Termo y Costos Fijos / Otros Costos
-  - Checkbox de cobro INDIVIDUAL por cada extra (reemplaza el global)
-  - "Sencillo" en lugar de "Operador" en Modo de Viaje
-  - Resultados con kpi_row() + semaforos_ruta() via mostrar_resultados_utilidad()
-  - Sin st.title(), el banner lo pone el router
+Layout limpio homologado con Lincoln y Set Logis:
+  - Un solo section_header fuera del form
+  - Secciones internas con st.caption() como separador ligero
+  - Checkboxes individuales por extra
+  - "Sencillo" en lugar de "Operador"
+  - Sin st.title()
 """
 
 import os
@@ -70,7 +70,6 @@ def generar_nuevo_id(table_name: str) -> str:
 
 
 def normalizar_texto(texto):
-    """Normaliza texto a mayúsculas sin espacios dobles."""
     if not texto:
         return ""
     texto = str(texto).upper().strip()
@@ -113,7 +112,6 @@ def render():
 
     st.session_state.setdefault("igloo_revisar_ruta", False)
 
-    # Modal de éxito si acaba de guardar
     if st.session_state.get("igloo_mostrar_modal") and st.session_state.get("igloo_ruta_guardada_id"):
         _modal_guardado(st.session_state["igloo_ruta_guardada_id"])
 
@@ -144,42 +142,41 @@ def render():
     # ══════════════════════════════════════════════════════════════
     with st.form("igloo_captura_ruta"):
 
-        # ── Sección 1: Información General ───────────────────────
-        section_header("📋", "Información General")
+        # ── Información General ───────────────────────────────────
+        st.caption("**INFORMACIÓN GENERAL**")
         c1, c2, c3, c4 = st.columns(4)
         fecha      = c1.date_input("Fecha", value=datetime.today(), key="igloo_fecha")
         tipo       = c2.selectbox("Tipo de Ruta", TIPOS_RUTA, key="igloo_tipo")
         cliente    = c3.text_input("Nombre Cliente", key="igloo_cliente", placeholder="NOMBRE DE LA EMPRESA")
         modo_viaje = c4.selectbox("Modo de Viaje", ["Sencillo", "Team"], key="igloo_modo")
 
-        divider()
+        st.write("")
 
-        # ── Sección 2: Cruce ──────────────────────────────────────
-        section_header("🛂", "Cruce")
+        # ── Cruce ─────────────────────────────────────────────────
+        st.caption("**CRUCE**")
         c1, c2, c3, c4 = st.columns(4)
         moneda_cruce       = c1.selectbox("Moneda Ingreso Cruce", ["MXP", "USD"], key="igloo_mon_cruce")
         moneda_costo_cruce = c2.selectbox("Moneda Costo Cruce",   ["MXP", "USD"], key="igloo_mon_cc")
         ingreso_cruce      = c3.number_input("Ingreso Cruce",  min_value=0.0, key="igloo_ing_cruce")
         costo_cruce        = c4.number_input("Costo Cruce",    min_value=0.0, key="igloo_cc")
 
-        divider()
+        st.write("")
 
-        # ── Sección 3: Ruta Mexicana ──────────────────────────────
-        section_header("🇲🇽", "Ruta Mexicana")
+        # ── Ruta Mexicana ─────────────────────────────────────────
+        st.caption("**RUTA MEXICANA**")
         c1, c2, c3, c4 = st.columns(4)
-        origen         = c1.text_input("Origen",  key="igloo_origen",  placeholder="CIUDAD, ESTADO")
-        destino        = c2.text_input("Destino", key="igloo_destino", placeholder="CIUDAD, ESTADO")
-        km             = c3.number_input("Kilómetros", min_value=0.0, key="igloo_km")
-        casetas        = c4.number_input("Casetas (MXP)", min_value=0.0, key="igloo_casetas")
+        origen  = c1.text_input("Origen",  key="igloo_origen",  placeholder="CIUDAD, ESTADO")
+        destino = c2.text_input("Destino", key="igloo_destino", placeholder="CIUDAD, ESTADO")
+        km      = c3.number_input("Kilómetros",    min_value=0.0, key="igloo_km")
+        casetas = c4.number_input("Casetas (MXP)", min_value=0.0, key="igloo_casetas")
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3, c4 = st.columns(4)
         moneda_ingreso = c1.selectbox("Moneda Ingreso Flete", ["MXP", "USD"], key="igloo_mon_ing")
         ingreso_flete  = c2.number_input("Ingreso Flete", min_value=0.0, key="igloo_ing_flete")
 
-        # DOM MEX: modo de pago al operador
         if tipo == "DOM MEX":
-            modo_pago_dom = st.selectbox(
-                "Modo de pago al operador (DOM MEX)",
+            modo_pago_dom = c3.selectbox(
+                "Modo pago operador",
                 ["km", "fijo"],
                 format_func=lambda x: "Por kilómetro" if x == "km" else "Pago fijo",
                 key="igloo_modo_pago_dom",
@@ -187,49 +184,48 @@ def render():
         else:
             modo_pago_dom = "km"
 
-        divider()
+        st.write("")
 
-        # ── Sección 4: Termo y Costos Fijos ──────────────────────
-        section_header("🌡️", "Termo y Costos Fijos")
+        # ── Termo y Costos Fijos ──────────────────────────────────
+        st.caption("**TERMO Y COSTOS FIJOS**")
         c1, c2, c3, c4 = st.columns(4)
-        horas_termo      = c1.number_input("Horas Termo",           min_value=0.0, key="igloo_horas")
-        lavado_termo     = c2.number_input("Lavado Termo (MXP)",    min_value=0.0, key="igloo_lav")
+        horas_termo      = c1.number_input("Horas Termo",            min_value=0.0, key="igloo_horas")
+        lavado_termo     = c2.number_input("Lavado Termo (MXP)",     min_value=0.0, key="igloo_lav")
         movimiento_local = c3.number_input("Movimiento Local (MXP)", min_value=0.0, key="igloo_mov")
-        puntualidad      = c4.number_input("Puntualidad (MXP)",     min_value=0.0, key="igloo_punt")
+        puntualidad      = c4.number_input("Puntualidad (MXP)",      min_value=0.0, key="igloo_punt")
 
         c1, c2, c3, c4 = st.columns(4)
-        pension      = c1.number_input("Pensión (MXP)",    min_value=0.0, key="igloo_pens")
-        estancia     = c2.number_input("Estancia (MXP)",   min_value=0.0, key="igloo_est")
+        pension      = c1.number_input("Pensión (MXP)",     min_value=0.0, key="igloo_pens")
+        estancia     = c2.number_input("Estancia (MXP)",    min_value=0.0, key="igloo_est")
         fianza_termo = c3.number_input("Fianza Termo (MXP)", min_value=0.0, key="igloo_fianza")
-        renta_termo  = c4.number_input("Renta Termo (MXP)", min_value=0.0, key="igloo_renta")
+        renta_termo  = c4.number_input("Renta Termo (MXP)",  min_value=0.0, key="igloo_renta")
 
-        divider()
+        st.write("")
 
-        # ── Sección 5: Otros Costos (checkbox individual por extra) ──
-        section_header("🧾", "Otros Costos")
-        st.caption("Captura el monto del costo. Marca **'Cobro'** si también se le cobra al cliente (suma al ingreso).")
+        # ── Otros Costos ──────────────────────────────────────────
+        st.caption("**OTROS COSTOS** — Marca 'Cobro' si el concepto se le cobra al cliente (suma al ingreso).")
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
 
-        c1, c2, c3, c4 = st.columns(4)
-        pistas_extra  = c1.number_input("Pistas Extra (MXP)",  min_value=0.0, key="igloo_pistas")
-        cobra_pistas  = c1.checkbox("Cobro", key="igloo_cobra_pistas")
+        with c1:
+            pistas_extra = st.number_input("Pistas Extra (MXP)", min_value=0.0, key="igloo_pistas")
+            cobra_pistas = st.checkbox("Cobro", key="igloo_cobra_pistas")
+        with c2:
+            stop         = st.number_input("Stop (MXP)",         min_value=0.0, key="igloo_stop")
+            cobra_stop   = st.checkbox("Cobro", key="igloo_cobra_stop")
+        with c3:
+            falso        = st.number_input("Falso (MXP)",        min_value=0.0, key="igloo_falso")
+            cobra_falso  = st.checkbox("Cobro", key="igloo_cobra_falso")
+        with c4:
+            gatas        = st.number_input("Gatas (MXP)",        min_value=0.0, key="igloo_gatas")
+            cobra_gatas  = st.checkbox("Cobro", key="igloo_cobra_gatas")
+        with c5:
+            accesorios   = st.number_input("Accesorios (MXP)",   min_value=0.0, key="igloo_acc")
+            cobra_acc    = st.checkbox("Cobro", key="igloo_cobra_acc")
+        with c6:
+            guias        = st.number_input("Guías (MXP)",        min_value=0.0, key="igloo_guias")
+            cobra_guias  = st.checkbox("Cobro", key="igloo_cobra_guias")
 
-        stop          = c2.number_input("Stop (MXP)",          min_value=0.0, key="igloo_stop")
-        cobra_stop    = c2.checkbox("Cobro", key="igloo_cobra_stop")
-
-        gatas         = c3.number_input("Gatas (MXP)",         min_value=0.0, key="igloo_gatas")
-        cobra_gatas   = c3.checkbox("Cobro", key="igloo_cobra_gatas")
-
-        accesorios    = c4.number_input("Accesorios (MXP)",    min_value=0.0, key="igloo_acc")
-        cobra_acc     = c4.checkbox("Cobro", key="igloo_cobra_acc")
-
-        c1, c2, _, _ = st.columns(4)
-        falso         = c1.number_input("Falso (MXP)",         min_value=0.0, key="igloo_falso")
-        cobra_falso   = c1.checkbox("Cobro", key="igloo_cobra_falso")
-
-        guias         = c2.number_input("Guías (MXP)",         min_value=0.0, key="igloo_guias")
-        cobra_guias   = c2.checkbox("Cobro", key="igloo_cobra_guias")
-
-        divider()
+        st.write("")
         revisar = st.form_submit_button("🔍 Revisar Ruta", use_container_width=True)
 
     # ══════════════════════════════════════════════════════════════
@@ -242,13 +238,13 @@ def render():
 
         st.session_state.igloo_revisar_ruta  = True
         st.session_state.igloo_datos_captura = {
-            "fecha":       fecha,
-            "tipo":        tipo,
-            "cliente":     cliente_norm,
-            "origen":      origen_norm,
-            "destino":     destino_norm,
-            "modo_viaje":  modo_viaje,
-            "km":          km,
+            "fecha":             fecha,
+            "tipo":              tipo,
+            "cliente":           cliente_norm,
+            "origen":            origen_norm,
+            "destino":           destino_norm,
+            "modo_viaje":        modo_viaje,
+            "km":                km,
             "moneda_ingreso":    moneda_ingreso,
             "ingreso_flete":     ingreso_flete,
             "moneda_cruce":      moneda_cruce,
@@ -279,11 +275,8 @@ def render():
             "modo_pago_dom":     modo_pago_dom,
         }
 
-        # ── Cálculo de extras ─────────────────────────────────────
-        # Cada extra suma SIEMPRE al costo.
-        # Solo suma al ingreso si su checkbox individual está marcado.
+        # Extras: siempre al costo; al ingreso solo si cobrado
         extras = calcular_extras(pistas_extra, stop, falso, gatas, accesorios, guias)
-
         ingreso_extras_cobrados = (
             (pistas_extra if cobra_pistas else 0.0) +
             (stop         if cobra_stop   else 0.0) +
@@ -293,7 +286,6 @@ def render():
             (guias        if cobra_guias  else 0.0)
         )
 
-        # ── Cálculo principal ─────────────────────────────────────
         factor          = 2 if modo_viaje == "Team" else 1
         puntualidad_val = puntualidad * factor
 
@@ -305,7 +297,7 @@ def render():
         tc_usd        = float(valores.get("Tipo de cambio USD", 19.5))
         ingreso_total = ingreso_flete * (tc_usd if moneda_ingreso == "USD" else 1)
         ingreso_total += ingreso_cruce * (tc_usd if moneda_cruce  == "USD" else 1)
-        ingreso_total += ingreso_extras_cobrados   # solo los marcados como cobro
+        ingreso_total += ingreso_extras_cobrados
 
         costo_cruce_convertido      = costo_cruce * (tc_usd if moneda_costo_cruce == "USD" else 1)
         diesel_camion, diesel_termo = calcular_diesel(km, horas_termo, valores)
@@ -340,7 +332,6 @@ def render():
             "porcentaje_neta":          util["porcentaje_neta"],
         }
 
-        # ── Mostrar resultados ────────────────────────────────────
         mostrar_resultados_utilidad(
             st, ingreso_total, costo_total,
             util["utilidad_bruta"], util["costos_indirectos"],
@@ -368,72 +359,72 @@ def render():
                 return
 
             nueva_ruta = {
-                "ID_Ruta":  nuevo_id,
-                "Fecha":    str(d["fecha"]),
-                "Tipo":     d["tipo"],
-                "Cliente":  d["cliente"],
-                "Origen":   d["origen"],
-                "Destino":  d["destino"],
-                "Modo de Viaje":      d["modo_viaje"],
-                "KM":                 d["km"],
-                "Moneda":             d["moneda_ingreso"],
-                "Ingreso_Original":   d["ingreso_flete"],
-                "Tipo de cambio":     calc.get("tipo_cambio_flete"),
-                "Ingreso Flete":      calc.get("ingreso_flete_convertido"),
-                "Moneda_Cruce":       d["moneda_cruce"],
-                "Cruce_Original":     d["ingreso_cruce"],
-                "Tipo cambio Cruce":  calc.get("tipo_cambio_cruce"),
-                "Ingreso Cruce":      calc.get("ingreso_cruce_convertido"),
-                "Moneda Costo Cruce": d["moneda_costo_cruce"],
-                "Costo Cruce":        d["costo_cruce"],
+                "ID_Ruta":                nuevo_id,
+                "Fecha":                  str(d["fecha"]),
+                "Tipo":                   d["tipo"],
+                "Cliente":                d["cliente"],
+                "Origen":                 d["origen"],
+                "Destino":                d["destino"],
+                "Modo de Viaje":          d["modo_viaje"],
+                "KM":                     d["km"],
+                "Moneda":                 d["moneda_ingreso"],
+                "Ingreso_Original":       d["ingreso_flete"],
+                "Tipo de cambio":         calc.get("tipo_cambio_flete"),
+                "Ingreso Flete":          calc.get("ingreso_flete_convertido"),
+                "Moneda_Cruce":           d["moneda_cruce"],
+                "Cruce_Original":         d["ingreso_cruce"],
+                "Tipo cambio Cruce":      calc.get("tipo_cambio_cruce"),
+                "Ingreso Cruce":          calc.get("ingreso_cruce_convertido"),
+                "Moneda Costo Cruce":     d["moneda_costo_cruce"],
+                "Costo Cruce":            d["costo_cruce"],
                 "Costo Cruce Convertido": calc.get("costo_cruce_convertido"),
-                "Ingreso Total":      calc.get("ingreso_total"),
-                "Pago por KM":        calc.get("pago_km"),
-                "Sueldo_Operador":    calc.get("sueldo"),
-                "Bono":               calc.get("bono"),
-                "Casetas":            d["casetas"],
-                "Horas_Termo":        d["horas_termo"],
-                "Lavado_Termo":       d["lavado_termo"],
-                "Movimiento_Local":   d["movimiento_local"],
-                "Puntualidad":        calc.get("puntualidad_val"),
-                "Pension":            d["pension"],
-                "Estancia":           d["estancia"],
-                "Fianza_Termo":       d["fianza_termo"],
-                "Renta_Termo":        d["renta_termo"],
-                "Pistas_Extra":       d["pistas_extra"],
-                "Stop":               d["stop"],
-                "Falso":              d["falso"],
-                "Gatas":              d["gatas"],
-                "Accesorios":         d["accesorios"],
-                "Guias":              d["guias"],
-                "Costo_Diesel_Camion": calc.get("costo_diesel_camion"),
-                "Costo_Diesel_Termo":  calc.get("costo_diesel_termo"),
-                "Costo_Extras":        calc.get("extras"),
-                "Costo_Total_Ruta":    calc.get("costo_total"),
-                "Costos_Indirectos":   calc.get("costos_indirectos"),
-                "Utilidad_Bruta":      calc.get("utilidad_bruta"),
-                "Utilidad_Neta":       calc.get("utilidad_neta"),
+                "Ingreso Total":          calc.get("ingreso_total"),
+                "Pago por KM":            calc.get("pago_km"),
+                "Sueldo_Operador":        calc.get("sueldo"),
+                "Bono":                   calc.get("bono"),
+                "Casetas":                d["casetas"],
+                "Horas_Termo":            d["horas_termo"],
+                "Lavado_Termo":           d["lavado_termo"],
+                "Movimiento_Local":       d["movimiento_local"],
+                "Puntualidad":            calc.get("puntualidad_val"),
+                "Pension":                d["pension"],
+                "Estancia":               d["estancia"],
+                "Fianza_Termo":           d["fianza_termo"],
+                "Renta_Termo":            d["renta_termo"],
+                "Pistas_Extra":           d["pistas_extra"],
+                "Stop":                   d["stop"],
+                "Falso":                  d["falso"],
+                "Gatas":                  d["gatas"],
+                "Accesorios":             d["accesorios"],
+                "Guias":                  d["guias"],
+                "Costo_Diesel_Camion":    calc.get("costo_diesel_camion"),
+                "Costo_Diesel_Termo":     calc.get("costo_diesel_termo"),
+                "Costo_Extras":           calc.get("extras"),
+                "Costo_Total_Ruta":       calc.get("costo_total"),
+                "Costos_Indirectos":      calc.get("costos_indirectos"),
+                "Utilidad_Bruta":         calc.get("utilidad_bruta"),
+                "Utilidad_Neta":          calc.get("utilidad_neta"),
                 "Porcentaje_Utilidad_Bruta": calc.get("porcentaje_bruta"),
                 "Porcentaje_Utilidad_Neta":  calc.get("porcentaje_neta"),
-                "Modo_Pago_Dom":       d.get("modo_pago_dom", "km"),
-                # Cobros individuales (columnas nuevas)
-                "Cobra_Pistas":        d.get("cobra_pistas",  False),
-                "Cobra_Stop":          d.get("cobra_stop",    False),
-                "Cobra_Falso":         d.get("cobra_falso",   False),
-                "Cobra_Gatas":         d.get("cobra_gatas",   False),
-                "Cobra_Accesorios":    d.get("cobra_acc",     False),
-                "Cobra_Guias":         d.get("cobra_guias",   False),
-                # Columna legacy conservada (false — ya no se usa para el cálculo)
-                "Extras_Cobrados":     False,
-                # Parámetros guardados con la ruta
-                "Costo Diesel":        float(valores.get("Costo Diesel", 24.0)),
-                "Rendimiento Camion":  float(valores.get("Rendimiento Camion", 2.5)),
-                "Rendimiento Termo":   float(valores.get("Rendimiento Termo", 3.0)),
-                "created_by":  nombre_usuario,
-                "created_at":  _now_iso(),
-                "updated_by":  None,
-                "updated_at":  None,
-                "historial":   [],
+                "Modo_Pago_Dom":          d.get("modo_pago_dom", "km"),
+                # Cobros individuales — columnas nuevas
+                "Cobra_Pistas":           d.get("cobra_pistas",  False),
+                "Cobra_Stop":             d.get("cobra_stop",    False),
+                "Cobra_Falso":            d.get("cobra_falso",   False),
+                "Cobra_Gatas":            d.get("cobra_gatas",   False),
+                "Cobra_Accesorios":       d.get("cobra_acc",     False),
+                "Cobra_Guias":            d.get("cobra_guias",   False),
+                # Legacy conservada
+                "Extras_Cobrados":        False,
+                # Parámetros
+                "Costo Diesel":           float(valores.get("Costo Diesel", 24.0)),
+                "Rendimiento Camion":     float(valores.get("Rendimiento Camion", 2.5)),
+                "Rendimiento Termo":      float(valores.get("Rendimiento Termo", 3.0)),
+                "created_by":             nombre_usuario,
+                "created_at":             _now_iso(),
+                "updated_by":             None,
+                "updated_at":             None,
+                "historial":              [],
             }
 
             try:
