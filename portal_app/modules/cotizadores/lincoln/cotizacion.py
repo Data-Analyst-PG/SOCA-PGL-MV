@@ -1,11 +1,15 @@
 """
 cotizacion.py – Lincoln Freight (USA/MX)
-Generador de cotización con plantilla PNG igual que Igloo/Picus/Set Logis.
-Plantillas: portal_app/img/2.0 ADT PGL LINCOLN (2/3/4).png
+- Cliente/Empresa en 2 columnas (sin tabs)
+- Defaults de empresa precargados
+- Todos los campos con valor > 0 disponibles (ingresos + costos)
+- Solo aparecen conceptos con monto capturado > 0
+- PDF con plantilla PNG igual que Igloo/Picus/Set Logis
 """
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 from datetime import date
@@ -36,7 +40,41 @@ def safe_text(text: str) -> str:
 
 
 # ─────────────────────────────────────────────
-# SISTEMA DE PLANTILLAS (idéntico a Igloo)
+# DEFAULTS EMPRESA
+# ─────────────────────────────────────────────
+EMP_DEFAULTS = {
+    "nombre":    "Lincoln Freight LLC",
+    "direccion": "Carr. Apto Km 3.8 Blvd Apto. 4, América, Nuevo Laredo, Tamps. 88284",
+    "mail":      "xochitl.ceron@lincoln-freight.com",
+    "telefono":  "+1 (956) 337-3796",
+    "ext":       "1138",
+}
+
+
+# ─────────────────────────────────────────────
+# TODOS LOS CONCEPTOS DISPONIBLES
+# (nombre visible, columna Supabase, tipo)
+# tipo: "ingreso" o "costo"
+# ─────────────────────────────────────────────
+TODOS_CONCEPTOS: list[tuple[str, str, str]] = [
+    # Ingresos
+    ("Flete USA",           "Ingreso_Flete_USA",    "ingreso"),
+    ("Fuel Surcharge",      "Ingreso_Fuel_USA",     "ingreso"),
+    ("Cruce",               "Ingreso_Cruce",        "ingreso"),
+    ("Flete MX",            "Ingreso_MX_USD",       "ingreso"),
+    ("Otros Cargos",        "Otros_Cargos_Ingreso", "ingreso"),
+    # Costos (pueden cotizarse al cliente si aplica)
+    ("Diesel",              "Diesel_USA",           "costo"),
+    ("Sueldo Operador",     "Sueldo_Operador",      "costo"),
+    ("ISR/IMSS",            "ISR_IMSS",             "costo"),
+    ("Costo Cruce",         "Costo_Cruce",          "costo"),
+    ("Costo Flete MX",      "Costo_MX_USD",         "costo"),
+    ("Otros Cargos Costo",  "Otros_Cargos_Costo",   "costo"),
+]
+
+
+# ─────────────────────────────────────────────
+# PLANTILLAS (igual que Igloo)
 # ─────────────────────────────────────────────
 def _get_template(pagina_actual: int, total_paginas: int) -> str | None:
     img_dir = _img_dir()
@@ -51,7 +89,6 @@ def _get_template(pagina_actual: int, total_paginas: int) -> str | None:
             nombre = "2.0 ADT PGL LINCOLN (4).png"
         else:
             nombre = "2.0 ADT PGL LINCOLN (3).png"
-
     path = os.path.join(img_dir, nombre)
     return path if os.path.exists(path) else None
 
@@ -62,23 +99,8 @@ def _estimar_paginas(lineas: int) -> int:
     return 1 + (lineas - 20 + 29) // 30
 
 
-def _contar_lineas(rutas_config: dict, ids_sel: list, df: pd.DataFrame) -> int:
-    total = 0
-    for ruta_sel in ids_sel:
-        id_ruta = ruta_sel.split(" | ")[0]
-        if id_ruta not in df.index:
-            continue
-        total += 2  # header tipo + origen-destino
-        cfg = rutas_config.get(ruta_sel, {"cobrar": [], "mostrar": []})
-        for campo in cfg["cobrar"] + cfg["mostrar"]:
-            val = df.loc[id_ruta].get(campo, 0)
-            if val and not pd.isna(val) and float(val) != 0:
-                total += 1
-    return total
-
-
 # ─────────────────────────────────────────────
-# CLASE PDF (idéntica a Igloo)
+# CLASE PDF
 # ─────────────────────────────────────────────
 class PDF(FPDF):
     def __init__(self, fecha_str: str = "", total_pages: int = 1, **kwargs):
@@ -111,17 +133,16 @@ class PDF(FPDF):
             self.set_font("Helvetica", style, size)
 
     def header(self):
-        page = self.page_no()
-        tpl  = _get_template(page, self.total_pages)
+        tpl = _get_template(self.page_no(), self.total_pages)
         if tpl:
             self.image(tpl, x=0, y=0, w=8.5, h=11)
 
     def footer(self):
-        pass   # El número de página va en la plantilla
+        pass
 
 
 # ─────────────────────────────────────────────
-# CACHE DE RUTAS
+# CACHE RUTAS
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=120)
 def _cargar_rutas(table: str) -> pd.DataFrame:
@@ -136,22 +157,6 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
         return df
     except Exception:
         return pd.DataFrame()
-
-
-# ─────────────────────────────────────────────
-# CONCEPTOS POR RUTA
-# Cobrar → suma al total de la cotización
-# Mostrar → solo visual, en gris (no suma)
-# ─────────────────────────────────────────────
-CONCEPTOS_COBRAR = [
-    ("Flete USA",      "Ingreso_Flete_USA"),
-    ("Fuel Surcharge", "Ingreso_Fuel_USA"),
-    ("Cruce",          "Ingreso_Cruce"),
-    ("Flete MX",       "Ingreso_MX_USD"),
-]
-CONCEPTOS_MOSTRAR = [
-    ("Otros Cargos", "Otros_Cargos_Ingreso"),
-]
 
 
 # ─────────────────────────────────────────────
@@ -182,24 +187,35 @@ def render() -> None:
     # ── Fecha ─────────────────────────────────────────────────────
     fecha = st.date_input("📅 Fecha de cotización", value=date.today(), key="ln_cot_fecha")
 
-    # ── Datos cliente / empresa ───────────────────────────────────
-    tab_cli, tab_emp = st.tabs(["👤 Datos del Cliente", "🏢 Datos de la Empresa"])
+    # ── Cliente / Empresa en 2 columnas (sin tabs) ────────────────
+    divider()
+    section_header("👥", "Datos del Cliente y la Empresa")
+    col_cli, col_emp = st.columns(2)
 
-    with tab_cli:
-        c1, c2 = st.columns(2)
-        cliente_nombre    = c1.text_input("Nombre del Cliente *",    key="ln_cot_cli_nom")
-        cliente_direccion = c1.text_input("Dirección",               key="ln_cot_cli_dir")
-        cliente_mail      = c2.text_input("📧 Email",                key="ln_cot_cli_mail")
-        cliente_telefono  = c2.text_input("📞 Teléfono",             key="ln_cot_cli_tel")
-        cliente_ext       = c2.text_input("Ext.",                    key="ln_cot_cli_ext")
+    with col_cli:
+        st.markdown("**👤 Cliente**")
+        cliente_nombre    = st.text_input("Nombre *",      key="ln_cot_cli_nom",  placeholder="NOMBRE DE LA EMPRESA")
+        cliente_direccion = st.text_input("Dirección",     key="ln_cot_cli_dir")
+        cliente_mail      = st.text_input("📧 Email",      key="ln_cot_cli_mail")
+        cliente_telefono  = st.text_input("📞 Teléfono",   key="ln_cot_cli_tel")
+        cliente_ext       = st.text_input("Ext.",          key="ln_cot_cli_ext")
 
-    with tab_emp:
-        e1, e2 = st.columns(2)
-        empresa_nombre    = e1.text_input("Nombre Empresa",  value="Lincoln Freight LLC",   key="ln_cot_emp_nom")
-        empresa_direccion = e1.text_input("Dirección",                                       key="ln_cot_emp_dir")
-        empresa_mail      = e2.text_input("📧 Email",                                        key="ln_cot_emp_mail")
-        empresa_telefono  = e2.text_input("📞 Teléfono",                                     key="ln_cot_emp_tel")
-        empresa_ext       = e2.text_input("Ext.",                                            key="ln_cot_emp_ext")
+    with col_emp:
+        st.markdown("**🏢 Empresa**")
+        empresa_nombre    = st.text_input("Nombre",    value=EMP_DEFAULTS["nombre"],    key="ln_cot_emp_nom")
+        empresa_direccion = st.text_input("Dirección", value=EMP_DEFAULTS["direccion"], key="ln_cot_emp_dir")
+        empresa_mail      = st.text_input("📧 Email",  value=EMP_DEFAULTS["mail"],      key="ln_cot_emp_mail")
+        empresa_telefono  = st.text_input("📞 Teléfono", value=EMP_DEFAULTS["telefono"], key="ln_cot_emp_tel")
+        empresa_ext       = st.text_input("Ext.",      value=EMP_DEFAULTS["ext"],       key="ln_cot_emp_ext")
+
+    divider()
+
+    # ── Moneda ────────────────────────────────────────────────────
+    mc1, mc2 = st.columns(2)
+    moneda_cot = mc1.selectbox("💱 Moneda de cotización", ["USD", "MXP"], key="ln_cot_moneda")
+    tc = float(valores.get("Tipo de Cambio USD/MXP", 18.5))
+    if moneda_cot == "MXP":
+        tc = mc2.number_input("Tipo de Cambio USD/MXP", value=tc, step=0.1, key="ln_cot_tc")
 
     divider()
 
@@ -222,69 +238,109 @@ def render() -> None:
 
     # ── Configurar conceptos por ruta ─────────────────────────────
     divider()
-    section_header("2.", "Configurar conceptos por ruta")
-    st.caption("Marca los conceptos que se cobrarán al cliente. Los desmarcados aparecen en gris (solo visual).")
+    section_header("2.", "Configuración de Conceptos")
+    st.caption(
+        "Solo aparecen conceptos con monto > 0. "
+        "**Azul (sumar)** = se cobra al cliente y suma al total. "
+        "**Gris (mostrar)** = solo aparece visual en el PDF."
+    )
 
     rutas_config: dict = {}
-    moneda_cot = st.selectbox("💱 Moneda de la cotización", ["USD", "MXP"], key="ln_cot_moneda")
-    tc = float(valores.get("Tipo de Cambio USD/MXP", 18.5))
-    if moneda_cot == "MXP":
-        tc_input = st.number_input("Tipo de Cambio USD/MXP", value=tc, step=0.1, key="ln_cot_tc")
-        tc = tc_input
 
     for ruta_lbl in ids_sel:
         id_ruta = ruta_lbl.split(" | ")[0]
         if id_ruta not in df.index:
             continue
-        row = df.loc[id_ruta]
+
+        row  = df.loc[id_ruta]
         tipo = str(row.get("Tipo", ""))
 
-        with st.expander(f"📋 {ruta_lbl}", expanded=True):
-            cobrar:   list[str] = []
-            mostrar:  list[str] = []
-            c1, c2 = st.columns(2)
+        # Construir lista de conceptos disponibles (solo los que tienen valor > 0)
+        disponibles: list[tuple[str, str, str, float]] = []
+        for nombre, campo, tipo_concepto in TODOS_CONCEPTOS:
+            # Flete MX solo en D2D
+            if campo == "Ingreso_MX_USD" and tipo not in {"D2DNB", "D2DSB"}:
+                continue
+            if campo == "Costo_MX_USD" and tipo not in {"D2DNB", "D2DSB"}:
+                continue
+            val = safe(row.get(campo, 0))
+            if val > 0:
+                disponibles.append((nombre, campo, tipo_concepto, val))
 
-            with c1:
-                st.caption("Conceptos de ingreso:")
-                for nombre, campo in CONCEPTOS_COBRAR:
-                    # Flete MX solo aplica en D2D
-                    if campo == "Ingreso_MX_USD" and tipo not in {"D2DNB", "D2DSB"}:
-                        continue
-                    val = safe(row.get(campo, 0))
-                    if val <= 0:
+        # También parsear otros cargos del JSON para mostrarlos individualmente
+        extras_json: dict = {}
+        json_str = str(row.get("Otros_Cargos_JSON", "") or "")
+        if json_str not in ("", "None", "{}"):
+            try:
+                extras_json = ast.literal_eval(json_str)
+            except Exception:
+                pass
+
+        with st.expander(f"📋 Configurar: {ruta_lbl}", expanded=True):
+            if not disponibles and not extras_json:
+                st.caption("No hay conceptos con monto capturado para esta ruta.")
+                rutas_config[ruta_lbl] = {"cobrar": [], "mostrar": []}
+                continue
+
+            sumar:   list[str] = []
+            mostrar: list[str] = []
+
+            col_az, col_gr = st.columns(2)
+            with col_az:
+                st.markdown("**➕ Sumar al total (Azul)**")
+                for nombre, campo, tipo_concepto, val in disponibles:
+                    # Omitir Otros_Cargos_Ingreso genérico si hay extras individuales
+                    if campo == "Otros_Cargos_Ingreso" and extras_json:
                         continue
                     val_show = val * tc if moneda_cot == "MXP" else val
-                    checked = st.checkbox(
-                        f"{nombre}: ${val_show:,.2f} {moneda_cot}",
-                        value=True,
-                        key=f"ln_cot_cobrar_{id_ruta}_{campo}",
+                    default  = (tipo_concepto == "ingreso")
+                    checked  = st.checkbox(
+                        f"{nombre}: ${val_show:,.2f}",
+                        value=default,
+                        key=f"ln_cot_sum_{id_ruta}_{campo}",
                     )
                     if checked:
-                        cobrar.append(campo)
+                        sumar.append(campo)
                     else:
                         mostrar.append(campo)
 
-            with c2:
-                st.caption("Otros cargos extras:")
-                for nombre, campo in CONCEPTOS_MOSTRAR:
-                    val = safe(row.get(campo, 0))
-                    if val <= 0:
-                        st.caption("Sin extras registrados.")
+                # Extras individuales del JSON
+                for nombre_e, monto_e in extras_json.items():
+                    if safe(monto_e) <= 0:
                         continue
-                    val_show = val * tc if moneda_cot == "MXP" else val
+                    monto_show = safe(monto_e) * tc if moneda_cot == "MXP" else safe(monto_e)
                     checked_e = st.checkbox(
-                        f"{nombre}: ${val_show:,.2f} {moneda_cot}",
-                        value=False,
-                        key=f"ln_cot_cobrar_{id_ruta}_{campo}",
+                        f"{nombre_e}: ${monto_show:,.2f}",
+                        value=True,
+                        key=f"ln_cot_sum_{id_ruta}_ext_{nombre_e}",
                     )
+                    campo_key = f"__extra_{nombre_e}"
                     if checked_e:
-                        cobrar.append(campo)
+                        sumar.append(campo_key)
                     else:
-                        mostrar.append(campo)
+                        mostrar.append(campo_key)
 
-            rutas_config[ruta_lbl] = {"cobrar": cobrar, "mostrar": mostrar}
+            with col_gr:
+                st.markdown("**👁️ Mostrar sin sumar (Gris)**")
+                # Resumen de lo que irá en gris (se actualiza dinámicamente)
+                gris_preview = [
+                    nombre for nombre, campo, _, val in disponibles
+                    if campo in mostrar
+                ]
+                if gris_preview:
+                    for n in gris_preview:
+                        st.caption(f"· {n}")
+                else:
+                    st.caption("(ninguno en gris por ahora)")
 
-    # ── Moneda y notas ────────────────────────────────────────────
+            rutas_config[ruta_lbl] = {
+                "cobrar":  sumar,
+                "mostrar": mostrar,
+                "row":     row,
+                "extras":  extras_json,
+            }
+
+    # ── Notas ─────────────────────────────────────────────────────
     divider()
     notas_default = (
         "Precios sujetos a disponibilidad de unidades. "
@@ -296,12 +352,23 @@ def render() -> None:
 
     # ── Generar PDF ───────────────────────────────────────────────
     divider()
-    if st.button("📄 Generar Cotización PDF", type="primary",
-                 use_container_width=True, key="ln_cot_gen",
-                 disabled=(len(ids_sel) == 0 or not cliente_nombre.strip())):
+    if not cliente_nombre.strip():
+        alert("warn", "Ingresa el nombre del cliente para continuar.")
+        return
 
-        # Calcular páginas necesarias
-        lineas      = _contar_lineas(rutas_config, ids_sel, df)
+    if st.button("📄 Generar Cotización PDF", type="primary",
+                 use_container_width=True, key="ln_cot_gen"):
+
+        # Calcular número de líneas para estimar páginas
+        lineas = 0
+        for ruta_lbl in ids_sel:
+            id_ruta = ruta_lbl.split(" | ")[0]
+            if id_ruta not in df.index:
+                continue
+            cfg = rutas_config.get(ruta_lbl, {})
+            lineas += 2  # header tipo + origen-destino
+            lineas += len(cfg.get("cobrar", [])) + len(cfg.get("mostrar", []))
+
         num_paginas = _estimar_paginas(lineas)
 
         pdf = PDF(
@@ -312,26 +379,21 @@ def render() -> None:
         pdf.set_auto_page_break(auto=False)
         pdf.add_page()
 
-        # ── Datos cliente / empresa en pág 1 ─────────────────────
+        # Datos cliente / empresa — pág 1
         pdf.set_body_font(size=10)
         pdf.set_text_color(0, 0, 0)
-
-        # Cliente
         pdf.set_xy(0.85, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(cliente_nombre),    align="L")
         pdf.set_xy(0.85, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(cliente_direccion), align="L")
         pdf.set_xy(0.85, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(cliente_mail),      align="L")
         pdf.set_xy(0.85, 3.60); pdf.cell(1.35, 0.31, safe_text(cliente_telefono), align="L")
         pdf.set_xy(2.39, 3.60); pdf.cell(0.76, 0.31, safe_text(cliente_ext),      align="C")
-
-        # Empresa
         pdf.set_xy(4.76, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(empresa_nombre),    align="R")
         pdf.set_xy(4.76, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(empresa_direccion), align="R")
         pdf.set_xy(4.76, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(empresa_mail),      align="R")
         pdf.set_xy(5.23, 3.60); pdf.cell(1.35, 0.31, safe_text(empresa_telefono), align="R")
         pdf.set_xy(7.03, 3.60); pdf.cell(0.76, 0.31, safe_text(empresa_ext),      align="C")
 
-        # ── Conceptos ─────────────────────────────────────────────
-        pdf.set_body_font(size=7)
+        # Conceptos
         y             = 4.50
         y_max_pag1    = 8.60
         y_max_otras   = 9.20
@@ -343,19 +405,18 @@ def render() -> None:
             if id_ruta not in df.index:
                 continue
 
-            row      = df.loc[id_ruta]
-            tipo_r   = str(row.get("Tipo", ""))
-            origen   = str(row.get("Origen", ""))
-            destino  = str(row.get("Destino", ""))
-            y_max    = y_max_pag1 if pagina_actual == 1 else y_max_otras
+            cfg    = rutas_config.get(ruta_lbl, {})
+            row    = cfg.get("row", df.loc[id_ruta])
+            extras = cfg.get("extras", {})
+            origen  = str(row.get("Origen", ""))
+            destino = str(row.get("Destino", ""))
+            tipo_r  = str(row.get("Tipo", ""))
+            y_max   = y_max_pag1 if pagina_actual == 1 else y_max_otras
 
-            # Salto si no hay espacio para el header de ruta
             if y + 0.35 > y_max:
-                pdf.add_page()
-                pagina_actual += 1
-                y = 2.00
+                pdf.add_page(); pagina_actual += 1; y = 2.00
 
-            # Header de ruta (gris)
+            # Header ruta
             pdf.set_body_font(bold=True, size=7)
             pdf.set_text_color(128, 128, 128)
             pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(tipo_r), align="L")
@@ -363,52 +424,53 @@ def render() -> None:
             pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(f"{origen} - {destino}"), align="L")
             y = pdf.get_y() + 0.05
 
-            cfg      = rutas_config.get(ruta_lbl, {"cobrar": [], "mostrar": []})
-            todos    = [(c, True) for c in cfg["cobrar"]] + [(c, False) for c in cfg["mostrar"]]
+            # Unir cobrar y mostrar en orden
+            todos_campos = [(c, True) for c in cfg.get("cobrar", [])] + \
+                           [(c, False) for c in cfg.get("mostrar", [])]
 
-            for campo, es_cobrado in todos:
-                val = safe(row.get(campo, 0))
+            for campo, es_cobrado in todos_campos:
+                # Extras individuales del JSON
+                if campo.startswith("__extra_"):
+                    nombre_e = campo[8:]
+                    val      = safe(extras.get(nombre_e, 0))
+                    label    = safe_text(nombre_e[:32])
+                else:
+                    # Buscar nombre display
+                    label = campo.replace("_", " ").replace("Ingreso ", "").replace(" USA", "").title()
+                    label = safe_text(label[:32])
+                    val   = safe(row.get(campo, 0))
+
                 if val <= 0:
                     continue
 
                 y_max = y_max_pag1 if pagina_actual == 1 else y_max_otras
                 if y > y_max:
-                    pdf.add_page()
-                    pagina_actual += 1
-                    y = 1.40
+                    pdf.add_page(); pagina_actual += 1; y = 1.40
 
                 val_show = val * tc if moneda_cot == "MXP" else val
 
-                # Color: azul si se cobra, gris si solo visual
                 if es_cobrado:
                     pdf.set_text_color(37, 45, 128)
-                    pdf.set_body_font(bold=False, size=7)
                 else:
                     pdf.set_text_color(150, 150, 150)
-                    pdf.set_body_font(bold=False, size=7)
+                pdf.set_body_font(bold=False, size=7)
 
-                # Nombre del campo
-                label = campo.replace("_", " ").replace("Ingreso ", "").replace(" USA", "").title()
-                label = safe_text(label[:32])
-
-                pdf.set_xy(0.85, y); pdf.cell(3.20, 0.15, label, border=0, align="L")
-                pdf.set_xy(4.00, y); pdf.cell(0.70, 0.15, "", border=0, align="C")  # KM (N/A para Lincoln)
+                pdf.set_xy(0.85, y); pdf.cell(3.20, 0.15, label,        border=0, align="L")
+                pdf.set_xy(4.00, y); pdf.cell(0.70, 0.15, "",           border=0, align="C")
                 pdf.set_xy(5.10, y); pdf.cell(0.55, 0.15, "1" if es_cobrado else "", border=0, align="C")
-                pdf.set_xy(5.85, y); pdf.cell(0.65, 0.15, moneda_cot, border=0, align="C")
+                pdf.set_xy(5.85, y); pdf.cell(0.65, 0.15, moneda_cot,   border=0, align="C")
                 pdf.set_xy(6.55, y); pdf.cell(1.05, 0.15, f"${val_show:,.2f}", border=0, align="R")
 
                 if es_cobrado:
                     total_global += val_show
-
                 y += 0.18
 
-        # ── Total (solo en última página) ─────────────────────────
+        # Total — última página
         while pdf.page_no() < num_paginas:
             pdf.add_page()
-
         pdf.set_body_font(bold=True, size=8)
         pdf.set_text_color(0, 0, 0)
-        pdf.set_xy(5.85, 9.13); pdf.cell(0.70, 0.15, moneda_cot,            border=0, align="C")
+        pdf.set_xy(5.85, 9.13); pdf.cell(0.70, 0.15, moneda_cot,              border=0, align="C")
         pdf.set_xy(6.55, 9.13); pdf.cell(1.00, 0.15, f"${total_global:,.2f}", border=0, align="R")
 
         # Notas
@@ -416,15 +478,15 @@ def render() -> None:
         pdf.set_text_color(100, 100, 100)
         pdf.set_xy(0.90, 9.60); pdf.multi_cell(4.50, 0.12, safe_text(notas), align="L")
 
-        # ── Descargar ─────────────────────────────────────────────
-        nombre_cliente = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
-        file_name      = f"Cotizacion_Lincoln_{nombre_cliente}_{fecha.strftime('%d-%m-%Y')}.pdf"
-        pdf_bytes      = pdf.output(dest="S").encode("latin-1")
+        # Descargar
+        nombre_cli = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
+        file_name  = f"Cotizacion_Lincoln_{nombre_cli}_{fecha.strftime('%d-%m-%Y')}.pdf"
+        pdf_bytes  = pdf.output(dest="S").encode("latin-1")
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("📄 Páginas",   num_paginas)
-        c2.metric("📊 Líneas",    lineas)
-        c3.metric("💾 Tamaño",   f"{len(pdf_bytes)/1024:.1f} KB")
+        c1.metric("📄 Páginas", num_paginas)
+        c2.metric("📊 Líneas",  lineas)
+        c3.metric("💾 Tamaño",  f"{len(pdf_bytes)/1024:.1f} KB")
 
         st.success("✅ PDF generado exitosamente.")
         st.download_button(
