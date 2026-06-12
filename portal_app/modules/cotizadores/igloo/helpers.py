@@ -1,4 +1,3 @@
-from ui.components import section_header, alert, divider
 """
 helpers.py — Funciones centralizadas de cálculo para el cotizador Igloo.
 
@@ -126,38 +125,38 @@ def calcular_sueldo_y_bono(tipo: str, km: float, modo: str, valores: dict,
 
     modo_pago_dom: solo relevante para DOM MEX.  Puede ser "km" o "fijo".
     """
-    tipo = (tipo or "").strip().upper()
-    modo = (modo or "Operador")
+    tipo  = (tipo or "").strip().upper()
+    modo  = (modo or "Operador")
     factor = 2 if modo == "Team" else 1
 
     if tipo == "IMPORTACION":
         pago_km = safe_float(valores.get("Pago x km IMPORTACION", 2.10))
-        sueldo = km * pago_km * factor
-        bono = safe_float(valores.get("Bono ISR IMSS", 462.66)) * factor
+        sueldo  = km * pago_km * factor
+        bono    = safe_float(valores.get("Bono ISR IMSS", 462.66)) * factor
 
     elif tipo == "EXPORTACION":
         pago_km = safe_float(valores.get("Pago x km EXPORTACION", 2.50))
-        sueldo = km * pago_km * factor
-        bono = safe_float(valores.get("Bono ISR IMSS", 462.66)) * factor
+        sueldo  = km * pago_km * factor
+        bono    = safe_float(valores.get("Bono ISR IMSS", 462.66)) * factor
 
     elif tipo == "DOM MEX":
         if modo_pago_dom == "fijo":
             pago_km = 0.0
-            sueldo = safe_float(valores.get("Pago fijo DOM MEX", 200.0)) * factor
+            sueldo  = safe_float(valores.get("Pago fijo DOM MEX", 200.0)) * factor
         else:  # por km
             pago_km = safe_float(valores.get("Pago x km DOM MEX", 2.10))
-            sueldo = km * pago_km * factor
+            sueldo  = km * pago_km * factor
         bono = safe_float(valores.get("Bono ISR IMSS", 462.66)) * factor
 
     elif tipo == "VACIO":
         pago_km = 0.0
-        sueldo = safe_float(valores.get("Pago fijo VACIO", 200.0)) * factor
-        bono = 0.0
+        sueldo  = safe_float(valores.get("Pago fijo VACIO", 200.0)) * factor
+        bono    = 0.0
 
     else:
         pago_km = 0.0
-        sueldo = 0.0
-        bono = 0.0
+        sueldo  = 0.0
+        bono    = 0.0
 
     return pago_km, sueldo, bono
 
@@ -176,12 +175,12 @@ def calcular_costos_indirectos(tipo: str, ingreso_total: float) -> float:
 
 def calcular_diesel(km: float, horas_termo: float, valores: dict):
     """Retorna (costo_diesel_camion, costo_diesel_termo)."""
-    rend_camion = safe_float(valores.get("Rendimiento Camion", 2.5), 2.5)
-    rend_termo = safe_float(valores.get("Rendimiento Termo", 3.0), 3.0)
-    costo_diesel = safe_float(valores.get("Costo Diesel", 24.0), 24.0)
+    rend_camion  = safe_float(valores.get("Rendimiento Camion", 2.5), 2.5)
+    rend_termo   = safe_float(valores.get("Rendimiento Termo",  3.0), 3.0)
+    costo_diesel = safe_float(valores.get("Costo Diesel",      24.0), 24.0)
 
     diesel_camion = (km / max(rend_camion, 0.0001)) * costo_diesel
-    diesel_termo = horas_termo * rend_termo * costo_diesel
+    diesel_termo  = horas_termo * rend_termo * costo_diesel
     return diesel_camion, diesel_termo
 
 
@@ -211,22 +210,48 @@ def calcular_extras(pistas_extra, stop, falso, gatas, accesorios, guias):
 
 def calcular_utilidades(ingreso_total: float, costo_total: float, tipo: str):
     """
-    Retorna dict con:
-      utilidad_bruta, costos_indirectos, utilidad_neta,
-      porcentaje_bruta, porcentaje_neta
+    Retorna dict con utilidades calculadas + campos para semaforos_ruta() y kpi_row().
+
+    Campos originales (sin cambio, compatibles con todos los módulos existentes):
+        utilidad_bruta, costos_indirectos, utilidad_neta,
+        porcentaje_bruta, porcentaje_neta
+
+    Campos nuevos para componentes visuales:
+        Pct_Costo_Directo, Pct_Ut_Bruta, Pct_Costo_Indirecto, Pct_Ut_Neta
+        Color_Directo, Color_Indirecto, Color_Ut_Neta
+
+    Umbrales Igloo:
+        C. Directos  ≤ 50%  → verde
+        Ut. Bruta    ≥ 50%  → verde
+        C. Indirecto ≤ 35%  → verde  (el 35% es el valor fijo calculado)
+        Ut. Neta     ≥ 15%  → verde
     """
+    # ── Cálculos (sin modificar) ─────────────────────────────────────────────
     utilidad_bruta = ingreso_total - costo_total
-    costos_ind = calcular_costos_indirectos(tipo, ingreso_total)
-    utilidad_neta = utilidad_bruta - costos_ind
+    costos_ind     = calcular_costos_indirectos(tipo, ingreso_total)
+    utilidad_neta  = utilidad_bruta - costos_ind
+
     pct_bruta = (utilidad_bruta / ingreso_total * 100) if ingreso_total else 0
-    pct_neta = (utilidad_neta / ingreso_total * 100) if ingreso_total else 0
+    pct_neta  = (utilidad_neta  / ingreso_total * 100) if ingreso_total else 0
+    pct_cd    = (costo_total    / ingreso_total * 100) if ingreso_total else 0
+    pct_ind   = (costos_ind     / ingreso_total * 100) if ingreso_total else 0
 
     return {
-        "utilidad_bruta": utilidad_bruta,
+        # ── Campos originales — sin cambio ───────────────────────────────────
+        "utilidad_bruta":    utilidad_bruta,
         "costos_indirectos": costos_ind,
-        "utilidad_neta": utilidad_neta,
-        "porcentaje_bruta": pct_bruta,
-        "porcentaje_neta": pct_neta,
+        "utilidad_neta":     utilidad_neta,
+        "porcentaje_bruta":  pct_bruta,
+        "porcentaje_neta":   pct_neta,
+        # ── Campos para semaforos_ruta() de components.py ────────────────────
+        "Pct_Costo_Directo":   pct_cd,
+        "Pct_Ut_Bruta":        pct_bruta,
+        "Pct_Costo_Indirecto": pct_ind,
+        "Pct_Ut_Neta":         pct_neta,
+        # ── Colores para kpi_row() — umbrales Igloo ──────────────────────────
+        "Color_Directo":   "#DC2626" if pct_cd    > 50.0 else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind   > 35.0 else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta  < 15.0 else "#059669",
     }
 
 
@@ -235,60 +260,61 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list):
     Calcula utilidades para una vuelta redonda (simulador / programación).
     Aplica 35 % solo a las rutas que NO son VACÍO.
     """
-    ingreso_total = sum(safe_number(r.get("Ingreso Total", 0)) for r in rutas_seleccionadas)
-    costo_total = sum(safe_number(r.get("Costo_Total_Ruta", 0)) for r in rutas_seleccionadas)
+    ingreso_total  = sum(safe_number(r.get("Ingreso Total", 0)) for r in rutas_seleccionadas)
+    costo_total    = sum(safe_number(r.get("Costo_Total_Ruta", 0)) for r in rutas_seleccionadas)
     utilidad_bruta = ingreso_total - costo_total
 
     # Costos indirectos: solo de los tramos que califican
     costos_ind = 0.0
     for r in rutas_seleccionadas:
         tipo = str(r.get("Tipo", "")).strip().upper()
-        ing = safe_number(r.get("Ingreso Total", 0))
+        ing  = safe_number(r.get("Ingreso Total", 0))
         costos_ind += calcular_costos_indirectos(tipo, ing)
 
     utilidad_neta = utilidad_bruta - costos_ind
-    pct_bruta = (utilidad_bruta / ingreso_total * 100) if ingreso_total else 0
-    pct_neta = (utilidad_neta / ingreso_total * 100) if ingreso_total else 0
+    pct_bruta     = (utilidad_bruta / ingreso_total * 100) if ingreso_total else 0
+    pct_neta      = (utilidad_neta  / ingreso_total * 100) if ingreso_total else 0
 
     return {
-        "ingreso_total": ingreso_total,
-        "costo_total": costo_total,
-        "utilidad_bruta": utilidad_bruta,
+        "ingreso_total":     ingreso_total,
+        "costo_total":       costo_total,
+        "utilidad_bruta":    utilidad_bruta,
         "costos_indirectos": costos_ind,
-        "utilidad_neta": utilidad_neta,
-        "porcentaje_bruta": pct_bruta,
-        "porcentaje_neta": pct_neta,
+        "utilidad_neta":     utilidad_neta,
+        "porcentaje_bruta":  pct_bruta,
+        "porcentaje_neta":   pct_neta,
     }
 
 
 # ─────────────────────────────────────────────
-# Mostrar resultados (reutilizable en st)
+# Mostrar resultados — función LEGACY mantenida
+# para compatibilidad mientras se migran módulos
 # ─────────────────────────────────────────────
 def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
                                  utilidad_bruta, costos_indirectos,
                                  utilidad_neta, pct_bruta, pct_neta,
                                  tipo: str = "", tc_usd: float = 0.0):
     """
-    Muestra las métricas de utilidad con formato visual mejorado.
+    Muestra las métricas de utilidad con formato visual.
+    LEGACY: se mantiene para no romper módulos que aún la llamen.
+    Los módulos nuevos usan kpi_row() + semaforos_ruta() directamente.
 
     tc_usd: tipo de cambio activo. Si > 0, la tarifa sugerida también
             se muestra convertida a USD.
     """
+    import streamlit as st
 
     # ── Tarifa sugerida: costo = 50% del ingreso → ingreso = costo × 2 ──
     tarifa_mxp = costo_total * 2.0
     tarifa_usd = (tarifa_mxp / tc_usd) if tc_usd > 0 else 0.0
 
-    # Texto auxiliar con equivalente en USD (solo si hay TC)
     usd_extra = (
         f"&nbsp;&nbsp;/&nbsp;&nbsp;USD ${tarifa_usd:,.2f}"
         if tc_usd > 0 else ""
     )
 
-    # ── Banner de tarifa sugerida (HTML puro para evitar render literal) ──
     if tarifa_mxp > 0:
         if ingreso_total == 0:
-            # Sin ingreso: banner amarillo prominente
             st_module.markdown(
                 f"""
                 <div style='background:#fffbeb; border-left:4px solid #f59e0b;
@@ -305,12 +331,11 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
                 unsafe_allow_html=True,
             )
         else:
-            # Con ingreso: banner azul comparativo
-            diff = ingreso_total - tarifa_mxp
+            diff     = ingreso_total - tarifa_mxp
             diff_pct = (diff / tarifa_mxp * 100) if tarifa_mxp else 0
             color_diff = "#059669" if diff >= 0 else "#dc2626"
-            signo = "+" if diff >= 0 else ""
-            icon = "✅" if diff >= 0 else "⚠️"
+            signo    = "+" if diff >= 0 else ""
+            icon     = "✅" if diff >= 0 else "⚠️"
             st_module.markdown(
                 f"""
                 <div style='background:#eff6ff; border-left:4px solid #3b82f6;
@@ -329,115 +354,55 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
                 unsafe_allow_html=True,
             )
 
-    section_header("📊", "Resumen de Utilidades")
+    from ui.components import section_header, kpi_row, semaforos_ruta, divider
 
-    col1, col2 = st_module.columns(2)
+    section_header("📊", "Resultado del Cálculo")
 
-    # ── Ingreso Total ─────────────────────────────────────────────────────
-    with col1:
-        nota_sin_ingreso = (
-            f"<div style='font-size:0.75rem; color:#f59e0b; margin-top:4px;'>"
-            f"⚠️ Sin ingreso — sugerida: MXP ${tarifa_mxp:,.2f}{usd_extra}"
-            f"</div>"
-            if ingreso_total == 0 and tarifa_mxp > 0
-            else ""
-        )
-        st_module.markdown(
-            f"""
-            <div style='border-left:4px solid #059669; padding:12px 16px;
-                        border-radius:8px; background:#f0fdf4; margin-bottom:12px;'>
-                <div style='font-size:0.8rem; color:#6b7280;'>💰 Ingreso Total</div>
-                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
-                    ${ingreso_total:,.2f}
-                </div>
-                {nota_sin_ingreso}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    pct_cd  = (costo_total       / ingreso_total * 100) if ingreso_total else 0
+    pct_ind = (costos_indirectos / ingreso_total * 100) if ingreso_total else 0
 
-        # ── Costo Directo ─────────────────────────────────────────────────
-        delta_costo = (costo_total / ingreso_total * 100) if ingreso_total else 0
-        st_module.markdown(
-            f"""
-            <div style='border-left:4px solid #dc2626; padding:12px 16px;
-                        border-radius:8px; background:#fef2f2; margin-bottom:12px;'>
-                <div style='font-size:0.8rem; color:#6b7280;'>🧾 Costo Directo</div>
-                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
-                    ${costo_total:,.2f}
-                </div>
-                <div style='font-size:0.75rem; color:#dc2626; margin-top:4px;'>
-                    ↑ {delta_costo:.1f}%
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    kpi_row([
+        {
+            "icono": "💰",
+            "label": "Ingreso Global",
+            "valor": f"${ingreso_total:,.2f}",
+            "sub":   "MXP",
+            "color": "#1B2266",
+        },
+        {
+            "icono": "📉",
+            "label": "Costo Directo",
+            "valor": f"${costo_total:,.2f}",
+            "sub":   f"{pct_cd:.1f}%",
+            "color": "#DC2626" if pct_cd > 50.0 else "#059669",
+        },
+        {
+            "icono": "📈",
+            "label": "Costo Indirecto",
+            "valor": f"${costos_indirectos:,.2f}",
+            "sub":   f"{pct_ind:.1f}%",
+            "color": "#D97706" if pct_ind > 35.0 else "#059669",
+        },
+        {
+            "icono": "✅",
+            "label": "Utilidad Neta",
+            "valor": f"${utilidad_neta:,.2f}",
+            "sub":   f"{pct_neta:.1f}%",
+            "color": "#DC2626" if pct_neta < 15.0 else "#059669",
+        },
+    ])
 
-    with col2:
-        # ── Utilidad Bruta ────────────────────────────────────────────────
-        color_bruta = "#059669" if utilidad_bruta >= 0 else "#dc2626"
-        bg_bruta = "#f0fdf4" if utilidad_bruta >= 0 else "#fef2f2"
-        signo_bruta = "↑" if utilidad_bruta >= 0 else "↓"
-        st_module.markdown(
-            f"""
-            <div style='border-left:4px solid {color_bruta}; padding:12px 16px;
-                        border-radius:8px; background:{bg_bruta}; margin-bottom:12px;'>
-                <div style='font-size:0.8rem; color:#6b7280;'>📝 Utilidad Bruta</div>
-                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
-                    ${utilidad_bruta:,.2f}
-                </div>
-                <div style='font-size:0.75rem; color:{color_bruta}; margin-top:4px;'>
-                    {signo_bruta} {pct_bruta:.1f}%
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    divider()
 
-        # ── Costos Indirectos ─────────────────────────────────────────────
-        tipo_upper = (tipo or "").strip().upper()
-        aplica_ind = tipo_upper in ("IMPORTACION", "EXPORTACION", "DOM MEX")
-        label_ind = (
-            "Costos Indirectos (35%)"
-            if aplica_ind
-            else "Costos Indirectos (N/A - Vacío)"
-        )
-        st_module.markdown(
-            f"""
-            <div style='border-left:4px solid #7c3aed; padding:12px 16px;
-                        border-radius:8px; background:#faf5ff; margin-bottom:12px;'>
-                <div style='font-size:0.8rem; color:#6b7280;'>🗂️ {label_ind}</div>
-                <div style='font-size:2rem; font-weight:700; color:#1e3a5f;'>
-                    ${costos_indirectos:,.2f}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    # ── Utilidad Neta (barra completa) ────────────────────────────────────
-    color_neta = "#059669" if utilidad_neta >= 0 else "#dc2626"
-    bg_neta = "#f0fdf4" if utilidad_neta >= 0 else "#fef2f2"
-    st_module.markdown(
-        f"""
-        <div style='border:2px solid {color_neta}; padding:14px 20px;
-                    border-radius:10px; background:{bg_neta};
-                    display:flex; justify-content:space-between;
-                    align-items:center; margin-top:4px;'>
-            <div>
-                <div style='font-size:0.8rem; color:#6b7280;'>Utilidad Neta</div>
-                <div style='font-size:1.6rem; font-weight:800; color:{color_neta};'>
-                    ${utilidad_neta:,.2f}
-                </div>
-            </div>
-            <div style='text-align:right;'>
-                <div style='font-size:0.8rem; color:#6b7280;'>% Utilidad Neta</div>
-                <div style='font-size:1.4rem; font-weight:800; color:{color_neta};'>
-                    {pct_neta:.2f}%
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    semaforos_ruta(
+        {
+            "Pct_Costo_Directo":   pct_cd,
+            "Pct_Ut_Bruta":        pct_bruta,
+            "Pct_Costo_Indirecto": pct_ind,
+            "Pct_Ut_Neta":         pct_neta,
+        },
+        max_costo_directo=50.0,
+        min_ut_bruta=50.0,
+        max_costo_indirecto=35.0,
+        min_ut_neta=15.0,
     )
