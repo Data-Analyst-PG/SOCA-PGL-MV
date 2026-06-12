@@ -1,6 +1,7 @@
 """
 consulta_ruta.py – Set Logis Plus
 Patrón: filtros → selector → ajuste PxM → simular → resultados + PDF.
+CAMBIO: pasa fuel_owner desde la ruta guardada al recalcular.
 """
 
 from __future__ import annotations
@@ -53,12 +54,13 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
 # FORMATO DE ETIQUETA
 # ─────────────────────────────────────────────────────────────────────────────
 def _label_ruta(row: pd.Series) -> str:
+    fo = " ⛽" if row.get("Fuel_Owner") else ""
     return (
         f"{row.get('ID_Ruta', '')} | "
         f"{row.get('Fecha', '')} | "
         f"{row.get('Tipo_Viaje', '')} | "
         f"{row.get('Cliente', '')} | "
-        f"{row.get('Ruta_USA', '')}"
+        f"{row.get('Ruta_USA', '')}{fo}"
     )
 
 
@@ -90,14 +92,9 @@ def _filtrar(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PDF CONSULTA INDIVIDUAL  (función de módulo, NO dentro de render)
+# PDF CONSULTA INDIVIDUAL
 # ─────────────────────────────────────────────────────────────────────────────
 def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
-    """
-    Genera PDF de consulta individual de una ruta Set Logis.
-    ruta : dict con los campos guardados en Supabase.
-    r    : dict resultado de calcular_ruta_setlogis (KPIs recalculados).
-    """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=letter,
@@ -111,7 +108,7 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
                              textColor=colors.HexColor("#6c757d"), alignment=TA_CENTER)
     story  = []
 
-    # ── Encabezado ───────────────────────────────────────────────
+    # Encabezado
     hdr = Table([[
         Paragraph("<b>SET LOGIS PLUS</b>",
                   ParagraphStyle("H",  parent=styles["Normal"], fontSize=13, textColor=colors.white)),
@@ -130,147 +127,62 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
     story.append(hdr)
     story.append(Spacer(1, 10))
 
-    # ── Datos generales ──────────────────────────────────────────
+    # Datos generales
     story.append(Paragraph("Datos de la Ruta", sub_s))
+    fo_label = "Sí ⛽" if ruta.get("Fuel_Owner") else "No"
     gen_data = [
         ["Campo",     "Valor",                         "Campo",       "Valor"],
         ["ID Ruta",   str(ruta.get("ID_Ruta", "")),    "Fecha",       str(ruta.get("Fecha", ""))],
         ["Tipo",      str(ruta.get("Tipo_Viaje", "")), "Modo",        str(ruta.get("Modo", ""))],
-        ["Cliente",   str(ruta.get("Cliente", "")),    "Modalidad",   str(ruta.get("Modalidad", ""))],
-        ["Ruta USA",  str(ruta.get("Ruta_USA", "")),   "Tipo Cruce",  str(ruta.get("Tipo_Cruce", ""))],
+        ["Cliente",   str(ruta.get("Cliente", "")),    "Ruta USA",    str(ruta.get("Ruta_USA", ""))],
+        ["Modalidad", str(ruta.get("Modalidad", "")),  "Fuel Owner",  fo_label],
+        ["Miles Load",  f"{safe(ruta.get('Miles_Load')):.0f}",
+         "Short Miles",  f"{safe(ruta.get('Short_Miles')):.0f}"],
+        ["Miles Empty", f"{safe(ruta.get('Miles_Empty')):.0f}",
+         "Millas Totales", f"{safe(ruta.get('Millas_Totales')):.0f}"],
     ]
-    origen_mx = str(ruta.get("Origen_MX", "")).strip()
-    if origen_mx:
-        gen_data.append(["Origen MX", origen_mx, "Destino MX", str(ruta.get("Destino_MX", ""))])
-
-    def _tabla(data, col_widths):
-        t = Table(data, colWidths=col_widths)
-        t.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
-            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("BACKGROUND",    (0, 1), (0, -1),  colors.HexColor("#EEF2FF")),
-            ("BACKGROUND",    (2, 1), (2, -1),  colors.HexColor("#EEF2FF")),
-            ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
-            ("FONTNAME",      (2, 1), (2, -1),  "Helvetica-Bold"),
-            ("FONTSIZE",      (0, 0), (-1, -1), 7),
-            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-            ("TOPPADDING",    (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
-        ]))
-        return t
-
-    cw4 = [1.3 * inch, 2.1 * inch, 1.3 * inch, 2.1 * inch]
-    story.append(_tabla(gen_data, cw4))
+    t = Table(gen_data, colWidths=[1.2*inch, 2.1*inch, 1.2*inch, 2.1*inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE",   (0, 0), (-1, -1), 8),
+        ("GRID",       (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f8f9fa")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
+    ]))
+    story.append(t)
     story.append(Spacer(1, 8))
 
-    # ── Millas y PxM ─────────────────────────────────────────────
-    story.append(Paragraph("Millas y Precio por Milla", sub_s))
-    mil_data = [
-        ["Miles Load",  f"{safe(ruta.get('Miles_Load')):.0f} mi",
-         "Short Miles", f"{safe(ruta.get('Short_Miles')):.0f} mi"],
-        ["Miles Empty", f"{safe(ruta.get('Miles_Empty')):.0f} mi",
-         "Millas Totales", f"{safe(r.get('Millas_Totales')):.0f} mi"],
-        ["PxM Cargado", f"${safe(r.get('PxM_Cargado')):.4f}/mi",
-         "PxM Vacío",   f"${safe(r.get('PxM_Vacio')):.4f}/mi"],
+    # KPIs financieros
+    story.append(Paragraph("Resumen Financiero (USD)", sub_s))
+    kpi_data = [
+        ["Concepto", "Monto USD", "Concepto", "Monto USD"],
+        ["Ingreso Global",   f"${r.get('Ingreso_Global',0):,.2f}",
+         "Costo Directo",    f"${r.get('Costo_Directo',0):,.2f}"],
+        ["Pago Owner",       f"${r.get('Pago_Owner_Total',0):,.2f}",
+         "Fuel al Owner",    f"${r.get('Pago_Fuel_Owner',0):,.2f}"],
+        ["Costo Indirecto",  f"${r.get('Costo_Indirecto',0):,.2f}",
+         "Costo Total",      f"${r.get('Costo_Total',0):,.2f}"],
+        ["Utilidad Bruta",   f"${r.get('Utilidad_Bruta',0):,.2f} ({r.get('Pct_Ut_Bruta',0):.1f}%)",
+         "Utilidad Neta",    f"${r.get('Utilidad_Neta',0):,.2f} ({r.get('Pct_Ut_Neta',0):.1f}%)"],
     ]
-    t_mil = Table(mil_data, colWidths=cw4)
-    t_mil.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (0, -1),  colors.HexColor("#EEF2FF")),
-        ("BACKGROUND",    (2, 0), (2, -1),  colors.HexColor("#EEF2FF")),
-        ("FONTNAME",      (0, 0), (0, -1),  "Helvetica-Bold"),
-        ("FONTNAME",      (2, 0), (2, -1),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 7),
-        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+    t2 = Table(kpi_data, colWidths=[1.5*inch, 1.8*inch, 1.5*inch, 1.8*inch])
+    t2.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE",   (0, 0), (-1, -1), 8),
+        ("GRID",       (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
     ]))
-    story.append(t_mil)
-    story.append(Spacer(1, 8))
+    story.append(t2)
 
-    # ── Ingresos y Costos ─────────────────────────────────────────
-    story.append(Paragraph("Ingresos y Costos", sub_s))
-    fin_data = [
-        ["Concepto",          "Monto USD",                         "Concepto",       "Monto USD"],
-        ["Flete USA",         f"${safe(r.get('Flete_USA')):,.2f}",
-         "Owner Cargado",     f"${safe(r.get('Pago_Owner_Cargado')):,.2f}"],
-        ["Fuel",              f"${safe(r.get('Fuel')):,.2f}",
-         "Owner Vacío",       f"${safe(r.get('Pago_Owner_Vacio')):,.2f}"],
-        ["Ingreso Cruce",     f"${safe(r.get('Ingreso_Cruce')):,.2f}",
-         "Costo Cruce",       f"${safe(r.get('Costo_Cruce')):,.2f}"],
-        ["Ingreso MX",        f"${safe(r.get('Ingreso_MX')):,.2f}",
-         "Costo MX",          f"${safe(r.get('Costo_MX')):,.2f}"],
-        ["Extras (cobrados)", f"${safe(r.get('Extras_Ingreso')):,.2f}",
-         "Extras (costo)",    f"${safe(r.get('Extras_Costo')):,.2f}"],
-        ["",                  "",
-         "Costo Indirecto",   f"${safe(r.get('Costo_Indirecto')):,.2f}"],
-    ]
-    t_fin = Table(fin_data, colWidths=[1.5 * inch, 1.8 * inch, 1.5 * inch, 1.8 * inch])
-    t_fin.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-        ("BACKGROUND",    (0, 1), (0, -1),  colors.HexColor("#EEF2FF")),
-        ("BACKGROUND",    (2, 1), (2, -1),  colors.HexColor("#EEF2FF")),
-        ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
-        ("FONTNAME",      (2, 1), (2, -1),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 7),
-        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-        ("ALIGN",         (1, 1), (1, -1),  "RIGHT"),
-        ("ALIGN",         (3, 1), (3, -1),  "RIGHT"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
-    ]))
-    story.append(t_fin)
-    story.append(Spacer(1, 8))
-
-    # ── Resumen de utilidad ───────────────────────────────────────
-    story.append(Paragraph("Resumen de Utilidad", sub_s))
-    ing    = safe(r.get("Ingreso_Global"))
-    cd     = safe(r.get("Costo_Directo"))
-    ci     = safe(r.get("Costo_Indirecto"))
-    ub     = safe(r.get("Utilidad_Bruta"))
-    un     = safe(r.get("Utilidad_Neta"))
-    pct_cd = safe(r.get("Pct_Costo_Directo"))
-    pct_ub = safe(r.get("Pct_Ut_Bruta"))
-    pct_ci = safe(r.get("Pct_Costo_Indirecto"))
-    pct_un = safe(r.get("Pct_Ut_Neta"))
-
-    color_un_pdf = colors.HexColor("#28a745") if un >= 0 else colors.HexColor("#dc3545")
-    res_data = [
-        ["Concepto",        "Monto (USD)",    "%"],
-        ["Ingreso Total",   f"${ing:,.2f}",   "100.00%"],
-        ["Costo Directo",   f"${cd:,.2f}",    f"{pct_cd:.1f}%"],
-        ["Ut. Bruta",        f"${ub:,.2f}",    f"{pct_ub:.1f}%"],
-        ["Costo Indirecto", f"${ci:,.2f}",    f"{pct_ci:.1f}%"],
-        ["Ut. Neta",         f"${un:,.2f}",    f"{pct_un:.1f}%"],
-    ]
-    t_res = Table(res_data, colWidths=[2.8 * inch, 2.2 * inch, 1.8 * inch])
-    t_res.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 8),
-        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-        ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
-        ("BACKGROUND",    (0, 5), (-1, 5),  color_un_pdf),
-        ("TEXTCOLOR",     (0, 5), (-1, 5),  colors.white),
-        ("FONTNAME",      (0, 5), (-1, 5),  "Helvetica-Bold"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-    ]))
-    story.append(t_res)
+    # Pie
     story.append(Spacer(1, 20))
-
-    # ── Footer ────────────────────────────────────────────────────
     story.append(Paragraph(
-        f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Set Logis Plus",
+        f"Generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Set Logis Plus",
         foot_s,
     ))
+
     doc.build(story)
     return buf.getvalue()
 
@@ -278,189 +190,104 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
 # ─────────────────────────────────────────────────────────────────────────────
 # MOSTRAR RESULTADOS
 # ─────────────────────────────────────────────────────────────────────────────
-def _mostrar_resultados(r: dict, ruta: pd.Series, es_simulacion: bool = False) -> None:
-    if es_simulacion:
-        alert("info", "Mostrando resultados con PxM ajustado (simulación).")
+def _mostrar_resultados(r: dict, ruta: dict, es_simulacion: bool = False) -> None:
+    titulo = "🔁 Resultado Simulado" if es_simulacion else "📊 Resultado de la Ruta"
+    section_header("📊", titulo)
 
-    pct_ut_b   = r.get("Pct_Ut_Bruta", 0.0)
-    color_ut_b = "#16a34a" if pct_ut_b >= 15.0 else "#dc2626"
-
-    ut_neta    = r.get("Utilidad_Neta", 0.0)
-    ut_color   = "#16a34a" if ut_neta >= 0 else "#dc2626"
-
-    section_header("📊", "Resultado de la Ruta")
     kpi_row([
-        {"icono": "💵", "label": "Ingreso Total",   "valor": f"${r['Ingreso_Global']:,.2f} USD",
-         "sub": "Flete + Cruce + MX + Extras",      "color": "#1B2266"},
-        {"icono": "📉", "label": "Costo Directo",   "valor": f"${r['Costo_Directo']:,.2f} USD",
-         "sub": f"{r['Pct_Costo_Directo']:.1f}% del ingreso", "color": r.get("Color_Directo", "#6B7280")},
-        {"icono": "📈", "label": "Utilidad Bruta",  "valor": f"${r['Utilidad_Bruta']:,.2f} USD",
-         "sub": f"{pct_ut_b:.1f}% del ingreso",     "color": color_ut_b},
-        {"icono": "🔁", "label": "Costo Indirecto", "valor": f"${r['Costo_Indirecto']:,.2f} USD",
-         "sub": f"{r['Pct_Costo_Indirecto']:.1f}% del ingreso", "color": r.get("Color_Indirecto", "#F59E0B")},
-        {"icono": "🏆", "label": "Utilidad Neta",   "valor": f"${ut_neta:,.2f} USD",
-         "sub": f"{r['Pct_Ut_Neta']:.1f}% del ingreso",        "color": ut_color},
+        {"icono": "💰", "label": "Ingreso Global",  "valor": f"${r['Ingreso_Global']:,.2f}",  "sub": "USD", "color": "#1B2266"},
+        {"icono": "📉", "label": "Costo Directo",   "valor": f"${r['Costo_Directo']:,.2f}",   "sub": f"{r['Pct_Costo_Directo']:.1f}%", "color": r.get("Color_Directo","#dc2626")},
+        {"icono": "📊", "label": "Costo Indirecto", "valor": f"${r['Costo_Indirecto']:,.2f}", "sub": f"{r['Pct_Costo_Indirecto']:.1f}%", "color": r.get("Color_Indirecto","#dc2626")},
+        {"icono": "✅", "label": "Utilidad Neta",   "valor": f"${r['Utilidad_Neta']:,.2f}",   "sub": f"{r['Pct_Ut_Neta']:.1f}%", "color": r.get("Color_Ut_Neta","#dc2626")},
     ])
 
-    # Porcentajes
-    p1, p2, p3, p4 = st.columns(4)
-    p1.metric("% Costo Directo",   f"{r.get('Pct_Costo_Directo', 0):.1f}%")
-    p2.metric("% Costo Indirecto", f"{r.get('Pct_Costo_Indirecto', 0):.1f}%")
-    p3.metric("% Ut. Bruta",       f"{r.get('Pct_Ut_Bruta', 0):.1f}%")
-    p4.metric("% Ut. Neta",        f"{r.get('Pct_Ut_Neta', 0):.1f}%")
+    if r.get("Fuel_Owner"):
+        st.info(f"⛽ **Fuel pagado al Owner:** ${r.get('Pago_Fuel_Owner', 0):,.2f} USD — incluido en Costo Directo")
 
     divider()
     semaforos_ruta(r)
-
-    # Desglose por tramo
-    modalidad = str(ruta.get("Modalidad", "Flat"))
-    cxm_f     = safe(ruta.get("CXM_Flete")) if modalidad == "Desglosada" else 0.0
-    cxm_fu    = safe(ruta.get("CXM_Fuel"))  if modalidad == "Desglosada" else 0.0
-    desglose_ruta(r, modalidad=modalidad, cxm_flete=cxm_f, cxm_fuel=cxm_fu)
-
-    # Historial de modificaciones
-    historial = ruta.get("historial") or []
-    if isinstance(historial, list) and historial:
-        divider()
-        with st.expander(f"📜 Historial de modificaciones ({len(historial)})", expanded=False):
-            for entrada in reversed(historial):
-                ts  = str(entrada.get("timestamp", ""))[:16].replace("T", " ")
-                usr = entrada.get("usuario", "—")
-                mot = entrada.get("motivo", "—")
-                st.caption(f"**{ts}** · {usr} · _{mot}_")
-                prev = entrada.get("valores_anteriores", {})
-                if prev:
-                    hc1, hc2, hc3 = st.columns(3)
-                    hc1.caption(f"Ingreso: **${safe(prev.get('Ingreso_Global')):,.2f}**")
-                    hc1.caption(f"C. Directo: **${safe(prev.get('Costo_Directo')):,.2f}**")
-                    hc2.caption(f"Ut. Bruta: **${safe(prev.get('Utilidad_Bruta')):,.2f}**")
-                    hc2.caption(f"Ut. Neta: **${safe(prev.get('Utilidad_Neta')):,.2f}**")
-                    hc3.caption(f"Short Miles: **{safe(prev.get('Short_Miles')):.0f}**")
-                    hc3.caption(f"Miles Empty: **{safe(prev.get('Miles_Empty')):.0f}**")
-                st.divider()
-
-    # PDF
     divider()
-    section_header("📥", "Descargar PDF")
-    try:
-        ruta_dict = ruta.to_dict() if hasattr(ruta, "to_dict") else dict(ruta)
-        pdf_bytes = _generar_pdf_consulta(ruta_dict, r)
-        nombre    = (
-            f"Consulta_SL_{ruta.get('ID_Ruta','')}_"
-            f"{str(ruta.get('Cliente','')).replace(' ','_')}.pdf"
-        )
-        st.download_button(
-            label="📄 Descargar PDF de esta Ruta",
-            data=pdf_bytes,
-            file_name=nombre,
-            mime="application/pdf",
-            use_container_width=True,
-            key=f"sl_cons_pdf_{ruta.get('ID_Ruta','')}",
-        )
-    except Exception as ex:
-        alert("error", f"Error generando PDF: {ex}")
+    modalidad = str(ruta.get("Modalidad", "Flat"))
+    cxm_flete = safe(ruta.get("CXM_Flete", 0.0))
+    cxm_fuel  = safe(ruta.get("CXM_Fuel",  0.0))
+    desglose_ruta(r, modalidad=modalidad, cxm_flete=cxm_flete, cxm_fuel=cxm_fuel)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RENDER PRINCIPAL
+# RENDER
 # ─────────────────────────────────────────────────────────────────────────────
 def render() -> None:
-    sb = get_supabase_client()
-    if sb is None:
+    supabase = get_supabase_client()
+    if supabase is None:
         alert("error", "⚠️ Supabase no configurado.")
         return
 
-    c1, c2 = st.columns([1, 4])
-    with c1:
+    cr, _ = st.columns([1, 4])
+    with cr:
         if st.button("🔄 Recargar", key="sl_cons_reload"):
             _cargar_rutas.clear()
             st.rerun()
-    with c2:
-        st.caption("Carga cacheada 2 min.")
 
     df = _cargar_rutas(TABLE_RUTAS)
     if df.empty:
-        alert("warn", "No hay rutas guardadas todavía.")
-        alert("info", "Captura una ruta primero desde la pestaña Captura de Rutas.")
+        alert("info", "ℹ️ No hay rutas guardadas.")
         return
-
-    if "ID_Ruta" in df.columns:
-        df = df.set_index("ID_Ruta", drop=False)
-
-    st.markdown("### 🔎 Buscar Ruta")
-    df_filtrado = _filtrar(df)
-
-    if df_filtrado.empty:
-        alert("info", "No hay rutas que coincidan con los filtros.")
-        return
-
-    idx_sel = st.selectbox(
-        "Selecciona la ruta a consultar",
-        options=df_filtrado.index.tolist(),
-        format_func=lambda i: _label_ruta(df_filtrado.loc[i]),
-        key="sl_cons_select",
-    )
-
-    ruta = df_filtrado.loc[idx_sel]
-
-    pxm_cargado_reg = safe(ruta.get("PxM_Cargado"))
-    pxm_vacio_reg   = safe(ruta.get("PxM_Vacio"))
-
-    divider()
-    section_header("⚙️", "Ajustes para Simulación de PxM")
 
     valores = cargar_datos_generales()
 
-    aj1, aj2, aj3 = st.columns(3)
-    pxm_cargado_sim = aj1.number_input(
-        "PxM Owner Cargado ($/mi)",
-        value=pxm_cargado_reg if pxm_cargado_reg > 0 else safe(valores.get("PxM Owner Subidas", DEFAULTS["PxM Owner Subidas"])),
-        step=0.01, format="%.4f",
-        key="sl_cons_pxm_carg",
+    df_fil = _filtrar(df)
+    if df_fil.empty:
+        alert("warn", "⚠️ No hay rutas con esos filtros.")
+        return
+
+    opciones = df_fil.apply(_label_ruta, axis=1).tolist()
+    ids      = df_fil["ID_Ruta"].tolist()
+
+    sel_label = st.selectbox(
+        "Selecciona una ruta",
+        options=[""] + opciones,
+        format_func=lambda x: "— Elige una ruta —" if x == "" else x,
+        key="sl_cons_sel",
     )
-    pxm_vacio_sim = aj2.number_input(
-        "PxM Owner Vacío ($/mi)",
-        value=pxm_vacio_reg if pxm_vacio_reg > 0 else safe(valores.get("PxM Owner Vacio", DEFAULTS["PxM Owner Vacio"])),
-        step=0.01, format="%.4f",
-        key="sl_cons_pxm_vac",
-    )
-    aj3.markdown(
-        f"**Registrado:**\n"
-        f"- Cargado: **${pxm_cargado_reg:.4f}/mi**\n"
-        f"- Vacío:   **${pxm_vacio_reg:.4f}/mi**",
-    )
+    if not sel_label:
+        return
 
-    # ── Botones de acción — sin asignar manualmente al session_state ──────────
-    col_sim, col_reset = st.columns(2)
-    with col_sim:
-        simular = st.button("🔁 Simular con PxM ajustado", key="sl_cons_btn_sim", type="primary",
-                             use_container_width=True)
-    with col_reset:
-        reset = st.button("↩️ Volver a valores reales",   key="sl_cons_btn_reset",
-                           use_container_width=True)
+    idx = opciones.index(sel_label)
+    ruta = df_fil.iloc[idx].to_dict()
 
-    # Gestión del flag de simulación usando una key diferente al botón
-    if simular:
-        st.session_state["sl_cons_modo_sim"] = True
-    if reset:
-        st.session_state["sl_cons_modo_sim"] = False
+    divider()
+    section_header("🔍", f"Detalle: {ruta.get('ID_Ruta','')} — {ruta.get('Cliente','')}")
 
-    es_simulacion = st.session_state.get("sl_cons_modo_sim", False)
-
-    # ── Construir valores para el cálculo ─────────────────────────────────────
+    # ── Simulador de PxM ──────────────────────────────────────────────────────
     tipo_ruta = str(ruta.get("Tipo_Viaje", "NB"))
-    modo      = str(ruta.get("Modo", "Sencillo"))
+    modo      = str(ruta.get("Modo", "Individual"))
 
-    vals_sim = dict(valores)
-    if es_simulacion:
+    with st.expander("🎛️ Simular cambios de PxM", expanded=False):
+        vals_sim = valores.copy()
+        es_sim   = False
+
+        sc1, sc2, sc3 = st.columns(3)
         if tipo_ruta in {"SB", "D2DSB"}:
             key_c = "PxM Owner Bajadas Team" if modo == "Team" else "PxM Owner Bajadas"
         else:
             key_c = "PxM Owner Subidas Team" if modo == "Team" else "PxM Owner Subidas"
         key_v = "PxM Owner Vacio Team" if modo == "Team" else "PxM Owner Vacio"
+
+        pxm_cargado_sim = sc1.number_input(
+            "PxM Cargado (simulado)", value=float(valores.get(key_c, 1.60)),
+            step=0.01, format="%.4f", key="sl_cons_sim_pxmc",
+        )
+        pxm_vacio_sim = sc2.number_input(
+            "PxM Vacío (simulado)", value=float(valores.get(key_v, 0.80)),
+            step=0.01, format="%.4f", key="sl_cons_sim_pxmv",
+        )
+        es_sim = sc3.checkbox("Activar simulación", key="sl_cons_sim_activa")
+
         vals_sim[key_c] = pxm_cargado_sim
         vals_sim[key_v] = pxm_vacio_sim
 
+    # ── Recalcular ─────────────────────────────────────────────────────────────
+    # fuel_owner se lee de la ruta guardada; en simulación se mantiene igual
     r = calcular_ruta_setlogis(
         tipo_ruta            = tipo_ruta,
         modo                 = modo,
@@ -480,8 +307,25 @@ def render() -> None:
         extras_ingreso       = safe(ruta.get("Extras_Ingreso")),
         extras_costo         = safe(ruta.get("Extras_Costo")),
         modo_costo_indirecto = "CXM",
-        valores              = vals_sim,
+        valores              = vals_sim if es_sim else valores,
+        fuel_owner           = bool(ruta.get("Fuel_Owner", False)),
     )
 
     divider()
-    _mostrar_resultados(r, ruta, es_simulacion=es_simulacion)
+    _mostrar_resultados(r, ruta, es_simulacion=es_sim)
+
+    # ── Descarga PDF ──────────────────────────────────────────────────────────
+    divider()
+    section_header("📥", "Descargar PDF")
+    try:
+        pdf_bytes = _generar_pdf_consulta(ruta, r)
+        nombre_pdf = f"Consulta_{ruta.get('ID_Ruta','SL')}_{ruta.get('Cliente','').replace(' ','_')}.pdf"
+        st.download_button(
+            label="📄 Descargar PDF de esta ruta",
+            data=pdf_bytes,
+            file_name=nombre_pdf,
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    except Exception as ex:
+        alert("error", f"❌ Error generando PDF: {ex}")
