@@ -1,7 +1,7 @@
 """
 consulta_ruta.py – Lincoln Freight (USA/MX)
-Patrón: filtros → selector → simulador de parámetros → resultados + PDF.
-Alineado con Set Logis Plus.
+Formato visual idéntico a Igloo: sección "Detalles y Costos de la Ruta" en 3 columnas.
+PDF profesional con reportlab alineado al estándar de la plataforma.
 """
 
 from __future__ import annotations
@@ -21,13 +21,12 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, kpi_row, semaforos_ruta, desglose_ruta
+from ui.components import section_header, alert, divider, kpi_row, semaforos_ruta
 from ._shared import (
     TABLE_RUTAS,
     safe,
     cargar_datos_generales,
     calcular_ruta_lincoln,
-    tiene_mx,
 )
 
 
@@ -49,16 +48,13 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# ─────────────────────────────────────────────
-# LABEL DE RUTA
-# ─────────────────────────────────────────────
 def _label_ruta(row: pd.Series) -> str:
+    pct = safe(row.get("Pct_Utilidad_Bruta", 0))
     return (
-        f"{row.get('ID_Ruta', '')} | "
-        f"{row.get('Fecha', '')} | "
-        f"{row.get('Tipo', '')} | "
-        f"{row.get('Cliente', '')} | "
-        f"{row.get('Origen', '')} → {row.get('Destino', '')}"
+        f"{row.get('ID_Ruta', '')} | {row.get('Fecha', '')} | "
+        f"{row.get('Tipo', '')} | {row.get('Cliente', '—')} | "
+        f"{row.get('Origen', '')} → {row.get('Destino', '')} | "
+        f"{pct:.1f}% Ut.B"
     )
 
 
@@ -68,15 +64,13 @@ def _label_ruta(row: pd.Series) -> str:
 def _filtrar(df: pd.DataFrame) -> pd.DataFrame:
     with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
         fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-
         tipos    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
         clientes = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
-
-        f_tipo   = fc1.selectbox("Tipo",           tipos,    key="ln_cons_ftipo")
-        f_cli    = fc2.selectbox("Cliente",         clientes, key="ln_cons_fcli")
-        f_id     = fc3.text_input("Buscar ID",                key="ln_cons_fid").strip().upper()
-        f_orig   = fc4.text_input("Origen contiene",          key="ln_cons_forig").strip().upper()
-        f_dest   = fc5.text_input("Destino contiene",         key="ln_cons_fdest").strip().upper()
+        f_tipo = fc1.selectbox("Tipo",            tipos,    key="ln_cons_ftipo")
+        f_cli  = fc2.selectbox("Cliente",          clientes, key="ln_cons_fcli")
+        f_id   = fc3.text_input("ID Ruta",          key="ln_cons_fid", placeholder="LN000001").strip().upper()
+        f_orig = fc4.text_input("Origen contiene",  key="ln_cons_forig").strip().upper()
+        f_dest = fc5.text_input("Destino contiene", key="ln_cons_fdest").strip().upper()
 
     out = df.copy()
     if f_tipo != "Todos":
@@ -93,22 +87,16 @@ def _filtrar(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────
-# RECALCULAR DESDE FILA GUARDADA
+# RECALCULAR
 # ─────────────────────────────────────────────
 def _recalcular(ruta: pd.Series, valores: dict) -> dict:
-    """
-    Recalcula KPIs de una ruta guardada con la firma nueva de calcular_ruta_lincoln.
-    Ingresos USA se preservan tal cual. Diesel/sueldo/bono/ISR recalculan con params actuales.
-    """
     tipo_ruta  = str(ruta.get("Tipo", "NB"))
     modo_viaje = str(ruta.get("Modo_Viaje", "Sencillo"))
 
-    # Millas — columnas nuevas (pueden ser None en rutas antiguas → fallback a columnas viejas)
     miles_load  = safe(ruta.get("Miles_Load")  or ruta.get("Millas_USA", 0))
     short_miles = safe(ruta.get("Short_Miles") or ruta.get("Millas_USA", 0))
     miles_empty = safe(ruta.get("Miles_Empty") or ruta.get("Millas_Vacias", 0))
 
-    # Ingresos guardados — se respetan tal cual (no se recalculan desde CXM)
     ingreso_flete_usa = safe(ruta.get("Ingreso_Flete_USA", 0))
     ingreso_fuel_usa  = safe(ruta.get("Ingreso_Fuel_USA",  0))
     ingreso_cruce     = safe(ruta.get("Ingreso_Cruce",     0))
@@ -117,19 +105,15 @@ def _recalcular(ruta: pd.Series, valores: dict) -> dict:
     otros_ing         = safe(ruta.get("Otros_Cargos_Ingreso", 0))
     otros_costo       = safe(ruta.get("Otros_Cargos_Costo",   0))
 
-    # Derivar CXM equivalente desde ingresos guardados para que el cálculo
-    # reconstruya correctamente Flete_USA y Fuel en el return (para desglose_ruta)
     ing_x_milla = (ingreso_flete_usa / miles_load) if miles_load else 0.0
     fuel_sc     = (ingreso_fuel_usa  / miles_load) if miles_load else 0.0
 
-    # Cruce
     aplica_cruce  = bool(ruta.get("Aplica_Cruce", False))
     tipo_cruce    = str(ruta.get("Tipo_Cruce",      "Propio"))
     tipo_carga    = str(ruta.get("Tipo_Carga_Cruce","Cargado"))
     costo_cruce_t = safe(ruta.get("Costo_Cruce", 0))
     linea_mx      = str(ruta.get("Linea_MX", "Propia"))
-
-    costo_terc = costo_cruce_t if tipo_cruce == "Tercero" else 0.0
+    costo_terc    = costo_cruce_t if tipo_cruce == "Tercero" else 0.0
 
     return calcular_ruta_lincoln(
         tipo_ruta               = tipo_ruta,
@@ -137,7 +121,7 @@ def _recalcular(ruta: pd.Series, valores: dict) -> dict:
         short_miles             = short_miles,
         miles_empty             = miles_empty,
         ingreso_x_milla_usd     = ing_x_milla,
-        tarifa_flat_usd         = 0.0,          # ya está reflejado en ingreso_flete_usa
+        tarifa_flat_usd         = 0.0,
         fuel_surcharge_usd      = fuel_sc,
         ingreso_cruce_usd       = ingreso_cruce,
         aplica_cruce            = aplica_cruce,
@@ -155,11 +139,11 @@ def _recalcular(ruta: pd.Series, valores: dict) -> dict:
 
 
 # ─────────────────────────────────────────────
-# MOSTRAR RESULTADOS
+# MOSTRAR RESULTADOS KPI + SEMÁFOROS
 # ─────────────────────────────────────────────
-def _mostrar_resultados(r: dict, ruta: pd.Series, es_simulacion: bool = False) -> None:
+def _mostrar_kpis(r: dict, es_simulacion: bool = False) -> None:
     if es_simulacion:
-        alert("info", "Mostrando resultados simulados con parámetros ajustados.")
+        alert("info", "🔧 Estás viendo una simulación con parámetros ajustados.")
 
     kpi_row([
         dict(icono="💰", label="Ingreso Total",     valor=f"${r['ingreso_total']:,.2f}",      color="#1B2266"),
@@ -168,34 +152,92 @@ def _mostrar_resultados(r: dict, ruta: pd.Series, es_simulacion: bool = False) -
         dict(icono="📉", label="Costos Indirectos", valor=f"${r['costos_ind']:,.2f}",          color="#D97706"),
         dict(icono="✅", label="Utilidad Neta",     valor=f"${r['utilidad_neta']:,.2f}",       sub=f"{r['pct_neta']:.1f}%",  color="#059669" if r['utilidad_neta'] >= 0 else "#DC2626"),
     ])
-
     semaforos_ruta(r)
-
-    tipo_ruta = str(ruta.get("Tipo", "NB"))
-    es_empty  = (tipo_ruta == "Empty")
-    millas_usa = safe(ruta.get("Millas_USA", 0))
-    millas_vac = safe(ruta.get("Millas_Vacias", 0))
-
-    if es_empty:
-        filas_costo = [
-            (f"Operador Vacío ({millas_vac:.0f} mi × ${r['cxm_vacio']:.4f})", r["sueldo_base"]),
-            ("Diesel (millas vacías)", r["diesel_usa"]),
-        ]
-    else:
-        filas_costo = [
-            (f"Sueldo Base ({millas_usa:.0f} mi carg + {millas_vac:.0f} mi vac)", r["sueldo_base"]),
-            ("Bono por millas cargadas",  r["bono_millas"]),
-            ("Diesel (cargado + vacío)",  r["diesel_usa"]),
-            ("ISR/IMSS",                  r["isr_imss"]),
-        ]
-        if r.get("otros_cargos_costo", 0) > 0:
-            filas_costo.append(("Otros Cargos (pagados)", r["otros_cargos_costo"]))
-
-    desglose_ruta(r, filas_costo_americana=filas_costo)
 
 
 # ─────────────────────────────────────────────
-# PDF
+# DETALLES Y COSTOS (formato Igloo: 3 columnas)
+# ─────────────────────────────────────────────
+def _mostrar_detalles(r: dict, ruta: pd.Series) -> None:
+    divider()
+    section_header("📋", "Detalles y Costos de la Ruta")
+
+    tipo_ruta   = str(ruta.get("Tipo", "NB"))
+    es_empty    = (tipo_ruta == "Empty")
+    miles_load  = safe(ruta.get("Miles_Load")  or ruta.get("Millas_USA",   0))
+    short_miles = safe(ruta.get("Short_Miles") or ruta.get("Millas_USA",   0))
+    miles_empty = safe(ruta.get("Miles_Empty") or ruta.get("Millas_Vacias",0))
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("**Información General**")
+        st.write(f"**Fecha:** {ruta.get('Fecha', '')}")
+        st.write(f"**ID de Ruta:** {ruta.get('ID_Ruta', '')}")
+        st.write(f"**Tipo:** {ruta.get('Tipo', '')}")
+        st.write(f"**Modo:** {ruta.get('Modo_Viaje', 'Sencillo')}")
+        st.write(f"**Cliente:** {ruta.get('Cliente', '')}")
+        st.write(f"**Origen:** {ruta.get('Origen', '')}")
+        st.write(f"**Destino:** {ruta.get('Destino', '')}")
+        st.write(f"**Miles Load:** {miles_load:,.0f} mi")
+        st.write(f"**Short Miles:** {short_miles:,.0f} mi")
+        st.write(f"**Miles Empty:** {miles_empty:,.0f} mi")
+        if tipo_ruta in {"D2DNB", "D2DSB"}:
+            st.write(f"**Línea MX:** {ruta.get('Linea_MX', '—')}")
+            st.write(f"**Origen MX:** {ruta.get('Origen_MX', '—')}")
+            st.write(f"**Destino MX:** {ruta.get('Destino_MX', '—')}")
+
+    with col2:
+        st.markdown("**Ingresos**")
+        st.write(f"**Modalidad:** {ruta.get('Modalidad', '—')}")
+        st.write(f"**Moneda:** {ruta.get('Moneda_USA', 'USD')}")
+        if ruta.get("Modalidad") == "Desglosada":
+            st.write(f"**CXM Flete:** ${safe(ruta.get('CXM_Flete')):,.4f}/mi")
+            st.write(f"**Fuel Surcharge:** ${safe(ruta.get('CXM_Fuel')):,.4f}/mi")
+        else:
+            st.write(f"**Tarifa Flat:** ${safe(ruta.get('Tarifa_Flat')):,.2f}")
+        st.write(f"**Ingreso Flete USA:** ${r['ingreso_flete_usa']:,.2f}")
+        st.write(f"**Ingreso Fuel USA:** ${r['ingreso_fuel_usa']:,.2f}")
+        if bool(ruta.get("Aplica_Cruce", False)):
+            st.write(f"**Cruce ({ruta.get('Tipo_Cruce','—')}):** ${r['ingreso_cruce']:,.2f}")
+        if tipo_ruta in {"D2DNB", "D2DSB"}:
+            st.write(f"**Ingreso MX:** ${r['ingreso_mx_usd']:,.2f} USD")
+            st.write(f"**T. Cambio:** ${r['tc']:,.2f}")
+        if r.get("otros_cargos_ingreso", 0) > 0:
+            st.write(f"**Otros (cobrados):** ${r['otros_cargos_ingreso']:,.2f}")
+        st.markdown(f"**Ingreso Total: ${r['ingreso_total']:,.2f}**")
+
+    with col3:
+        st.markdown("**Costos Directos**")
+        if es_empty:
+            st.write(f"**Operador Vacío:** ${r['sueldo_base']:,.2f}")
+            st.write(f"**Diesel:** ${r['diesel_usa']:,.2f}")
+        else:
+            st.write(f"**Sueldo Base:** ${r['sueldo_base']:,.2f}")
+            st.write(f"**Bono Short Miles:** ${r['bono_millas']:,.2f}")
+            st.write(f"**Diesel:** ${r['diesel_usa']:,.2f}")
+            st.write(f"**ISR/IMSS:** ${r['isr_imss']:,.2f}")
+            if bool(ruta.get("Aplica_Cruce", False)):
+                st.write(f"**Costo Cruce:** ${r['costo_cruce']:,.2f}")
+            if tipo_ruta in {"D2DNB", "D2DSB"}:
+                st.write(f"**Costo MX:** ${r['costo_mx_usd']:,.2f} USD")
+            if r.get("otros_cargos_costo", 0) > 0:
+                st.write(f"**Otros Cargos:** ${r['otros_cargos_costo']:,.2f}")
+        st.markdown(f"**Costo Directo Total: ${r['costo_directo_total']:,.2f}**")
+        st.write("")
+        st.markdown("**Utilidades**")
+        st.write(f"**Ut. Bruta:** ${r['utilidad_bruta']:,.2f} ({r['pct_bruta']:.1f}%)")
+        st.write(f"**Costos Ind. ({r['pct_ind']*100:.0f}%):** ${r['costos_ind']:,.2f}")
+        color_un = "green" if r["utilidad_neta"] >= 0 else "red"
+        st.markdown(f"**Ut. Neta: :{color_un}[${r['utilidad_neta']:,.2f} ({r['pct_neta']:.1f}%)]**")
+
+        if ruta.get("Capturado_Por"):
+            st.write("")
+            st.caption(f"👤 Capturado por: **{ruta.get('Capturado_Por')}**")
+
+
+# ─────────────────────────────────────────────
+# PDF PROFESIONAL (formato estándar plataforma)
 # ─────────────────────────────────────────────
 def _generar_pdf(ruta: pd.Series, r: dict, es_simulacion: bool = False) -> bytes:
     buf = io.BytesIO()
@@ -204,112 +246,156 @@ def _generar_pdf(ruta: pd.Series, r: dict, es_simulacion: bool = False) -> bytes
         leftMargin=0.6 * inch, rightMargin=0.6 * inch,
         topMargin=0.5 * inch, bottomMargin=0.5 * inch,
     )
-
     styles = getSampleStyleSheet()
-    sub_s  = ParagraphStyle("S", parent=styles["Heading2"], fontSize=10,
-                             textColor=colors.HexColor("#1B2266"), spaceBefore=10, spaceAfter=3)
+    AZUL   = colors.HexColor("#1B2266")
+    AZUL_L = colors.HexColor("#dee6f5")
+    GRIS   = colors.HexColor("#f5f5f5")
+
+    sub_s = ParagraphStyle("S", parent=styles["Heading2"], fontSize=10,
+                            textColor=AZUL, spaceBefore=10, spaceAfter=3)
     foot_s = ParagraphStyle("F", parent=styles["Normal"], fontSize=7,
                              textColor=colors.HexColor("#6c757d"), alignment=TA_CENTER)
-    story  = []
+
+    def tabla(data, col_widths, header_color=AZUL):
+        t = Table(data, colWidths=col_widths)
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  header_color),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
+            ("BACKGROUND",    (0, 1), (0, -1),  GRIS),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+            ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ]))
+        return t
+
+    story = []
 
     # ── Encabezado ────────────────────────────────────────────────
     hdr = Table([[
         Paragraph("<b>LINCOLN FREIGHT</b>",
                   ParagraphStyle("H", parent=styles["Normal"], fontSize=13, textColor=colors.white)),
-        Paragraph("Consulta Individual de Ruta" + (" — SIMULACIÓN" if es_simulacion else ""),
-                  ParagraphStyle("HR", parent=styles["Normal"], fontSize=9,
-                                 textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph(
+            "Consulta Individual de Ruta" + (" — SIMULACIÓN" if es_simulacion else ""),
+            ParagraphStyle("HR", parent=styles["Normal"], fontSize=9,
+                           textColor=colors.white, alignment=TA_RIGHT)
+        ),
     ]], colWidths=[4.5 * inch, 2.5 * inch])
     hdr.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#1B2266")),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND",    (0, 0), (-1, -1), AZUL),
         ("TOPPADDING",    (0, 0), (-1, -1), 10),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("LEFTPADDING",   (0, 0), (0, -1),  12),
         ("RIGHTPADDING",  (-1, 0), (-1, -1), 12),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(hdr)
-    story.append(Spacer(1, 10))
-
-    # ── Datos generales ───────────────────────────────────────────
-    story.append(Paragraph("Datos de la Ruta", sub_s))
-    gen = [
-        ["ID Ruta",  str(ruta.get("ID_Ruta", "")),   "Fecha",    str(ruta.get("Fecha", ""))],
-        ["Tipo",     str(ruta.get("Tipo", "")),       "Modo",     str(ruta.get("Modo_Viaje", ""))],
-        ["Cliente",  str(ruta.get("Cliente", "")),    "T. Cambio",f"${r['tc']:,.2f}"],
-        ["Origen",   str(ruta.get("Origen", "")),     "Destino",  str(ruta.get("Destino", ""))],
-        ["Millas USA", f"{safe(ruta.get('Millas_USA')):,.0f}", "Millas Vacías", f"{safe(ruta.get('Millas_Vacias')):,.0f}"],
-    ]
-    t_gen = Table(gen, colWidths=[1.5*inch, 2.0*inch, 1.5*inch, 2.0*inch])
-    t_gen.setStyle(TableStyle([
-        ("BACKGROUND",  (0, 0), (0, -1), colors.HexColor("#f0f0f0")),
-        ("BACKGROUND",  (2, 0), (2, -1), colors.HexColor("#f0f0f0")),
-        ("FONTNAME",    (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTNAME",    (2, 0), (2, -1), "Helvetica-Bold"),
-        ("FONTSIZE",    (0, 0), (-1, -1), 8),
-        ("GRID",        (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-        ("TOPPADDING",  (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    story.append(t_gen)
     story.append(Spacer(1, 8))
 
-    # ── Desglose de costos ────────────────────────────────────────
-    story.append(Paragraph("Desglose de Costos", sub_s))
-    tipo_ruta = str(ruta.get("Tipo", "NB"))
-    es_empty  = (tipo_ruta == "Empty")
+    # ── Datos generales ───────────────────────────────────────────
+    story.append(Paragraph("Información de la Ruta", sub_s))
+    tipo_ruta   = str(ruta.get("Tipo", "NB"))
+    miles_load  = safe(ruta.get("Miles_Load")  or ruta.get("Millas_USA",   0))
+    short_miles = safe(ruta.get("Short_Miles") or ruta.get("Millas_USA",   0))
+    miles_empty = safe(ruta.get("Miles_Empty") or ruta.get("Millas_Vacias",0))
 
-    if es_empty:
-        costos_rows = [
-            ["Operador Vacío", f"${r['sueldo_base']:,.2f}"],
-            ["Diesel",         f"${r['diesel_usa']:,.2f}"],
-        ]
-    else:
-        costos_rows = [
-            ["Sueldo Base",          f"${r['sueldo_base']:,.2f}"],
-            ["Bono por Millas",      f"${r['bono_millas']:,.2f}"],
-            ["Sueldo Total Operador",f"${r['sueldo_usa']:,.2f}"],
-            ["Diesel USA",           f"${r['diesel_usa']:,.2f}"],
-            ["ISR/IMSS",             f"${r['isr_imss']:,.2f}"],
-            ["Costo Cruce",          f"${r['costo_cruce']:,.2f}"],
-            ["Costo Tramo MX",       f"${r['costo_mx_usd']:,.2f}"],
-            ["Otros Cargos",         f"${r.get('otros_cargos_costo', 0):,.2f}"],
-        ]
-    costos_rows.append(["Total Costo Directo", f"${r['costo_directo_total']:,.2f}"])
+    gen_data = [
+        ["Campo", "Valor", "Campo", "Valor"],
+        ["ID Ruta",      str(ruta.get("ID_Ruta", "")),    "Fecha",         str(ruta.get("Fecha", ""))],
+        ["Tipo",         tipo_ruta,                        "Modo",          str(ruta.get("Modo_Viaje", "Sencillo"))],
+        ["Cliente",      str(ruta.get("Cliente", "")),     "T. Cambio",     f"${r['tc']:,.2f}"],
+        ["Origen",       str(ruta.get("Origen", "")),      "Destino",       str(ruta.get("Destino", ""))],
+        ["Miles Load",   f"{miles_load:,.0f} mi",          "Short Miles",   f"{short_miles:,.0f} mi"],
+        ["Miles Empty",  f"{miles_empty:,.0f} mi",         "Capturado Por", str(ruta.get("Capturado_Por", "—"))],
+    ]
+    if tipo_ruta in {"D2DNB", "D2DSB"}:
+        gen_data.append(["Línea MX",   str(ruta.get("Linea_MX", "—")),   "Origen MX",  str(ruta.get("Origen_MX", "—"))])
+        gen_data.append(["Destino MX", str(ruta.get("Destino_MX", "—")), "",            ""])
 
-    t_cos = Table(costos_rows, colWidths=[3.5*inch, 3.5*inch])
-    t_cos.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (0, -1), colors.HexColor("#f0f0f0")),
-        ("FONTNAME",      (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTNAME",      (0, -1),(-1,-1), "Helvetica-Bold"),
-        ("BACKGROUND",    (0, -1),(-1,-1), colors.HexColor("#dee2e6")),
+    t_gen = Table(gen_data, colWidths=[1.5*inch, 2.0*inch, 1.5*inch, 2.0*inch])
+    t_gen.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  AZUL),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("BACKGROUND",    (0, 1), (0, -1),  GRIS),
+        ("BACKGROUND",    (2, 1), (2, -1),  GRIS),
+        ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
+        ("FONTNAME",      (2, 1), (2, -1),  "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, -1), 8),
-        ("ALIGN",         (1, 0), (1, -1), "RIGHT"),
         ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
         ("TOPPADDING",    (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ("LEFTPADDING",   (0, 0), (-1, -1), 6),
     ]))
-    story.append(t_cos)
-    story.append(Spacer(1, 8))
+    story.append(t_gen)
+    story.append(Spacer(1, 6))
 
-    # ── Resumen de utilidades ──────────────────────────────────────
+    # ── Ingresos ──────────────────────────────────────────────────
+    story.append(Paragraph("Desglose de Ingresos", sub_s))
+    es_empty = (tipo_ruta == "Empty")
+    ing_rows = [["Concepto", "Monto (USD)"]]
+    if not es_empty:
+        ing_rows += [
+            ["Flete USA",       f"${r['ingreso_flete_usa']:,.2f}"],
+            ["Fuel Surcharge",  f"${r['ingreso_fuel_usa']:,.2f}"],
+        ]
+        if bool(ruta.get("Aplica_Cruce", False)):
+            ing_rows.append(["Cruce", f"${r['ingreso_cruce']:,.2f}"])
+        if tipo_ruta in {"D2DNB", "D2DSB"}:
+            ing_rows.append(["Flete MX (USD)", f"${r['ingreso_mx_usd']:,.2f}"])
+        if r.get("otros_cargos_ingreso", 0) > 0:
+            ing_rows.append(["Otros (cobrados)", f"${r['otros_cargos_ingreso']:,.2f}"])
+    ing_rows.append(["TOTAL INGRESOS", f"${r['ingreso_total']:,.2f}"])
+    story.append(tabla(ing_rows, [3.5*inch, 3.5*inch]))
+    story.append(Spacer(1, 6))
+
+    # ── Costos ────────────────────────────────────────────────────
+    story.append(Paragraph("Desglose de Costos Directos", sub_s))
+    cost_rows = [["Concepto", "Monto (USD)"]]
+    if es_empty:
+        cost_rows += [
+            ["Operador Vacío", f"${r['sueldo_base']:,.2f}"],
+            ["Diesel",         f"${r['diesel_usa']:,.2f}"],
+        ]
+    else:
+        cost_rows += [
+            ["Sueldo Base Operador",  f"${r['sueldo_base']:,.2f}"],
+            ["Bono Short Miles",      f"${r['bono_millas']:,.2f}"],
+            ["Diesel USA",            f"${r['diesel_usa']:,.2f}"],
+            ["ISR/IMSS",              f"${r['isr_imss']:,.2f}"],
+        ]
+        if bool(ruta.get("Aplica_Cruce", False)):
+            cost_rows.append(["Costo Cruce", f"${r['costo_cruce']:,.2f}"])
+        if tipo_ruta in {"D2DNB", "D2DSB"}:
+            cost_rows.append(["Costo MX (USD)", f"${r['costo_mx_usd']:,.2f}"])
+        if r.get("otros_cargos_costo", 0) > 0:
+            cost_rows.append(["Otros Cargos", f"${r['otros_cargos_costo']:,.2f}"])
+    cost_rows.append(["TOTAL COSTO DIRECTO", f"${r['costo_directo_total']:,.2f}"])
+    story.append(tabla(cost_rows, [3.5*inch, 3.5*inch]))
+    story.append(Spacer(1, 6))
+
+    # ── Utilidades ────────────────────────────────────────────────
     story.append(Paragraph("Resumen de Utilidades", sub_s))
     color_un = colors.HexColor("#28a745") if r["utilidad_neta"] >= 0 else colors.HexColor("#dc3545")
-    res_rows = [
-        ["Concepto",         "Monto (USD)",                      "%"],
-        ["Ingreso Total",    f"${r['ingreso_total']:,.2f}",      "100.00%"],
-        ["Costo Directo",    f"${r['costo_directo_total']:,.2f}", f"{r['Pct_Costo_Directo']:.2f}%"],
-        ["Ut. Bruta",        f"${r['utilidad_bruta']:,.2f}",     f"{r['pct_bruta']:.2f}%"],
-        ["Costo Indirecto",  f"${r['costos_ind']:,.2f}",         f"{r['Pct_Costo_Indirecto']:.2f}%"],
-        ["Ut. Neta",         f"${r['utilidad_neta']:,.2f}",      f"{r['pct_neta']:.2f}%"],
+    ut_rows = [
+        ["Concepto", "Monto (USD)", "%"],
+        ["Ingreso Total",   f"${r['ingreso_total']:,.2f}",      "100.00%"],
+        ["Costo Directo",   f"${r['costo_directo_total']:,.2f}", f"{r['Pct_Costo_Directo']:.2f}%"],
+        ["Ut. Bruta",       f"${r['utilidad_bruta']:,.2f}",     f"{r['pct_bruta']:.2f}%"],
+        ["Costo Indirecto", f"${r['costos_ind']:,.2f}",         f"{r['Pct_Costo_Indirecto']:.2f}%"],
+        ["Ut. Neta",        f"${r['utilidad_neta']:,.2f}",      f"{r['pct_neta']:.2f}%"],
     ]
-    t_res = Table(res_rows, colWidths=[2.8*inch, 2.2*inch, 2.0*inch])
-    t_res.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+    t_ut = Table(ut_rows, colWidths=[2.8*inch, 2.2*inch, 2.0*inch])
+    t_ut.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  AZUL),
         ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
         ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("BACKGROUND",    (0, 1), (0, -1),  GRIS),
+        ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, -1), 8),
         ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
         ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
@@ -320,7 +406,7 @@ def _generar_pdf(ruta: pd.Series, r: dict, es_simulacion: bool = False) -> bytes
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ("LEFTPADDING",   (0, 0), (-1, -1), 6),
     ]))
-    story.append(t_res)
+    story.append(t_ut)
     story.append(Spacer(1, 20))
 
     # ── Footer ────────────────────────────────────────────────────
@@ -357,7 +443,7 @@ def render() -> None:
     valores = cargar_datos_generales()
 
     # ── Filtros y selector ────────────────────────────────────────
-    section_header("📋", "Seleccionar Ruta")
+    section_header("🔎", "Buscar Ruta")
     df_f = _filtrar(df)
 
     if df_f.empty:
@@ -366,7 +452,7 @@ def render() -> None:
 
     st.caption(f"Rutas disponibles: {len(df_f)}")
     opciones = df_f.apply(_label_ruta, axis=1).tolist()
-    sel      = st.selectbox("Ruta", opciones, key="ln_cons_sel")
+    sel      = st.selectbox("Selecciona la ruta a consultar", opciones, key="ln_cons_sel")
 
     if not sel:
         return
@@ -377,8 +463,8 @@ def render() -> None:
     divider()
 
     # ── Simulador de parámetros ───────────────────────────────────
-    section_header("⚙️", "Simulador de Parámetros")
-    st.caption("Ajusta MPG y precio diesel para ver el impacto sin guardar.")
+    section_header("⚙️", "Ajustes para Simulación")
+    st.caption("Ajusta MPG y precio diesel para ver el impacto sin modificar la ruta.")
 
     s1, s2, s3 = st.columns(3)
     mpg_sim    = s1.number_input("Truck Performance (mpg)",
@@ -402,29 +488,28 @@ def render() -> None:
 
     es_simulacion = st.session_state.get("ln_cons_simulacion", False)
 
-    # ── Calcular ──────────────────────────────────────────────────
+    vals_sim = valores.copy()
     if es_simulacion:
-        vals_sim = valores.copy()
         vals_sim["Truck Performance (mpg)"]  = mpg_sim
         vals_sim["Diesel Price ($/gal)"]     = diesel_sim
         vals_sim["Tipo de Cambio USD/MXP"]   = tc_sim
-    else:
-        vals_sim = valores
 
+    # ── Calcular y mostrar ────────────────────────────────────────
     r = _recalcular(ruta, vals_sim)
 
     divider()
-    _mostrar_resultados(r, ruta, es_simulacion)
+    _mostrar_kpis(r, es_simulacion)
+    _mostrar_detalles(r, ruta)
 
-    # ── Descarga PDF ──────────────────────────────────────────────
+    # ── PDF ───────────────────────────────────────────────────────
     divider()
-    section_header("📥", "Descargar Reporte PDF")
+    section_header("📥", "Descargar PDF de la Consulta")
 
     if st.button("📄 Generar PDF", type="primary", key="ln_cons_pdf"):
         try:
             pdf_bytes = _generar_pdf(ruta, r, es_simulacion)
             fname = (
-                f"Lincoln_{ruta.get('ID_Ruta', '')}_{ruta.get('Cliente', '').replace(' ','_')}"
+                f"Consulta_Lincoln_{ruta.get('ID_Ruta', '')}_{ruta.get('Cliente', '').replace(' ','_')}"
                 f"_{ruta.get('Fecha', '')}.pdf"
             )
             st.download_button(
