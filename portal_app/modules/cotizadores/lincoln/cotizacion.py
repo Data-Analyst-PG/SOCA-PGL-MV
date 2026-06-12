@@ -94,9 +94,10 @@ def _get_template(pagina_actual: int, total_paginas: int) -> str | None:
 
 
 def _estimar_paginas(lineas: int) -> int:
-    # Página 1 tiene espacio desde y=4.50 hasta y=8.55 → ~23 líneas a 0.18in cada una
-    LINEAS_PAG1  = 23
-    LINEAS_OTRAS = 35   # páginas intermedias/final tienen más espacio
+    # Pág 1: y=4.50 → y=8.55  → (8.55-4.50)/0.18 ≈ 22 líneas
+    # Pág 2+: y=2.10 → y=9.15 → (9.15-2.10)/0.18 ≈ 39 líneas
+    LINEAS_PAG1  = 22
+    LINEAS_OTRAS = 39
     if lineas <= LINEAS_PAG1:
         return 1
     return 1 + (lineas - LINEAS_PAG1 + LINEAS_OTRAS - 1) // LINEAS_OTRAS
@@ -422,7 +423,7 @@ def render() -> None:
             y_max   = y_max_pag1 if pagina_actual == 1 else y_max_otras
 
             if y + 0.35 > y_max:
-                pdf.add_page(); pagina_actual += 1; y = 2.00
+                pdf.add_page(); pagina_actual += 1; y = 2.10
 
             # Header ruta
             pdf.set_body_font(bold=True, size=7)
@@ -459,7 +460,7 @@ def render() -> None:
 
                 y_max = y_max_pag1 if pagina_actual == 1 else y_max_otras
                 if y > y_max:
-                    pdf.add_page(); pagina_actual += 1; y = 1.40
+                    pdf.add_page(); pagina_actual += 1; y = 2.10
 
                 val_show = val * tc if moneda_cot == "MXP" else val
 
