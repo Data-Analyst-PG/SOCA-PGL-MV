@@ -65,27 +65,29 @@ def _panel_datos_generales(valores: dict) -> dict:
         st.markdown("**Cruce Propio (USD)**")
         cr1, cr2 = st.columns(2)
         valores["Cruce Propio Cargado"] = cr1.number_input(
-            "Cruce Propio Cargado", value=float(valores.get("Cruce Propio Cargado", 80.00)),
-            step=1.0, format="%.2f", key="sl_cruce_c")
+            "Cruce Propio Cargado", value=float(valores.get("Cruce Propio Cargado", 80.0)),
+            step=1.0, format="%.2f", key="sl_cruce_carg")
         valores["Cruce Propio Vacio"] = cr2.number_input(
-            "Cruce Propio Vacío", value=float(valores.get("Cruce Propio Vacio", 50.00)),
-            step=1.0, format="%.2f", key="sl_cruce_v")
+            "Cruce Propio Vacío", value=float(valores.get("Cruce Propio Vacio", 50.0)),
+            step=1.0, format="%.2f", key="sl_cruce_vac")
 
-        st.markdown("**Tipo de Cambio y Costos Indirectos**")
-        x1, x2, x3 = st.columns(3)
-        valores["Tipo de Cambio USD/MXP"] = x1.number_input(
+        st.markdown("**Tipo de Cambio y Costo Indirecto**")
+        tc1, tc2, tc3 = st.columns(3)
+        valores["Tipo de Cambio USD/MXP"] = tc1.number_input(
             "TC USD/MXP", value=float(valores.get("Tipo de Cambio USD/MXP", 18.50)),
-            step=0.05, format="%.2f", key="sl_tc")
-        valores["CXM Indirecto"] = x2.number_input(
+            step=0.1, format="%.2f", key="sl_tc")
+        valores["CXM Indirecto"] = tc2.number_input(
             "CXM Indirecto ($/mi)", value=float(valores.get("CXM Indirecto", 0.10)),
-            step=0.01, format="%.3f", key="sl_cxm_ind")
-        valores["% Costo Indirecto"] = x3.number_input(
-            "% Costo Indirecto", value=float(valores.get("% Costo Indirecto", 0.09)),
-            min_value=0.0, max_value=1.0, step=0.005, format="%.3f", key="sl_pct_ind")
+            step=0.01, format="%.4f", key="sl_cxm_ind")
+        pct_display = float(valores.get("% Costo Indirecto", 0.09)) * 100
+        pct_val = tc3.number_input(
+            "% Costo Indirecto", value=pct_display,
+            step=0.1, format="%.1f", key="sl_pct_ind")
+        valores["% Costo Indirecto"] = pct_val / 100
 
-        if st.button("💾 Guardar Parámetros", key="sl_save_params"):
+        if st.button("💾 Guardar parámetros", key="sl_guardar_params"):
             guardar_datos_generales(valores)
-            alert("success", "✅ Parámetros guardados correctamente.")
+            st.success("Parámetros guardados.")
 
     return valores
 
@@ -94,55 +96,21 @@ def _panel_datos_generales(valores: dict) -> dict:
 # RESUMEN DE RESULTADOS
 # ─────────────────────────────────────────────
 def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float) -> None:
-    divider()
-    section_header("📊", "Resultado de la Ruta")
-
-    pct_ut_b   = r["Pct_Ut_Bruta"]
-    color_ut_b = "#16a34a" if pct_ut_b >= 15.0 else "#dc2626"
+    section_header("📊", "Resultado del Cálculo")
 
     kpi_row([
-        {
-            "icono": "💵",
-            "label": "Ingreso Total",
-            "valor": f"${r['Ingreso_Global']:,.2f} USD",
-            "sub":   "Flete + Cruce + MX + Extras cliente",
-            "color": "#1B2266",
-        },
-        {
-            "icono": "📉",
-            "label": "Costo Directo",
-            "valor": f"${r['Costo_Directo']:,.2f} USD",
-            "sub":   f"{r['Pct_Costo_Directo']:.1f}% del ingreso",
-            "color": r["Color_Directo"],
-        },
-        {
-            "icono": "📈",
-            "label": "Utilidad Bruta",
-            "valor": f"${r['Utilidad_Bruta']:,.2f} USD",
-            "sub":   f"{pct_ut_b:.1f}% del ingreso",
-            "color": color_ut_b,
-        },
-        {
-            "icono": "🔁",
-            "label": "Costo Indirecto",
-            "valor": f"${r['Costo_Indirecto']:,.2f} USD",
-            "sub":   f"{r['Pct_Costo_Indirecto']:.1f}% del ingreso",
-            "color": r["Color_Indirecto"],
-        },
-        {
-            "icono": "🏆",
-            "label": "Utilidad Neta",
-            "valor": f"${r['Utilidad_Neta']:,.2f} USD",
-            "sub":   f"{r['Pct_Ut_Neta']:.1f}% del ingreso",
-            "color": r["Color_Ut_Neta"],
-        },
+        {"icono": "💰", "label": "Ingreso Global",   "valor": f"${r['Ingreso_Global']:,.2f}",  "sub": "USD", "color": "#1B2266"},
+        {"icono": "📉", "label": "Costo Directo",    "valor": f"${r['Costo_Directo']:,.2f}",   "sub": f"{r['Pct_Costo_Directo']:.1f}%", "color": r.get("Color_Directo","#dc2626")},
+        {"icono": "📊", "label": "Costo Indirecto",  "valor": f"${r['Costo_Indirecto']:,.2f}", "sub": f"{r['Pct_Costo_Indirecto']:.1f}%", "color": r.get("Color_Indirecto","#dc2626")},
+        {"icono": "✅", "label": "Utilidad Neta",    "valor": f"${r['Utilidad_Neta']:,.2f}",   "sub": f"{r['Pct_Ut_Neta']:.1f}%", "color": r.get("Color_Ut_Neta","#dc2626")},
     ])
 
-    # Semáforos — umbrales Set Logis (defaults)
+    if r.get("Fuel_Owner"):
+        st.info(f"⛽ **Fuel pagado al Owner:** ${r.get('Pago_Fuel_Owner', 0):,.2f} USD — incluido en Costo Directo")
+
     divider()
     semaforos_ruta(r)
-
-    # Desglose por tramo — delegado a components
+    divider()
     desglose_ruta(r, modalidad=modalidad, cxm_flete=cxm_flete, cxm_fuel=cxm_fuel)
 
 
@@ -152,7 +120,7 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
 def render() -> None:
     supabase = get_supabase_client()
     if supabase is None:
-        alert("error", "⚠️ Supabase no configurado. Verifica tu conexión.")
+        alert("error", "⚠️ Supabase no configurado.")
         return
 
     u              = current_user() or {}
@@ -161,6 +129,7 @@ def render() -> None:
 
     st.session_state.setdefault("sl_resultado", None)
     st.session_state.setdefault("sl_datos", {})
+    st.session_state.setdefault("sl_form_key", 0)
 
     valores = cargar_datos_generales()
     valores = _panel_datos_generales(valores)
@@ -169,25 +138,27 @@ def render() -> None:
     divider()
     section_header("🛣️", "Nueva Ruta")
 
-    with st.form("sl_captura_ruta", clear_on_submit=False):
+    tipo_ruta_actual = st.session_state.get("sl_tipo", TIPOS_RUTA[0])
+    es_empty_outer   = (tipo_ruta_actual == "Empty")
 
-        # ── 1. INFORMACIÓN GENERAL ────────────────────────────────────────────
+    _k = st.session_state.get("sl_form_key", 0)
+    with st.form(f"sl_captura_ruta_{_k}", clear_on_submit=False):
+
+        # ── 1. INFO GENERAL ───────────────────────────────────────────────────
         st.markdown("### 📋 Información General")
         g1, g2, g3, g4 = st.columns(4)
-        fecha     = g1.date_input("📅 Fecha",  value=datetime.today(), key="sl_fecha")
-        tipo_ruta = g2.selectbox("🗺️ Tipo",   TIPOS_RUTA,             key="sl_tipo")
-        modo      = g3.selectbox("🚛 Modo",   ["Sencillo", "Team"],   key="sl_modo")
-        cliente   = g4.text_input("👤 Cliente", key="sl_cliente",
-                                   placeholder="NOMBRE DEL CLIENTE",
-                                   disabled=(tipo_ruta == "Empty"))
+        fecha      = g1.date_input("📅 Fecha", value=datetime.today(), key="sl_fecha")
+        tipo_ruta  = g2.selectbox("🚛 Tipo de Ruta", TIPOS_RUTA,
+                                   index=TIPOS_RUTA.index(tipo_ruta_actual), key="sl_tipo")
+        cliente    = g3.text_input("🏢 Cliente", placeholder="NOMBRE DEL CLIENTE", key="sl_cliente")
+        modo       = g4.selectbox("👥 Modo", ["Individual", "Team"], key="sl_modo")
 
-        es_empty  = tipo_ruta == "Empty"
+        es_empty = (tipo_ruta == "Empty")
         aplica_mx = tiene_mx(tipo_ruta)
 
-        st.caption(
-            f"📌 Dirección: **{direccion_label(tipo_ruta)}**  ·  "
-            f"Tramo MX: **{'Sí' if aplica_mx else 'No'}**"
-        )
+        dir_label = direccion_label(tipo_ruta)
+        mx_label  = "Sí" if aplica_mx else "No"
+        st.caption(f"📌 Dirección: **{dir_label}** · Tramo MX: **{mx_label}**")
 
         # ── 2. RUTA AMERICANA ─────────────────────────────────────────────────
         divider()
@@ -237,102 +208,81 @@ def render() -> None:
                                                disabled=es_empty)
             cxm_flete_cap = cxm_fuel_cap = 0.0
 
+        # ── Fuel Owner ────────────────────────────────────────────────────────
+        if not es_empty and modalidad == "Desglosada":
+            divider()
+            fuel_owner = st.checkbox(
+                "⛽ Pagar Fuel al Owner (el monto de Fuel se suma al costo directo)",
+                value=False,
+                key=f"sl_fuel_owner_{_k}",
+                help=(
+                    "Actívalo cuando se acordó pagar el fuel al owner. "
+                    "El cálculo: Miles Load × CXM Fuel se suma como costo directo. "
+                    "El ingreso al cliente no cambia."
+                ),
+            )
+        else:
+            fuel_owner = False
+
         # ── 3. CRUCE ──────────────────────────────────────────────────────────
         divider()
         st.markdown("### 🛂 Cruce Fronterizo")
 
-        incluye_cruce = st.checkbox("¿Incluye cruce?", key="sl_incl_cruce",
-                                     value=not es_empty, disabled=es_empty)
+        incluye_cruce = st.checkbox("¿Incluye cruce?", key="sl_inc_cruce",
+                                     disabled=es_empty)
+        tipo_cruce    = "Propio"
+        tipo_carga_c  = "Cargado"
+        ingreso_cruce_raw = 0.0
+        costo_cruce_raw   = 0.0
+        mon_ing_cruce     = "USD"
+        mon_costo_cruce   = "USD"
 
         if incluye_cruce and not es_empty:
-            crx1, crx2, crx3 = st.columns(3)
-            tipo_cruce   = crx1.selectbox("Tipo de Cruce", ["Propio", "Externo"],
-                                           key="sl_tcruce")
-            tipo_carga_c = crx2.selectbox("Carga del cruce", ["Cargado", "Vacío"],
-                                           key="sl_tcarga_c")
-            mon_ing_cruce = crx3.selectbox("💱 Moneda Ingreso", ["USD", "MXP"],
-                                            key="sl_mon_ing_cruce")
+            cx1, cx2 = st.columns(2)
+            tipo_cruce   = cx1.selectbox("Tipo de Cruce",  ["Propio", "Tercero"], key="sl_tcruce")
+            tipo_carga_c = cx2.selectbox("Tipo de Carga",  ["Cargado", "Vacío"],  key="sl_tcarga")
 
-            ci1, ci2 = st.columns(2)
-            ingreso_cruce_raw = ci1.number_input("💵 Ingreso Cruce", min_value=0.0,
-                                                  step=10.0, key="sl_ing_cruce")
-            if tipo_cruce == "Externo":
-                mon_costo_cruce = ci2.selectbox("💱 Moneda Costo", ["USD", "MXP"],
-                                                 key="sl_mon_costo_cruce")
-                costo_cruce_raw = st.number_input("💸 Costo Cruce Externo", min_value=0.0,
-                                                   step=10.0, key="sl_costo_cruce")
-            else:
-                mon_costo_cruce = "USD"
-                costo_cruce_raw = 0.0
-                key_cfg  = "Cruce Propio Cargado" if tipo_carga_c == "Cargado" else "Cruce Propio Vacio"
-                costo_cfg = safe(valores.get(key_cfg, 80.0))
-                st.caption(f"ℹ️ Costo cruce propio configurado: **${costo_cfg:,.2f} USD**")
+            ic1, ic2 = st.columns(2)
+            mon_ing_cruce     = ic1.selectbox("Moneda Ingreso Cruce",  ["USD", "MXP"], key="sl_mon_ic")
+            ingreso_cruce_raw = ic1.number_input("Ingreso Cruce", min_value=0.0, step=10.0, key="sl_ing_cruce")
 
-            if mon_ing_cruce == "MXP":
-                st.caption(f"ℹ️ Ingreso cruce en USD: **${ingreso_cruce_raw / tc:,.2f}**")
-        else:
-            tipo_cruce        = "Sin cruce"
-            tipo_carga_c      = "Cargado"
-            mon_ing_cruce     = "USD"
-            ingreso_cruce_raw = 0.0
-            mon_costo_cruce   = "USD"
-            costo_cruce_raw   = 0.0
+            if tipo_cruce == "Tercero":
+                mon_costo_cruce   = ic2.selectbox("Moneda Costo Cruce",  ["USD", "MXP"], key="sl_mon_cc")
+                costo_cruce_raw   = ic2.number_input("Costo Cruce (Tercero)", min_value=0.0, step=10.0, key="sl_cos_cruce")
 
-        # ── 4. RUTA MX ────────────────────────────────────────────────────────
-        if aplica_mx:
+        # ── 4. TRAMO MX ───────────────────────────────────────────────────────
+        origen_mx = destino_mx = ""
+        ingreso_mx_raw = costo_mx_raw = 0.0
+        mon_ing_mx = mon_costo_mx = "MXP"
+
+        if aplica_mx and not es_empty:
             divider()
-            st.markdown("### 🇲🇽 Ruta México (Externo)")
+            st.markdown("### 🇲🇽 Tramo Mexicano")
+            mx1, mx2 = st.columns(2)
+            origen_mx  = mx1.text_input("📍 Origen MX",  key="sl_ori_mx",  placeholder="CIUDAD")
+            destino_mx = mx2.text_input("📍 Destino MX", key="sl_dest_mx", placeholder="CIUDAD")
 
-            mx_r1, mx_r2 = st.columns(2)
-            origen_mx  = mx_r1.text_input("📍 Origen MX",  key="sl_ori_mx",
-                                            placeholder="CIUDAD, ESTADO")
-            destino_mx = mx_r2.text_input("📍 Destino MX", key="sl_dest_mx",
-                                            placeholder="CIUDAD, ESTADO")
-
-            mx1, mx2, mx3, mx4 = st.columns(4)
-            mon_ing_mx     = mx1.selectbox("💱 Moneda Ingreso", ["USD", "MXP"],
-                                            key="sl_mon_ing_mx")
-            ingreso_mx_raw = mx2.number_input("💵 Ingreso MX", min_value=0.0,
-                                               step=50.0, key="sl_ing_mx")
-            mon_costo_mx   = mx3.selectbox("💱 Moneda Costo",  ["USD", "MXP"],
-                                            key="sl_mon_costo_mx")
-            costo_mx_raw   = mx4.number_input("💸 Costo MX", min_value=0.0,
-                                               step=50.0, key="sl_costo_mx")
-
-            if mon_ing_mx == "MXP" or mon_costo_mx == "MXP":
-                st.caption(
-                    f"ℹ️ Equivalente USD — "
-                    f"Ingreso: **${ingreso_mx_raw / tc if mon_ing_mx == 'MXP' else ingreso_mx_raw:,.2f}**  ·  "
-                    f"Costo: **${costo_mx_raw / tc if mon_costo_mx == 'MXP' else costo_mx_raw:,.2f}**"
-                )
-        else:
-            origen_mx = destino_mx = ""
-            mon_ing_mx = mon_costo_mx = "USD"
-            ingreso_mx_raw = costo_mx_raw = 0.0
+            mi1, mi2 = st.columns(2)
+            mon_ing_mx     = mi1.selectbox("Moneda Ingreso MX",  ["MXP","USD"], key="sl_mon_imx")
+            ingreso_mx_raw = mi1.number_input("Ingreso MX", min_value=0.0, step=100.0, key="sl_ing_mx")
+            mon_costo_mx   = mi2.selectbox("Moneda Costo MX",    ["MXP","USD"], key="sl_mon_cmx")
+            costo_mx_raw   = mi2.number_input("Costo MX",  min_value=0.0, step=100.0, key="sl_cos_mx")
 
         # ── 5. EXTRAS ─────────────────────────────────────────────────────────
         divider()
-        st.markdown("### ➕ Extras / Otros Conceptos")
-        st.caption("Captura el monto y marca ✓ si se cobra al cliente (suma a ingreso). Sin monto = ignorado.")
+        st.markdown("### ➕ Otros Cargos")
+        otros_cargos  = {}
+        otros_pagados = {}
 
-        otros_cargos:  dict[str, float] = {}
-        otros_pagados: dict[str, bool]  = {}
-
-        for i in range(0, len(EXTRAS_USA), 2):
-            col_a, col_b = st.columns(2)
-            for col, idx in [(col_a, i), (col_b, i + 1)]:
-                if idx >= len(EXTRAS_USA):
-                    break
-                extra = EXTRAS_USA[idx]
-                with col:
-                    ex1, ex2 = st.columns([3, 1])
-                    monto   = ex1.number_input(extra, min_value=0.0, step=10.0,
-                                               key=f"sl_ex_m_{idx}")
-                    cobrado = ex2.checkbox("cobra", key=f"sl_ex_p_{idx}",
-                                           value=False, help="¿Se cobra al cliente?")
-                    if monto > 0:
-                        otros_cargos[extra]  = monto
-                        otros_pagados[extra] = cobrado
+        cols_extra = st.columns(3)
+        for i, extra in enumerate(EXTRAS_USA):
+            col = cols_extra[i % 3]
+            monto   = col.number_input(extra, min_value=0.0, step=10.0,
+                                        key=f"sl_ext_{extra}", label_visibility="visible")
+            cobrado = col.checkbox("Cobrado al cliente", key=f"sl_extc_{extra}")
+            if monto > 0:
+                otros_cargos[extra]  = monto
+                otros_pagados[extra] = cobrado
 
         # ── 6. COSTO INDIRECTO ────────────────────────────────────────────────
         divider()
@@ -371,9 +321,10 @@ def render() -> None:
             if es_empty:
                 flete_usd = fuel_usd = 0.0
             elif modalidad == "Desglosada":
-                flete_raw = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
-                flete_usd = a_usd(flete_raw, moneda_flete, tc)
-                fuel_usd  = 0.0
+                # Flete = CXM_Flete × Miles_Load  |  Fuel = CXM_Fuel × Miles_Load
+                # Se separan para que fuel_owner pueda identificar cuánto es fuel
+                flete_usd = a_usd(safe(cxm_flete_cap) * safe(miles_load), moneda_flete, tc)
+                fuel_usd  = a_usd(safe(cxm_fuel_cap)  * safe(miles_load), moneda_flete, tc)
             else:
                 flete_usd = a_usd(safe(flete_flat_cap), moneda_flete, tc)
                 fuel_usd  = 0.0
@@ -406,6 +357,7 @@ def render() -> None:
                 extras_costo         = extras_costo_puro,
                 modo_costo_indirecto = modo_ci,
                 valores              = valores,
+                fuel_owner           = fuel_owner,
             )
 
             resultado["Modalidad"]     = modalidad
@@ -431,6 +383,7 @@ def render() -> None:
                 "incluye_cruce":    incluye_cruce and not es_empty,
                 "otros_cargos":     otros_cargos,
                 "otros_pagados":    otros_pagados,
+                "fuel_owner":       fuel_owner,
             }
             alert("success", "✅ Ruta calculada correctamente.")
 
@@ -500,6 +453,8 @@ def render() -> None:
                     "Pago_Owner_Cargado":   r["Pago_Owner_Cargado"],
                     "Pago_Owner_Vacio":     r["Pago_Owner_Vacio"],
                     "Pago_Owner_Total":     r["Pago_Owner_Total"],
+                    "Fuel_Owner":           r.get("Fuel_Owner", False),
+                    "Pago_Fuel_Owner":      r.get("Pago_Fuel_Owner", 0.0),
                     "Costo_Cruce":          r["Costo_Cruce"],
                     "Costo_MX":             r["Costo_MX"],
                     "Costo_Directo":        r["Costo_Directo"],
@@ -522,6 +477,8 @@ def render() -> None:
                 alert("success", f"✅ Ruta **{d['id_ruta']}** guardada correctamente.")
                 st.session_state["sl_resultado"] = None
                 st.session_state["sl_datos"]     = {}
+                st.session_state["sl_form_key"]  = _k + 1
+                st.rerun()
 
             except Exception as ex:
                 alert("error", f"❌ Error al guardar: {ex}")
