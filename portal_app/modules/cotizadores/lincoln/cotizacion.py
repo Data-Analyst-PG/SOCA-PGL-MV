@@ -94,9 +94,12 @@ def _get_template(pagina_actual: int, total_paginas: int) -> str | None:
 
 
 def _estimar_paginas(lineas: int) -> int:
-    if lineas <= 20:
+    # Página 1 tiene espacio desde y=4.50 hasta y=8.55 → ~23 líneas a 0.18in cada una
+    LINEAS_PAG1  = 23
+    LINEAS_OTRAS = 35   # páginas intermedias/final tienen más espacio
+    if lineas <= LINEAS_PAG1:
         return 1
-    return 1 + (lineas - 20 + 29) // 30
+    return 1 + (lineas - LINEAS_PAG1 + LINEAS_OTRAS - 1) // LINEAS_OTRAS
 
 
 # ─────────────────────────────────────────────
@@ -391,10 +394,17 @@ def render() -> None:
         pdf.set_xy(5.23, 3.60); pdf.cell(1.35, 0.31, safe_text(empresa_telefono), align="R")
         pdf.set_xy(7.03, 3.60); pdf.cell(0.76, 0.31, safe_text(empresa_ext),      align="C")
 
+        # Fecha en plantilla (coordenada "DOCUMENT ISSUE DATE")
+        pdf.set_body_font(bold=False, size=9)
+        pdf.set_text_color(120, 120, 120)
+        pdf.set_xy(0.85, 1.28)
+        pdf.cell(3.0, 0.18, safe_text(fecha.strftime("%d/%m/%Y")), border=0, align="L")
+        pdf.set_text_color(0, 0, 0)
+
         # Conceptos
         y             = 4.50
-        y_max_pag1    = 8.60
-        y_max_otras   = 9.20
+        y_max_pag1    = 8.55   # espacio real antes del área de total en pág única/primera
+        y_max_otras   = 9.15   # páginas intermedias tienen más espacio
         total_global  = 0.0
         pagina_actual = 1
 
@@ -469,18 +479,28 @@ def render() -> None:
                     total_global += val_show
                 y += 0.18
 
-        # Total — última página
-        while pdf.page_no() < num_paginas:
-            pdf.add_page()
+        # Total y notas — siempre en la página actual si es página única,
+        # o en la última página si hay más de una
+        # No agregar página extra si ya estamos en la correcta
+        pagina_total = num_paginas
+        if pdf.page_no() < pagina_total:
+            while pdf.page_no() < pagina_total:
+                pdf.add_page()
+
+        # Coordenada Y del total: en pág única usa la zona de total de la plantilla base
+        # En última página (plantilla 4) el total está en y=9.13
+        y_total = 9.13
+        y_notas = 9.60
+
         pdf.set_body_font(bold=True, size=8)
         pdf.set_text_color(0, 0, 0)
-        pdf.set_xy(5.85, 9.13); pdf.cell(0.70, 0.15, moneda_cot,              border=0, align="C")
-        pdf.set_xy(6.55, 9.13); pdf.cell(1.00, 0.15, f"${total_global:,.2f}", border=0, align="R")
+        pdf.set_xy(5.85, y_total); pdf.cell(0.70, 0.15, moneda_cot,              border=0, align="C")
+        pdf.set_xy(6.55, y_total); pdf.cell(1.00, 0.15, f"${total_global:,.2f}", border=0, align="R")
 
         # Notas
         pdf.set_body_font(size=6.5)
         pdf.set_text_color(100, 100, 100)
-        pdf.set_xy(0.90, 9.60); pdf.multi_cell(4.50, 0.12, safe_text(notas), align="L")
+        pdf.set_xy(0.90, y_notas); pdf.multi_cell(4.50, 0.12, safe_text(notas), align="L")
 
         # Descargar
         nombre_cli = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
