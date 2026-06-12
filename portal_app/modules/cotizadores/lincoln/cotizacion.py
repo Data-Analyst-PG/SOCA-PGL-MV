@@ -241,8 +241,8 @@ def render() -> None:
     section_header("2.", "Configuración de Conceptos")
     st.caption(
         "Solo aparecen conceptos con monto > 0. "
-        "**Azul (sumar)** = se cobra al cliente y suma al total. "
-        "**Gris (mostrar)** = solo aparece visual en el PDF."
+        "Selecciona qué va en **Sumar al total (azul)** y qué va en **Mostrar sin sumar (gris)**. "
+        "Lo que no selecciones en ninguna lista no aparece en el PDF."
     )
 
     rutas_config: dict = {}
@@ -255,19 +255,23 @@ def render() -> None:
         row  = df.loc[id_ruta]
         tipo = str(row.get("Tipo", ""))
 
-        # Construir lista de conceptos disponibles (solo los que tienen valor > 0)
-        disponibles: list[tuple[str, str, str, float]] = []
+        # ── Construir catálogo de conceptos disponibles (valor > 0) ──
+        # Formato: {label_display: (campo_key, valor_usd)}
+        catalogo: dict[str, tuple[str, float]] = {}
+
         for nombre, campo, tipo_concepto in TODOS_CONCEPTOS:
-            # Flete MX solo en D2D
             if campo == "Ingreso_MX_USD" and tipo not in {"D2DNB", "D2DSB"}:
                 continue
             if campo == "Costo_MX_USD" and tipo not in {"D2DNB", "D2DSB"}:
                 continue
+            # Omitir genérico Otros_Cargos_Ingreso si hay extras individuales
             val = safe(row.get(campo, 0))
             if val > 0:
-                disponibles.append((nombre, campo, tipo_concepto, val))
+                val_show = val * tc if moneda_cot == "MXP" else val
+                label    = f"{nombre}  (${val_show:,.2f} {moneda_cot})"
+                catalogo[label] = (campo, val)
 
-        # También parsear otros cargos del JSON para mostrarlos individualmente
+        # Extras individuales del JSON
         extras_json: dict = {}
         json_str = str(row.get("Otros_Cargos_JSON", "") or "")
         if json_str not in ("", "None", "{}"):
@@ -275,69 +279,63 @@ def render() -> None:
                 extras_json = ast.literal_eval(json_str)
             except Exception:
                 pass
+        # Si hay extras individuales, quitar el genérico Otros_Cargos_Ingreso
+        if extras_json:
+            catalogo = {k: v for k, v in catalogo.items() if v[0] != "Otros_Cargos_Ingreso"}
+        for nombre_e, monto_e in extras_json.items():
+            if safe(monto_e) <= 0:
+                continue
+            val_show = safe(monto_e) * tc if moneda_cot == "MXP" else safe(monto_e)
+            label    = f"{nombre_e}  (${val_show:,.2f} {moneda_cot})"
+            catalogo[label] = (f"__extra_{nombre_e}", safe(monto_e))
 
         with st.expander(f"📋 Configurar: {ruta_lbl}", expanded=True):
-            if not disponibles and not extras_json:
+            if not catalogo:
                 st.caption("No hay conceptos con monto capturado para esta ruta.")
-                rutas_config[ruta_lbl] = {"cobrar": [], "mostrar": []}
+                rutas_config[ruta_lbl] = {"cobrar": [], "mostrar": [], "row": row, "extras": extras_json}
                 continue
 
-            sumar:   list[str] = []
-            mostrar: list[str] = []
+            todas_labels = list(catalogo.keys())
+
+            # Defaults: ingresos van en Sumar, costos en ninguno
+            defaults_sumar = [
+                lbl for lbl, (campo, _) in catalogo.items()
+                if any(campo == c for _, c, t in TODOS_CONCEPTOS if t == "ingreso")
+                   or campo.startswith("__extra_")
+            ]
 
             col_az, col_gr = st.columns(2)
             with col_az:
                 st.markdown("**➕ Sumar al total (Azul)**")
-                for nombre, campo, tipo_concepto, val in disponibles:
-                    # Omitir Otros_Cargos_Ingreso genérico si hay extras individuales
-                    if campo == "Otros_Cargos_Ingreso" and extras_json:
-                        continue
-                    val_show = val * tc if moneda_cot == "MXP" else val
-                    default  = (tipo_concepto == "ingreso")
-                    checked  = st.checkbox(
-                        f"{nombre}: ${val_show:,.2f}",
-                        value=default,
-                        key=f"ln_cot_sum_{id_ruta}_{campo}",
-                    )
-                    if checked:
-                        sumar.append(campo)
-                    else:
-                        mostrar.append(campo)
-
-                # Extras individuales del JSON
-                for nombre_e, monto_e in extras_json.items():
-                    if safe(monto_e) <= 0:
-                        continue
-                    monto_show = safe(monto_e) * tc if moneda_cot == "MXP" else safe(monto_e)
-                    checked_e = st.checkbox(
-                        f"{nombre_e}: ${monto_show:,.2f}",
-                        value=True,
-                        key=f"ln_cot_sum_{id_ruta}_ext_{nombre_e}",
-                    )
-                    campo_key = f"__extra_{nombre_e}"
-                    if checked_e:
-                        sumar.append(campo_key)
-                    else:
-                        mostrar.append(campo_key)
-
+                sel_sumar = st.multiselect(
+                    "Selecciona conceptos que suman al total",
+                    options=todas_labels,
+                    default=[l for l in defaults_sumar if l in todas_labels],
+                    key=f"ln_cot_sumar_{id_ruta}",
+                    label_visibility="collapsed",
+                )
             with col_gr:
                 st.markdown("**👁️ Mostrar sin sumar (Gris)**")
-                # Resumen de lo que irá en gris (se actualiza dinámicamente)
-                gris_preview = [
-                    nombre for nombre, campo, _, val in disponibles
-                    if campo in mostrar
-                ]
-                if gris_preview:
-                    for n in gris_preview:
-                        st.caption(f"· {n}")
-                else:
-                    st.caption("(ninguno en gris por ahora)")
+                # Solo pueden elegir mostrar los que NO están en sumar
+                disponibles_gris = [l for l in todas_labels if l not in sel_sumar]
+                sel_mostrar = st.multiselect(
+                    "Selecciona conceptos que solo se muestran",
+                    options=disponibles_gris,
+                    default=[],
+                    key=f"ln_cot_mostrar_{id_ruta}",
+                    label_visibility="collapsed",
+                )
+
+            # Convertir labels → campos
+            cobrar  = [catalogo[l][0] for l in sel_sumar]
+            mostrar = [catalogo[l][0] for l in sel_mostrar]
 
             rutas_config[ruta_lbl] = {
-                "cobrar":  sumar,
-                "mostrar": mostrar,
-                "row":     row,
-                "extras":  extras_json,
+                "cobrar":   cobrar,
+                "mostrar":  mostrar,
+                "catalogo": catalogo,
+                "row":      row,
+                "extras":   extras_json,
             }
 
     # ── Notas ─────────────────────────────────────────────────────
@@ -427,17 +425,23 @@ def render() -> None:
             # Unir cobrar y mostrar en orden
             todos_campos = [(c, True) for c in cfg.get("cobrar", [])] + \
                            [(c, False) for c in cfg.get("mostrar", [])]
+            catalogo = cfg.get("catalogo", {})
 
             for campo, es_cobrado in todos_campos:
-                # Extras individuales del JSON
+                # Obtener valor y label desde el catálogo si está disponible
+                label_display = None
+                for lbl, (c, v) in catalogo.items():
+                    if c == campo:
+                        # Limpiar el label (quitar el monto al final)
+                        label_display = lbl.split("  ($")[0]
+                        break
+
                 if campo.startswith("__extra_"):
                     nombre_e = campo[8:]
                     val      = safe(extras.get(nombre_e, 0))
-                    label    = safe_text(nombre_e[:32])
+                    label    = safe_text((label_display or nombre_e)[:32])
                 else:
-                    # Buscar nombre display
-                    label = campo.replace("_", " ").replace("Ingreso ", "").replace(" USA", "").title()
-                    label = safe_text(label[:32])
+                    label = safe_text((label_display or campo.replace("_", " ").title())[:32])
                     val   = safe(row.get(campo, 0))
 
                 if val <= 0:
