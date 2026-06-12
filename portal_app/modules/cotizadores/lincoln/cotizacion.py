@@ -469,8 +469,15 @@ def render() -> None:
                     pdf.set_text_color(150, 150, 150)
                 pdf.set_body_font(bold=False, size=7)
 
+                # Millas solo en Flete USA (Miles_Load)
+                miles_txt = ""
+                if campo == "Ingreso_Flete_USA":
+                    ml = safe(row.get("Miles_Load") or row.get("Millas_USA", 0))
+                    if ml > 0:
+                        miles_txt = f"{ml:,.0f}"
+
                 pdf.set_xy(0.85, y); pdf.cell(3.20, 0.15, label,        border=0, align="L")
-                pdf.set_xy(4.00, y); pdf.cell(0.70, 0.15, "",           border=0, align="C")
+                pdf.set_xy(4.00, y); pdf.cell(0.70, 0.15, miles_txt,    border=0, align="C")
                 pdf.set_xy(5.10, y); pdf.cell(0.55, 0.15, "1" if es_cobrado else "", border=0, align="C")
                 pdf.set_xy(5.85, y); pdf.cell(0.65, 0.15, moneda_cot,   border=0, align="C")
                 pdf.set_xy(6.55, y); pdf.cell(1.05, 0.15, f"${val_show:,.2f}", border=0, align="R")
