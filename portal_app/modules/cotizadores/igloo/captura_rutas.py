@@ -1,8 +1,11 @@
 """
 captura_rutas.py — Cotizador Igloo
 Layout homologado con Lincoln:
-  - Secciones con st.markdown("### 🔹 Título") dentro del form
-  - Sin section_header() internos
+  - st.markdown("### emoji Título") para secciones dentro del form
+  - Cruce: Moneda Ing | Ingreso | Moneda Costo | Costo
+  - Ruta MX fila 1: Origen | Destino (anchos)
+  - Ruta MX fila 2: Moneda Flete | Ingreso Flete | Kilómetros | Casetas
+  - Otros Costos: 4 cols → [Concepto+monto] [Cobro] [Concepto+monto] [Cobro]
   - Checkboxes individuales por extra
   - "Sencillo" en lugar de "Operador"
   - Sin st.title()
@@ -151,27 +154,31 @@ def render():
         modo_viaje = c4.selectbox("👥 Modo de Viaje", ["Sencillo", "Team"], key="igloo_modo")
 
         # ── Cruce ─────────────────────────────────────────────────
+        # Orden: Moneda Ingreso Cruce | Ingreso Cruce | Moneda Costo Cruce | Costo Cruce
         st.markdown("### 🛂 Cruce")
         c1, c2, c3, c4 = st.columns(4)
         moneda_cruce       = c1.selectbox("Moneda Ingreso Cruce", ["MXP", "USD"], key="igloo_mon_cruce")
-        moneda_costo_cruce = c2.selectbox("Moneda Costo Cruce",   ["MXP", "USD"], key="igloo_mon_cc")
-        ingreso_cruce      = c3.number_input("Ingreso Cruce",  min_value=0.0, key="igloo_ing_cruce")
-        costo_cruce        = c4.number_input("Costo Cruce",    min_value=0.0, key="igloo_cc")
+        ingreso_cruce      = c2.number_input("Ingreso Cruce",     min_value=0.0,  key="igloo_ing_cruce")
+        moneda_costo_cruce = c3.selectbox("Moneda Costo Cruce",   ["MXP", "USD"], key="igloo_mon_cc")
+        costo_cruce        = c4.number_input("Costo Cruce",       min_value=0.0,  key="igloo_cc")
 
         # ── Ruta Mexicana ─────────────────────────────────────────
+        # Fila 1: Origen | Destino (solos, 2 columnas anchas)
+        # Fila 2: Moneda Ingreso Flete | Ingreso Flete | Kilómetros | Casetas
         st.markdown("### 🇲🇽 Ruta Mexicana")
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2 = st.columns(2)
         origen  = c1.text_input("📍 Origen",  key="igloo_origen",  placeholder="CIUDAD, ESTADO")
         destino = c2.text_input("📍 Destino", key="igloo_destino", placeholder="CIUDAD, ESTADO")
-        km      = c3.number_input("📏 Kilómetros",    min_value=0.0, key="igloo_km")
-        casetas = c4.number_input("🛣️ Casetas (MXP)", min_value=0.0, key="igloo_casetas")
 
-        c1, c2, c3, _ = st.columns(4)
+        c1, c2, c3, c4 = st.columns(4)
         moneda_ingreso = c1.selectbox("Moneda Ingreso Flete", ["MXP", "USD"], key="igloo_mon_ing")
-        ingreso_flete  = c2.number_input("Ingreso Flete", min_value=0.0, key="igloo_ing_flete")
+        ingreso_flete  = c2.number_input("Ingreso Flete",     min_value=0.0,  key="igloo_ing_flete")
+        km             = c3.number_input("📏 Kilómetros",     min_value=0.0,  key="igloo_km")
+        casetas        = c4.number_input("🛣️ Casetas (MXP)",  min_value=0.0,  key="igloo_casetas")
 
         if tipo == "DOM MEX":
-            modo_pago_dom = c3.selectbox(
+            c1, _, _, _ = st.columns(4)
+            modo_pago_dom = c1.selectbox(
                 "Modo pago operador",
                 ["km", "fijo"],
                 format_func=lambda x: "Por kilómetro" if x == "km" else "Pago fijo",
@@ -195,28 +202,30 @@ def render():
         renta_termo  = c4.number_input("📦 Renta Termo (MXP)",  min_value=0.0, key="igloo_renta")
 
         # ── Otros Costos ──────────────────────────────────────────
+        # 4 columnas: [Concepto] [Cobro] [Concepto] [Cobro]
+        # Fila 1: Pistas Extra | cobro | Gatas      | cobro
+        # Fila 2: Stop         | cobro | Accesorios | cobro
+        # Fila 3: Falso        | cobro | Guías      | cobro
         st.markdown("### 🧾 Otros Costos")
-        st.caption("Captura el monto del costo. Marca **'Cobro'** si también se le cobra al cliente (suma al ingreso).")
+        st.caption("Captura el monto. Marca **'Cobro'** si también se le cobra al cliente (suma al ingreso).")
 
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        with c1:
-            pistas_extra = st.number_input("Pistas Extra (MXP)", min_value=0.0, key="igloo_pistas")
-            cobra_pistas = st.checkbox("Cobro", key="igloo_cobra_pistas")
-        with c2:
-            stop         = st.number_input("Stop (MXP)",         min_value=0.0, key="igloo_stop")
-            cobra_stop   = st.checkbox("Cobro", key="igloo_cobra_stop")
-        with c3:
-            falso        = st.number_input("Falso (MXP)",        min_value=0.0, key="igloo_falso")
-            cobra_falso  = st.checkbox("Cobro", key="igloo_cobra_falso")
-        with c4:
-            gatas        = st.number_input("Gatas (MXP)",        min_value=0.0, key="igloo_gatas")
-            cobra_gatas  = st.checkbox("Cobro", key="igloo_cobra_gatas")
-        with c5:
-            accesorios   = st.number_input("Accesorios (MXP)",   min_value=0.0, key="igloo_acc")
-            cobra_acc    = st.checkbox("Cobro", key="igloo_cobra_acc")
-        with c6:
-            guias        = st.number_input("Guías (MXP)",        min_value=0.0, key="igloo_guias")
-            cobra_guias  = st.checkbox("Cobro", key="igloo_cobra_guias")
+        c1, c2, c3, c4 = st.columns(4)
+        pistas_extra = c1.number_input("Pistas Extra (MXP)", min_value=0.0, key="igloo_pistas")
+        cobra_pistas = c2.checkbox("Cobro", key="igloo_cobra_pistas")
+        gatas        = c3.number_input("Gatas (MXP)",        min_value=0.0, key="igloo_gatas")
+        cobra_gatas  = c4.checkbox("Cobro", key="igloo_cobra_gatas")
+
+        c1, c2, c3, c4 = st.columns(4)
+        stop         = c1.number_input("Stop (MXP)",         min_value=0.0, key="igloo_stop")
+        cobra_stop   = c2.checkbox("Cobro", key="igloo_cobra_stop")
+        accesorios   = c3.number_input("Accesorios (MXP)",   min_value=0.0, key="igloo_acc")
+        cobra_acc    = c4.checkbox("Cobro", key="igloo_cobra_acc")
+
+        c1, c2, c3, c4 = st.columns(4)
+        falso        = c1.number_input("Falso (MXP)",        min_value=0.0, key="igloo_falso")
+        cobra_falso  = c2.checkbox("Cobro", key="igloo_cobra_falso")
+        guias        = c3.number_input("Guías (MXP)",        min_value=0.0, key="igloo_guias")
+        cobra_guias  = c4.checkbox("Cobro", key="igloo_cobra_guias")
 
         st.write("")
         revisar = st.form_submit_button("🔍 Revisar Ruta", use_container_width=True)
