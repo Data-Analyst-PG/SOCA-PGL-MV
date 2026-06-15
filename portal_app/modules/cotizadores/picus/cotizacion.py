@@ -1,3 +1,4 @@
+from ui.components import section_header, alert, divider
 import os
 import re
 from pathlib import Path
@@ -6,16 +7,9 @@ import pandas as pd
 import streamlit as st
 from fpdf import FPDF # pyright: ignore[reportMissingModuleSource]
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider
-# --------- Opcional: optimización de plantilla con Pillow ---------
-try:
-    from PIL import Image
-    HAS_PIL = True
-except Exception:
-    HAS_PIL = False
 
 # ---------------------------
-# ETIQUETAS VISIBLES (renombrar en PDF)
+# ETIQUETAS VISIBLES
 # ---------------------------
 DISPLAY_LABELS = {
     "Ingreso_Original": "Flete",
@@ -35,11 +29,10 @@ def convertir_moneda(valor, origen, destino, tipo_cambio):
     return float(valor)
 
 def safe_text(text):
-    # FPDF latin-1 friendly
     return str(text).encode("latin-1", "replace").decode("latin-1")
 
 def _project_root() -> str:
-    # .../portal_app/modules/cotizadores/picus -> subir 3 niveles a portal_app
+    # .../portal_app/modules/cotizadores/igloo -> subir 3 niveles a portal_app
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 def _img_dir() -> str:
@@ -48,42 +41,93 @@ def _img_dir() -> str:
 def _fonts_dir() -> str:
     return os.path.join(_project_root(), "fonts")
 
-PLANTILLA_CANDIDATAS = [
-    # nombres comunes en tu carpeta img
-    "ADT PGL GRAL NO TXT.png",
-    "Cotización Picus.jpg",
-    "Cotización Picus.png",
-    "Picus BG.png",
-    "PICUS W.png",
-]
-
-def _find_template():
+# ---------------------------
+# SISTEMA DE PLANTILLAS MÚLTIPLES
+# ---------------------------
+def _get_template_for_page(pagina_actual: int, total_paginas: int):
+    """
+    Devuelve la plantilla correcta según la posición de la página.
+    
+    Lógica:
+    - Si solo hay 1 página total: usar plantilla básica
+    - Si hay 2+ páginas:
+        - Primera página: plantilla (2) con headers de cliente/empresa
+        - Páginas intermedias: plantilla (3) solo con tabla
+        - Última página: plantilla (4) con tabla y totales
+    """
     img_dir = _img_dir()
-    for name in PLANTILLA_CANDIDATAS:
-        p = os.path.join(img_dir, name)
-        if os.path.exists(p):
-            return p
-    # fallback: si alguien deja ruta absoluta en el futuro
-    for p in PLANTILLA_CANDIDATAS:
-        if os.path.exists(p):
-            return p
+    
+    if total_paginas == 1:
+        nombre = "2.0 ADT PGL PICUS.png"
+    
+    elif total_paginas == 2:
+        if pagina_actual == 1:
+            nombre = "2.0 ADT PGL PICUS (2).png"
+        else:
+            nombre = "2.0 ADT PGL PICUS (4).png"
+    
+    else:
+        if pagina_actual == 1:
+            nombre = "2.0 ADT PGL PICUS (2).png"
+        elif pagina_actual == total_paginas:
+            nombre = "2.0 ADT PGL PICUS (4).png"
+        else:
+            nombre = "2.0 ADT PGL PICUS (3).png"
+    
+    path = os.path.join(img_dir, nombre)
+    
+    if os.path.exists(path):
+        return path
+    
+    # Si no existe, informar pero continuar
+    st.warning(f"⚠️ No se encontró: {nombre}")
     return None
 
-def _optimize_to_jpg(path_png, max_kb=750, target_w=1275, target_h=1650, quality=85):
-    """Convierte PNG pesado a JPG optimizado. Devuelve ruta final."""
-    if not HAS_PIL:
-        return path_png
-    try:
-        img = Image.open(path_png).convert("RGB")
-        img.thumbnail((target_w, target_h), Image.LANCZOS)
-        out = Path(path_png).with_suffix("")
-        out = f"{out}-opt.jpg"
-        img.save(out, "JPEG", quality=quality, optimize=True, progressive=True)
-        if os.path.getsize(out) > max_kb * 1024:
-            img.save(out, "JPEG", quality=75, optimize=True, progressive=True)
-        return out
-    except Exception:
-        return path_png
+# ---------------------------
+# CÁLCULO DE ESPACIO NECESARIO
+# ---------------------------
+def calcular_lineas_necesarias(rutas_config, ids_seleccionados, df):
+    """
+    Calcula cuántas líneas necesitaremos para todos los conceptos.
+    Esto ayuda a decidir cuántas páginas se necesitan.
+    """
+    lineas_totales = 0
+    
+    for ruta_sel in ids_seleccionados:
+        id_ruta = ruta_sel.split(" | ")[0]
+        if id_ruta not in df.index:
+            continue
+        
+        ruta_data = df.loc[id_ruta]
+        
+        # 2 líneas por header (tipo + origen-destino)
+        lineas_totales += 2
+        
+        cfg = rutas_config.get(ruta_sel, {"sumar": [], "visual": []})
+        conceptos_orden = cfg["sumar"] + cfg["visual"]
+        
+        # Contar conceptos no vacíos
+        for campo in conceptos_orden:
+            if campo in ruta_data and not pd.isna(ruta_data[campo]) and float(ruta_data[campo]) != 0:
+                lineas_totales += 1
+    
+    return lineas_totales
+
+def estimar_paginas_necesarias(lineas_totales):
+    """
+    Estima cuántas páginas se necesitan basándose en las líneas.
+    
+    Criterio aproximado:
+    - Primera página: ~20 líneas (tiene encabezados de cliente/empresa)
+    - Páginas siguientes: ~30 líneas cada una
+    """
+    if lineas_totales <= 20:
+        return 1
+    
+    lineas_restantes = lineas_totales - 20
+    paginas_adicionales = (lineas_restantes + 29) // 30  # División con redondeo hacia arriba
+    
+    return 1 + paginas_adicionales
 
 def render():
     supabase = get_supabase_client()
@@ -91,15 +135,15 @@ def render():
         alert("warn", "⚠️ Supabase no configurado. No se pueden cargar rutas para cotizar.")
         return
 
-    # ── Recargar ──────────────────────────────────────────────────
+    # ── Recargar ─────────────────────────────────────────────────
     rc1, rc2 = st.columns([1, 4])
     with rc1:
         if st.button("🔄 Recargar rutas", key="pic_cot_reload"):
             st.rerun()
     with rc2:
-        st.caption("Carga cacheada. Usa 'Recargar' si acabas de guardar rutas nuevas.")
+        st.caption("Usa 'Recargar' si acabas de guardar rutas nuevas.")
 
-    # ── Cargar rutas ───────────────────────────────────────────────
+    # ── Cargar rutas ──────────────────────────────────────────────
     try:
         respuesta = supabase.table("Rutas_Picus").select("*").order("Fecha", desc=True).execute()
         if not respuesta.data:
@@ -124,37 +168,37 @@ def render():
         alert("error", "La tabla debe tener: ID_Ruta, Tipo, Origen, Destino.")
         return
 
-    # ── Fecha ──────────────────────────────────────────────────────
+    # ── Fecha ─────────────────────────────────────────────────────
     divider()
     section_header("📅", "Fecha de Cotización")
     fecha = st.date_input("Fecha", value=date.today(), format="DD/MM/YYYY", key="pic_cot_fecha")
 
-    # ── Datos cliente / empresa ────────────────────────────────────
+    # ── Datos cliente / empresa ───────────────────────────────────
     divider()
     section_header("🏢", "Datos del Cliente y Empresa")
     col_cli, col_emp = st.columns(2)
 
     with col_cli:
         st.markdown("#### 👤 Cliente")
-        cliente_nombre    = st.text_input("Nombre del Cliente",    key="pic_cot_cli_nom",  placeholder="NOMBRE DE LA EMPRESA")
-        cliente_direccion = st.text_input("Dirección del Cliente",  key="pic_cot_cli_dir",  placeholder="Calle, Ciudad, Estado")
-        cliente_mail      = st.text_input("Email del Cliente",      key="pic_cot_cli_mail", placeholder="correo@empresa.com")
+        cliente_nombre    = st.text_input("Nombre del Cliente",     key="pic_cot_cli_nom",  placeholder="NOMBRE DE LA EMPRESA")
+        cliente_direccion = st.text_input("Dirección del Cliente",   key="pic_cot_cli_dir",  placeholder="Calle, Ciudad, Estado")
+        cliente_mail      = st.text_input("Email del Cliente",       key="pic_cot_cli_mail", placeholder="correo@empresa.com")
         cli_c1, cli_c2    = st.columns(2)
-        cliente_telefono  = cli_c1.text_input("Teléfono",          key="pic_cot_cli_tel",  placeholder="867 123 4567")
-        cliente_ext       = cli_c2.text_input("Ext.",              key="pic_cot_cli_ext",  placeholder="1000")
+        cliente_telefono  = cli_c1.text_input("Teléfono",           key="pic_cot_cli_tel",  placeholder="867 123 4567")
+        cliente_ext       = cli_c2.text_input("Ext.",               key="pic_cot_cli_ext",  placeholder="1000")
 
     with col_emp:
         st.markdown("#### 🏢 Empresa")
-        empresa_nombre    = st.text_input("Nombre de la Empresa",   key="pic_cot_emp_nom",  value="PICUS SA DE CV")
+        empresa_nombre    = st.text_input("Nombre de la Empresa",    key="pic_cot_emp_nom",  value="PICUS SA DE CV")
         empresa_direccion = st.text_input("Dirección de la Empresa", key="pic_cot_emp_dir",  placeholder="Dirección completa")
         empresa_mail      = st.text_input("Email de la Empresa",     key="pic_cot_emp_mail", placeholder="operaciones@picus.com")
         emp_c1, emp_c2    = st.columns(2)
         empresa_telefono  = emp_c1.text_input("Teléfono Empresa",   key="pic_cot_emp_tel",  placeholder="867 718 1823")
         empresa_ext       = emp_c2.text_input("Ext. Empresa",       key="pic_cot_emp_ext",  placeholder="1100")
 
-    # ── Filtros de rutas ───────────────────────────────────────────
+    # ── Filtros + selección de rutas ──────────────────────────────
     divider()
-    section_header("🔎", "Selección de Rutas")
+    section_header("🛣️", "Selección de Rutas")
     with st.expander("Filtros opcionales", expanded=False):
         fc1, fc2, fc3, fc4, fc5 = st.columns(5)
         tipos_disp    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())
@@ -186,7 +230,7 @@ def render():
         key="pic_cot_ids",
     )
 
-    # ── Moneda y tipo de cambio ────────────────────────────────────
+    # ── Moneda y tipo de cambio ───────────────────────────────────
     divider()
     section_header("💱", "Moneda y Tipo de Cambio")
     moneda_default = "MXP"
@@ -197,23 +241,21 @@ def render():
 
     col_mon, col_tc = st.columns(2)
     moneda_cotizacion = col_mon.selectbox(
-        "Moneda Principal",
-        ["MXP", "USD"],
+        "Moneda Principal", ["MXP", "USD"],
         index=0 if moneda_default == "MXP" else 1,
         key="pic_cot_moneda",
     )
     tipo_cambio = col_tc.number_input(
-        "Tipo de Cambio USD/MXP",
-        min_value=0.0, value=18.0, step=0.01,
-        key="pic_cot_tc",
+        "Tipo de Cambio USD/MXP", min_value=0.0, value=18.0, step=0.01, key="pic_cot_tc"
     )
 
-    # ── Configuración de conceptos por ruta ───────────────────────
-    # Solo muestra los conceptos que tienen valor > 0 en cada ruta
+    # ── Configuración de conceptos ────────────────────────────────
+    # Solo campos de Picus (sin termo)
     CONCEPTOS_TODOS = [
-        "Ingreso_Original", "Cruce_Original", "Movimiento_Local", "Puntualidad",
-        "Pension", "Estancia", "Pistas_Extra", "Stop", "Falso", "Gatas",
-        "Accesorios", "Casetas", "Fianza", "Guias", "Costo_Diesel_Camion",
+        "Ingreso_Original", "Cruce_Original",
+        "Movimiento_Local", "Puntualidad", "Pension", "Estancia",
+        "Pistas_Extra", "Stop", "Falso", "Gatas", "Accesorios",
+        "Casetas", "Fianza", "Guias", "Costo_Diesel_Camion",
     ]
 
     rutas_config = {}
@@ -237,14 +279,13 @@ def render():
             ]
 
             default_sumar  = [c for c in ["Ingreso_Original", "Cruce_Original"] if c in conceptos_disponibles]
-            default_visual = [c for c in ["Casetas", "Pension", "Estancia", "Movimiento_Local", "Puntualidad"] if c in conceptos_disponibles]
+            default_visual = [c for c in ["Casetas", "Pension", "Estancia"] if c in conceptos_disponibles]
 
             with st.expander(f"📋 Configurar: {ruta_sel}", expanded=False):
                 if not conceptos_disponibles:
                     alert("info", "Esta ruta no tiene conceptos con valor capturado.")
                     rutas_config[ruta_sel] = {"sumar": [], "visual": []}
                     continue
-
                 colS, colV = st.columns(2)
                 with colS:
                     sumar = st.multiselect(
@@ -266,7 +307,7 @@ def render():
                 solo_visual = [c for c in solo_visual if c not in sumar]
                 rutas_config[ruta_sel] = {"sumar": sumar, "visual": solo_visual}
 
-    # ── Notas ──────────────────────────────────────────────────────
+    # ── Notas ─────────────────────────────────────────────────────
     divider()
     section_header("📝", "Notas o Condiciones")
     texto_default = (
@@ -275,26 +316,16 @@ def render():
         "Las exportaciones aplican tasa 0."
     )
     notas_cotizacion = st.text_area(
-        "Puedes editar este texto si lo deseas:",
-        value=texto_default, height=100,
-        key="pic_cot_notas",
+        "Puedes editar este texto:", value=texto_default, height=100, key="pic_cot_notas"
     )
 
-    # ── Plantilla ──────────────────────────────────────────────────
-    plantilla_path = _find_template()
-    if plantilla_path and plantilla_path.lower().endswith(".png"):
-        try:
-            if os.path.getsize(plantilla_path) > 900 * 1024:
-                plantilla_path = _optimize_to_jpg(plantilla_path)
-        except Exception:
-            pass
+    # ── Estimación ────────────────────────────────────────────────
+    if ids_seleccionados:
+        lineas = calcular_lineas_necesarias(rutas_config, ids_seleccionados, df)
+        paginas_estimadas = estimar_paginas_necesarias(lineas)
+        st.info(f"📊 Estimación: ~{lineas} líneas → ~{paginas_estimadas} página(s)")
 
-    if plantilla_path:
-        st.caption(f"Plantilla detectada: `{os.path.basename(plantilla_path)}`")
-    else:
-        alert("warn", "⚠️ No encontré plantilla en portal_app/img. Se usará encabezado básico.")
-
-    # ── Generar PDF ────────────────────────────────────────────────
+    # ── Generar PDF ───────────────────────────────────────────────
     divider()
     if st.button(
         "🎯 Generar Cotización PDF",
@@ -303,16 +334,19 @@ def render():
         key="pic_cot_gen",
         use_container_width=True,
     ):
+        lineas_totales       = calcular_lineas_necesarias(rutas_config, ids_seleccionados, df)
+        num_paginas_necesarias = estimar_paginas_necesarias(lineas_totales)
 
         class PDF(FPDF):
             def __init__(self, orientation="P", unit="in", format="Letter", fecha_str="", total_pages=1):
                 super().__init__(orientation=orientation, unit=unit, format=format)
-
+                # DESACTIVAR compresión para máxima calidad de imágenes
                 self.set_compression(False)
                 self.fecha_str = fecha_str
                 self.total_pages = total_pages
-                self.has_montserrat = False
 
+                # Fuentes Montserrat
+                self.has_montserrat = False
                 try:
                     fonts_dir = _fonts_dir()
                     reg = os.path.join(fonts_dir, "Montserrat-Regular.ttf")
@@ -326,47 +360,36 @@ def render():
                         self.add_font("Montserrat", "B", bold, uni=True)
                     if os.path.exists(it):
                         self.add_font("Montserrat", "I", it, uni=True)
-
                 except Exception:
                     self.has_montserrat = False
 
-            def set_body_font(self, bold=False, italic=False, size=7):
-                style = ("B" if bold else "") + ("I" if italic else "")
-
-                if self.has_montserrat:
-                    try:
-                        self.set_font("Montserrat", style, size)
-                    except Exception:
-                        self.set_font("Montserrat", "", size)
-                else:
-                    self.set_font("Helvetica", style, size)
-
             def header(self):
-                page = self.page_no()
-
-                if page == 1:
-                    bg_name = "2.0 ADT PGL PICUS (2).png"
-                elif page == self.total_pages:
-                    bg_name = "2.0 ADT PGL PICUS (4).png"
+                # Obtener la plantilla correcta para esta página
+                pagina_actual = self.page_no()
+                plantilla_path = _get_template_for_page(pagina_actual, self.total_pages)
+                
+                # Aplicar plantilla de fondo con MÁXIMA CALIDAD
+                if plantilla_path and os.path.exists(plantilla_path):
+                    # Cargar imagen a resolución completa sin degradación
+                    self.image(plantilla_path, x=0, y=0, w=8.5, h=11)
                 else:
-                    bg_name = "2.0 ADT PGL PICUS (3).png"
-
-                bg_path = os.path.join(_img_dir(), bg_name)
-
-                if bg_path and os.path.exists(bg_path):
-                    self.image(bg_path, x=0, y=0, w=8.5, h=11)
-
+                    # Fondo blanco simple si no hay plantilla
+                    self.set_fill_color(255, 255, 255)
+                    self.rect(0, 0, 8.5, 11, "F")
+                
+                # Fecha - va en el espacio "DD / MM / AAA"
                 self.set_body_font(size=8)
                 self.set_text_color(80, 80, 80)
-
-                self.set_xy(0.90, 1.10)
+                self.set_xy(0.90, 1.10)  # Espacio para DD/MM/AAA
                 self.cell(1.2, 0.12, safe_text(self.fecha_str), align="L")
-
+                
+                # Número de página - solo los números, "Página X de Y" ya viene en plantilla
+                self.set_body_font(size=8)
                 # número izquierdo
                 self.set_xy(1.21, 10.14)
-                self.cell(0.20, 0.12, str(page), align="C")
+                self.cell(0.20, 0.12, str(pagina_actual), align="C")
 
-                # espacio central (donde iría DE, pero vacío)
+                # espacio central (vacío)
                 self.set_xy(1.35, 10.14)
                 self.cell(0.35, 0.12, "", align="C")
 
@@ -374,268 +397,98 @@ def render():
                 self.set_xy(1.51, 10.14)
                 self.cell(0.20, 0.12, str(self.total_pages), align="C")
 
-        # ---------------------------
-        # CALCULAR PAGINAS NECESARIAS
-        # ---------------------------
-        lineas_totales = 0
-
-        for ruta_sel in ids_seleccionados:
-            id_ruta = ruta_sel.split(" | ")[0]
-
-            if id_ruta not in df.index:
-                continue
-
-            ruta_data = df.loc[id_ruta]
-
-            # Header ruta + concepto + kms + cantidad
-            lineas_totales += 4
-
-            cfg = rutas_config.get(ruta_sel, {"sumar": [], "visual": []})
-
-            conceptos_orden = [
-                "Ingreso_Original",
-                "Cruce_Original",
-                "Casetas",
-                "Pension",
-                "Estancia",
-                "Movimiento_Local",
-                "Puntualidad"
-            ]
-
-            for campo in conceptos_orden:
-                if (
-                    campo in ruta_data
-                    and not pd.isna(ruta_data[campo])
-                    and float(ruta_data[campo]) != 0
-                ):
-                    lineas_totales += 1
-
-        if lineas_totales <= 12:
-            total_pages_needed = 1
-        else:
-            restantes = lineas_totales - 12
-            extra_pages = (restantes + 29) // 30
-            total_pages_needed = 1 + extra_pages
+            def set_body_font(self, bold=False, italic=False, size=7):
+                style = ("B" if bold else "") + ("I" if italic else "")
+                if self.has_montserrat:
+                    try:
+                        self.set_font("Montserrat", style, size)
+                    except Exception:
+                        # Si falla (por ej. italic no disponible), usar sin estilo
+                        self.set_font("Montserrat", "", size)
+                else:
+                    self.set_font("Helvetica", style, size)
 
         pdf = PDF(
-            orientation="P",
-            unit="in",
+            orientation="P", 
+            unit="in", 
             format="Letter",
-            fecha_str=fecha.strftime("%d/%m/%Y"),
-            total_pages=total_pages_needed
+            fecha_str=fecha.strftime('%d/%m/%Y'),
+            total_pages=num_paginas_necesarias
         )
-
         pdf.set_auto_page_break(auto=False)
         pdf.add_page()
+
+        # ---------------------------
+        # DATOS EN PRIMERA PÁGINA
+        # ---------------------------
         pdf.set_body_font(size=10)
 
-        # ---------------------------
-        # CLIENTE / EMPRESA
-        # ---------------------------
+        # 🔧 COORDENADAS PARA DATOS DEL CLIENTE (ajusta según tu plantilla real)
+        # Cliente (leave exactly like this)
+        pdf.set_xy(0.85, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(cliente_nombre), align="L")
+        pdf.set_xy(0.85, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(cliente_direccion), align="L")
+        pdf.set_xy(0.85, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(cliente_mail), align="L")
+        pdf.set_xy(0.85, 3.60); pdf.cell(1.35, 0.31, safe_text(cliente_telefono), align="L")
+        pdf.set_xy(2.39, 3.60); pdf.cell(0.76, 0.31, safe_text(cliente_ext), align="C")
 
-        def texto_2_lineas(pdf, x, y, texto, align="L"):
-            """
-            EXACTAMENTE máximo 2 líneas
-            Máximo 40 caracteres por línea
-            Nunca permite 3 líneas
-            Nunca mueve columnas
-            No usa multi_cell()
-            """
-
-            texto = safe_text(texto).strip()
-
-            if not texto:
-                return
-
-            max_chars = 40
-            ancho_fijo = 2.89
-            altura_linea = 0.15
-
-            palabras = texto.split()
-
-            linea1 = ""
-            linea2 = ""
-
-            for palabra in palabras:
-                test1 = f"{linea1} {palabra}".strip()
-
-                if len(test1) <= max_chars:
-                    linea1 = test1
-                    continue
-
-                test2 = f"{linea2} {palabra}".strip()
-
-                if len(test2) <= max_chars:
-                    linea2 = test2
-                    continue
-
-                # si ya no cabe → truncar segunda línea
-                if not linea2:
-                    linea2 = palabra[:max_chars - 3] + "..."
-                else:
-                    while len(linea2) > max_chars - 3:
-                        linea2 = linea2[:-1].rstrip()
-
-                    linea2 += "..."
-
-                break
-
-            # línea 1
-            pdf.set_xy(x, y)
-            pdf.cell(
-                ancho_fijo,
-                altura_linea,
-                linea1,
-                align=align
-            )
-
-            # línea 2 (solo si existe)
-            if linea2:
-                pdf.set_xy(x, y + altura_linea)
-                pdf.cell(
-                    ancho_fijo,
-                    altura_linea,
-                    linea2,
-                    align=align
-                )
-
-        # ---------------------------
-        # CLIENTE
-        # ---------------------------
-
-        texto_2_lineas(
-            pdf,
-            x=0.85,
-            y=2.15,
-            texto=cliente_nombre,
-            align="L"
-        )
-
-        texto_2_lineas(
-            pdf,
-            x=0.85,
-            y=2.70,
-            texto=cliente_direccion,
-            align="L"
-        )
-
-        pdf.set_xy(0.85, 3.20)
-        pdf.cell(2.89, 0.31, safe_text(cliente_mail), align="L")
-
-        pdf.set_xy(1.00, 3.60)
-        pdf.cell(1.35, 0.31, safe_text(cliente_telefono), align="L")
-
-        pdf.set_xy(2.39, 3.60)
-        pdf.cell(0.76, 0.31, safe_text(cliente_ext), align="C")
-
-        # ---------------------------
-        # EMPRESA
-        # ---------------------------
-
-        texto_2_lineas(
-            pdf,
-            x=4.76,
-            y=2.15,
-            texto=empresa_nombre,
-            align="R"
-        )
-
-        texto_2_lineas(
-            pdf,
-            x=4.76,
-            y=2.70,
-            texto=empresa_direccion,
-            align="R"
-        )
-
-        pdf.set_xy(4.76, 3.20)
-        pdf.cell(2.89, 0.31, safe_text(empresa_mail), align="R")
-
-        pdf.set_xy(5.23, 3.60)
-        pdf.cell(1.35, 0.31, safe_text(empresa_telefono), align="R")
-
-        pdf.set_xy(7.03, 3.60)
-        pdf.cell(0.76, 0.31, safe_text(empresa_ext), align="C")
+        # Empresa (move this upward)
+        pdf.set_xy(4.76, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(empresa_nombre), align="R")
+        pdf.set_xy(4.76, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(empresa_direccion), align="R")
+        pdf.set_xy(4.76, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(empresa_mail), align="R")
+        pdf.set_xy(5.23, 3.60); pdf.cell(1.35, 0.31, safe_text(empresa_telefono), align="R")
+        pdf.set_xy(7.03, 3.60); pdf.cell(0.76, 0.31, safe_text(empresa_ext), align="C")
 
         # ---------------------------
         # DETALLE DE CONCEPTOS
         # ---------------------------
-        total_global = 0
+        pdf.set_body_font(size=7)
+        
+        # 🔧 Y inicial para empezar conceptos (según plantilla debe estar más arriba)
         y = 4.50
+        
+        # 🔧 Y máximo antes de salto de página
+        y_max_pagina_1 = 8.60  # Más arriba para dar espacio al total
+        y_max_otras_paginas = 9.20  # Páginas intermedias tienen más espacio
+        
+        total_global = 0.0
         pagina_actual = 1
-
-        y_max_pagina_1 = 8.60
-        y_max_otras_paginas = 9.20
 
         for ruta_sel in ids_seleccionados:
             id_ruta = ruta_sel.split(" | ")[0]
-
             if id_ruta not in df.index:
                 continue
 
             ruta_data = df.loc[id_ruta]
-
-            concepto_ruta = str(ruta_data.get("Concepto", ""))
-            kms_ruta = str(ruta_data.get("KMS", ""))
-            cantidad_ruta = str(ruta_data.get("Cantidad", ""))
+            tipo_ruta = str(ruta_data.get("Tipo", ""))
             origen = str(ruta_data.get("Origen", ""))
             destino = str(ruta_data.get("Destino", ""))
+            descripcion = f"{origen} - {destino}"
 
-            pdf.set_body_font(bold=True, size=7)
-
-            pdf.set_xy(0.85, y)
-            pdf.cell(
-                5.50,
-                0.16,
-                safe_text(f"{origen} - {destino}"),
-                align="L"
-            )
-            y += 0.18
-
-            pdf.set_body_font(size=6.5)
-
-            pdf.set_xy(0.85, y)
-            pdf.cell(
-                2.50,
-                0.15,
-                safe_text(concepto_ruta),
-                align="L"
-            )
-
-            pdf.set_xy(3.50, y)
-            pdf.cell(
-                1.20,
-                0.15,
-                safe_text(kms_ruta),
-                align="L"
-            )
-
-            pdf.set_xy(5.00, y)
-            pdf.cell(
-                1.50,
-                0.15,
-                safe_text(cantidad_ruta),
-                align="L"
-            )
-
-            y += 0.25
-
-            # salto de pagina antes del bloque de ruta
+            # Verificar si hay espacio para el header de ruta
+            y_necesario_header = 0.35  # Espacio que ocupa el header
             y_max = y_max_pagina_1 if pagina_actual == 1 else y_max_otras_paginas
-
-            if y + 0.35 > y_max:
+            
+            if y + y_necesario_header > y_max:
                 pdf.add_page()
                 pagina_actual += 1
-                y = 2.00
+                y = 2.00  # 🔧 Y inicial en páginas siguientes
+
+            # Título de ruta
+            pdf.set_body_font(bold=True, size=7)
+            pdf.set_text_color(128, 128, 128)
+            pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(tipo_ruta), align="L")
+            y = pdf.get_y()
+            pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(descripcion), align="L")
+            y = pdf.get_y() + 0.05
 
             cfg = rutas_config.get(ruta_sel, {"sumar": [], "visual": []})
             conceptos_orden = cfg["sumar"] + cfg["visual"]
 
             for campo in conceptos_orden:
-                if campo not in ruta_data or pd.isna(ruta_data[campo]):
+                if campo not in ruta_data or pd.isna(ruta_data[campo]) or float(ruta_data[campo]) == 0:
                     continue
 
-                valor = float(ruta_data[campo] or 0)
+                valor = float(ruta_data[campo])
 
                 if campo == "Ingreso_Original":
                     moneda_original = ruta_data.get("Moneda", "MXP")
@@ -644,36 +497,55 @@ def render():
                 else:
                     moneda_original = "MXP"
 
-                valor_convertido = convertir_moneda(
-                    valor,
-                    moneda_original,
-                    moneda_cotizacion,
-                    tipo_cambio
-                )
+                valor_convertido = convertir_moneda(valor, moneda_original, moneda_cotizacion, tipo_cambio)
+
+                # Verificar si necesitamos nueva página
+                y_max = y_max_pagina_1 if pagina_actual == 1 else y_max_otras_paginas
+                if y > y_max:
+                    pdf.add_page()
+                    pagina_actual += 1
+                    y = 1.40  # 🔧 Y inicial en páginas siguientes (más arriba)
 
                 es_cobrado = campo in cfg["sumar"]
 
+                # 🎨 COLORES DIFERENCIADOS:
+                # Azul (#252D80) para conceptos cobrados
+                # Gris para conceptos no cobrados
                 if es_cobrado:
-                    pdf.set_text_color(37, 45, 128)
+                    pdf.set_text_color(37, 45, 128)  # Azul #252D80
+                    pdf.set_body_font(bold=False, size=7)
                 else:
-                    pdf.set_text_color(150, 150, 150)
+                    pdf.set_text_color(150, 150, 150)  # Gris más claro
+                    pdf.set_body_font(bold=False, size=7)  # Sin italic para evitar errores
 
-                pdf.set_body_font(size=7)
+                # 🔧 COORDENADAS XY PARA LOS CONCEPTOS (ajusta según tu plantilla)
+                # Concepto
+                concepto_texto = safe_text(label_de(campo))
+                if len(concepto_texto) > 32:
+                    concepto_texto = concepto_texto[:29] + "..."
 
                 pdf.set_xy(0.85, y)
-                pdf.cell(3.20, 0.15, safe_text(label_de(campo)), align="L")
+                pdf.cell(3.20, 0.15, concepto_texto, border=0, align="L")
+
+                # KMS
+                kms_texto = str(ruta_data.get("KM", "") or "")
 
                 pdf.set_xy(4.00, y)
-                pdf.cell(0.70, 0.15, safe_text(str(ruta_data.get("KM", "") or "")), align="C")
+                pdf.cell(0.70, 0.15, kms_texto, border=0, align="C")
+
+                # Cantidad
+                cantidad_texto = "1" if es_cobrado else ""
 
                 pdf.set_xy(5.10, y)
-                pdf.cell(0.55, 0.15, "1" if es_cobrado else "", align="C")
+                pdf.cell(0.55, 0.15, cantidad_texto, border=0, align="C")
 
+                # Moneda
                 pdf.set_xy(5.85, y)
-                pdf.cell(0.65, 0.15, moneda_cotizacion, align="C")
+                pdf.cell(0.65, 0.15, moneda_cotizacion, border=0, align="C")
 
+                # Precio
                 pdf.set_xy(6.55, y)
-                pdf.cell(1.05, 0.15, f"${valor_convertido:,.2f}", align="R")
+                pdf.cell(1.05, 0.15, f"${valor_convertido:,.2f}", border=0, align="R")
 
                 if es_cobrado:
                     total_global += valor_convertido
@@ -681,35 +553,49 @@ def render():
                 y += 0.18
 
         # ---------------------------
-        # TOTAL
+        # TOTAL (solo en última página)
         # ---------------------------
+        # Si estamos en una página intermedia, ir a la última
+        while pdf.page_no() < num_paginas_necesarias:
+            pdf.add_page()
+
         pdf.set_body_font(bold=True, size=8)
+        pdf.set_text_color(0, 0, 0)
+        
+        # 🔧 COORDENADAS PARA EL TOTAL (sin label "TARIFA TOTAL")
+        # La palabra "TARIFA TOTAL" ya viene en la plantilla, solo ponemos valores
+        pdf.set_xy(5.85, 9.13)
+        pdf.cell(0.70, 0.15, moneda_cotizacion, border=0, align="C")
 
-        pdf.set_xy(5.85, 9.15)
-        pdf.cell(0.70, 0.15, moneda_cotizacion, align="C")
+        pdf.set_xy(6.55, 9.13)
+        pdf.cell(1.00, 0.15, f"${total_global:,.2f}", border=0, align="R")
 
-        pdf.set_xy(6.55, 9.15)
-        pdf.cell(1.00, 0.15, f"${total_global:,.2f}", align="R")
-
-        # ---------------------------
-        # NOTAS
-        # ---------------------------
+        # Notas (solo en última página) - al margen de los conceptos
         pdf.set_body_font(size=6.5)
+        pdf.set_text_color(100, 100, 100)
+        pdf.set_xy(0.90, 9.60)  # Más arriba y pegado al margen izquierdo
+        pdf.multi_cell(4.50, 0.12, safe_text(notas_cotizacion), align="L")
 
-        pdf.set_xy(0.90, 9.60)
-        pdf.multi_cell(
-            4.50,
-            0.12,
-            safe_text(notas_cotizacion),
-            align="L"
-        )
-
-        file_name = f"Cotizacion-Picus-{fecha.strftime('%d-%m-%Y')}.pdf"
+        nombre_archivo_cliente = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
+        file_name = f'Cotizacion-{nombre_archivo_cliente}-{fecha.strftime("%d-%m-%Y")}.pdf'
         pdf_bytes = pdf.output(dest="S").encode("latin-1")
 
+        # 🆕 Mostrar métrica del PDF generado
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📄 Páginas", num_paginas_necesarias)
+        with col2:
+            st.metric("📊 Líneas", lineas_totales)
+        with col3:
+            tamaño_kb = len(pdf_bytes) / 1024
+            st.metric("💾 Tamaño", f"{tamaño_kb:.1f} KB")
+
+        st.success(f"✅ PDF generado exitosamente con {num_paginas_necesarias} página(s)")
+
         st.download_button(
-            "📄 Descargar Cotización en PDF",
+            "📥 Descargar Cotización en PDF",
             data=pdf_bytes,
             file_name=file_name,
-            mime="application/pdf"
+            mime="application/pdf",
+            type="primary"
         )
