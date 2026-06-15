@@ -362,10 +362,10 @@ def mostrar_resultados_utilidad(
                 '<div style="background:#eff6ff;border-left:4px solid #3b82f6;'
                 'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
                 'font-size:0.9rem;color:#1e3a5f;">'
-                f'📊 <b>Tarifa sugerida:</b>&nbsp;MXP ${tarifa_mxp:,.2f}{usd_extra}'
+                f'📊 <b>Tarifa sugerida (50% margen):</b>&nbsp;MXP ${tarifa_mxp:,.2f}{usd_extra}'
                 f'&nbsp;&nbsp;{icono}&nbsp;'
                 f'<span style="color:{color};font-weight:600;">'
-                f'{signo}${diff:,.2f} ({signo}{diff_pct:.1f}%)'
+                f'Tu tarifa está {signo}{diff_pct:.1f}% (${signo}{diff:,.2f} MXP) vs la sugerida'
                 '</span></div>',
                 unsafe_allow_html=True,
             )
