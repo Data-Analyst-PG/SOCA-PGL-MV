@@ -334,8 +334,40 @@ def render():
         key="pic_cot_gen",
         use_container_width=True,
     ):
-        lineas_totales       = calcular_lineas_necesarias(rutas_config, ids_seleccionados, df)
-        num_paginas_necesarias = estimar_paginas_necesarias(lineas_totales)
+        lineas_totales = calcular_lineas_necesarias(rutas_config, ids_seleccionados, df)
+
+        # ── Simulación de páginas reales (recuento de Y sin renderizar) ──
+        # Esto evita páginas en blanco por sobreestimación.
+        _y_sim = 4.50
+        _paginas_sim = 1
+        _y_max_1 = 8.60
+        _y_max_n = 9.20
+
+        for _ruta_sel in ids_seleccionados:
+            _id = _ruta_sel.split(" | ")[0].strip()
+            if _id not in df.index:
+                continue
+            _rd = df.loc[_id]
+            _cfg = rutas_config.get(_ruta_sel, {"sumar": [], "visual": []})
+            _conceptos = _cfg["sumar"] + _cfg["visual"]
+
+            # header de ruta: 2 líneas × 0.15 + 0.05 de margen
+            _y_sim += 0.35
+            _y_max = _y_max_1 if _paginas_sim == 1 else _y_max_n
+            if _y_sim > _y_max:
+                _paginas_sim += 1
+                _y_sim = 2.00
+
+            for _campo in _conceptos:
+                if _campo not in _rd or pd.isna(_rd[_campo]) or float(_rd[_campo] or 0) == 0:
+                    continue
+                _y_max = _y_max_1 if _paginas_sim == 1 else _y_max_n
+                if _y_sim > _y_max:
+                    _paginas_sim += 1
+                    _y_sim = 1.40
+                _y_sim += 0.18
+
+        num_paginas_necesarias = _paginas_sim
 
         class PDF(FPDF):
             def __init__(self, orientation="P", unit="in", format="Letter", fecha_str="", total_pages=1):
@@ -527,8 +559,8 @@ def render():
                 pdf.set_xy(0.85, y)
                 pdf.cell(3.20, 0.15, concepto_texto, border=0, align="L")
 
-                # KMS
-                kms_texto = str(ruta_data.get("KM", "") or "")
+                # KMS — solo aplica al concepto Flete (Ingreso_Original)
+                kms_texto = str(ruta_data.get("KM", "") or "") if campo == "Ingreso_Original" else ""
 
                 pdf.set_xy(4.00, y)
                 pdf.cell(0.70, 0.15, kms_texto, border=0, align="C")
@@ -553,11 +585,8 @@ def render():
                 y += 0.18
 
         # ---------------------------
-        # TOTAL (solo en última página)
+        # TOTAL (solo en última página, sin páginas en blanco)
         # ---------------------------
-        # Si estamos en una página intermedia, ir a la última
-        while pdf.page_no() < num_paginas_necesarias:
-            pdf.add_page()
 
         pdf.set_body_font(bold=True, size=8)
         pdf.set_text_color(0, 0, 0)
