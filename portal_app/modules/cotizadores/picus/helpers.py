@@ -419,3 +419,49 @@ def mostrar_resultados_utilidad(
         max_costo_indirecto=35.0,
         min_ut_neta=15.0,
     )
+
+# ─────────────────────────────────────────────
+# Utilidades Vuelta Redonda (simulador)
+# ─────────────────────────────────────────────
+
+def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
+    """
+    Calcula utilidades agregadas para una vuelta redonda.
+    Aplica 35% de indirectos solo a rutas IMPORTACION / EXPORTACION.
+    VACIO → indirectos = 0 (igual que Igloo).
+
+    Devuelve los mismos campos que calcular_utilidades() para que
+    mostrar_resultados_utilidad() los use directamente.
+    """
+    ingreso_total = sum(safe_number(r.get("Ingreso Total", 0)) for r in rutas_seleccionadas)
+    costo_total   = sum(safe_number(r.get("Costo_Total_Ruta", 0)) for r in rutas_seleccionadas)
+
+    costos_ind = sum(
+        calcular_costos_indirectos(str(r.get("Tipo", "")), safe_number(r.get("Ingreso Total", 0)))
+        for r in rutas_seleccionadas
+    )
+
+    utilidad_bruta = ingreso_total - costo_total
+    utilidad_neta  = utilidad_bruta - costos_ind
+
+    pct_bruta = (utilidad_bruta / ingreso_total * 100) if ingreso_total else 0.0
+    pct_neta  = (utilidad_neta  / ingreso_total * 100) if ingreso_total else 0.0
+    pct_cd    = (costo_total    / ingreso_total * 100) if ingreso_total else 0.0
+    pct_ind   = (costos_ind     / ingreso_total * 100) if ingreso_total else 0.0
+
+    return {
+        "ingreso_total":     ingreso_total,
+        "costo_total":       costo_total,
+        "utilidad_bruta":    utilidad_bruta,
+        "costos_indirectos": costos_ind,
+        "utilidad_neta":     utilidad_neta,
+        "porcentaje_bruta":  pct_bruta,
+        "porcentaje_neta":   pct_neta,
+        "Pct_Costo_Directo":   pct_cd,
+        "Pct_Ut_Bruta":        pct_bruta,
+        "Pct_Costo_Indirecto": pct_ind,
+        "Pct_Ut_Neta":         pct_neta,
+        "Color_Directo":   "#DC2626" if pct_cd   > 50.0 else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind  > 35.0 else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta < 15.0 else "#059669",
+    }
