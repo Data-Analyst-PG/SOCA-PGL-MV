@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 from fpdf import FPDF # pyright: ignore[reportMissingModuleSource]
 from services.supabase_client import get_supabase_client
+from ui.components import section_header, alert, divider
 # --------- Opcional: optimización de plantilla con Pillow ---------
 try:
     from PIL import Image
