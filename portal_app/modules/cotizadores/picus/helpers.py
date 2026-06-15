@@ -413,12 +413,9 @@ def mostrar_resultados_utilidad(
 
     # ── Semáforos ──
     semaforos_ruta(
-        pct_costo_directo=util["Pct_Costo_Directo"],
-        pct_ut_bruta=util["Pct_Ut_Bruta"],
-        pct_costo_indirecto=util["Pct_Costo_Indirecto"],
-        pct_ut_neta=util["Pct_Ut_Neta"],
-        umbral_directo=50.0,
-        umbral_bruta=50.0,
-        umbral_indirecto=35.0,
-        umbral_neta=15.0,
+        util,
+        max_costo_directo=50.0,
+        min_ut_bruta=50.0,
+        max_costo_indirecto=35.0,
+        min_ut_neta=15.0,
     )
