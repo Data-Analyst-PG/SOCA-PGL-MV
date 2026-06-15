@@ -1,23 +1,27 @@
 """
 consulta_ruta.py — Cotizador Picus
 Diseño homologado con Igloo:
-  - Sin st.title()
-  - Botón recargar en col [1,4]
-  - Filtros con expander
-  - Selector por label completo (ID | Fecha | Tipo | Cliente | Origen → Destino)
-  - Simulación con helpers.py (calcular_diesel + calcular_utilidades)
-  - Resultados con mostrar_resultados_utilidad → kpi_row + semaforos_ruta
-  - Desglose con st.caption() separado en secciones
-  - PDF sin cambios de lógica
+  - Sin st.title(), filtros con expander, selector label completo
+  - Simulación via helpers.py
+  - Resultados con mostrar_resultados_utilidad
+  - Desglose en expander con st.caption()
+  - PDF profesional con reportlab (mismo estilo que Igloo, campos de Picus)
 """
 from __future__ import annotations
 
 import tempfile
 from datetime import datetime
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
-from fpdf import FPDF
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+)
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
@@ -55,7 +59,7 @@ def _load_rutas_picus_cached() -> pd.DataFrame:
 def _filtrar_rutas(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
     with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
         fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-        tipos    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())    if "Tipo"    in df.columns else ["Todos"]
+        tipos    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())             if "Tipo"    in df.columns else ["Todos"]
         clientes = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
         f_tipo   = fc1.selectbox("Tipo",              tipos,    key=f"{prefix}_ftipo")
         f_cli    = fc2.selectbox("Cliente",           clientes, key=f"{prefix}_fcli")
@@ -81,89 +85,234 @@ def _label_ruta(row) -> str:
 
 
 # ─────────────────────────────────────────────
-# PDF helper
+# PDF profesional (mismo estilo que Igloo)
 # ─────────────────────────────────────────────
 
-def safe_text(text: str) -> str:
+def _safe_txt(text: str) -> str:
     try:
         return str(text).encode("latin-1", "replace").decode("latin-1")
     except Exception:
         return str(text)
 
 
-def _generar_pdf(ruta, ingreso_total, costo_total, utilidad_bruta,
-                 costos_indirectos, utilidad_neta, pct_bruta, pct_neta,
-                 es_simulacion: bool = False) -> bytes:
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+def _tabla_std(data: list, col_widths: list) -> Table:
+    """Tabla con header azul oscuro, filas alternas y números alineados a la derecha."""
+    t = Table(data, colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
+        ("BACKGROUND",    (0, 1), (0, -1),  colors.HexColor("#f5f5f5")),
+        ("FONTSIZE",      (0, 0), (-1, -1), 7),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+    ]))
+    return t
 
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, safe_text("Consulta Individual de Ruta — Picus"), ln=True)
-    if es_simulacion:
-        pdf.set_font("Arial", "I", 10)
-        pdf.cell(0, 8, safe_text("(SIMULACIÓN — valores de diesel/rendimiento ajustados)"), ln=True)
-    pdf.ln(3)
 
-    pdf.set_font("Arial", "", 11)
-    campos = [
-        ("ID de Ruta",        ruta.get("ID_Ruta", "")),
-        ("Fecha",             str(ruta.get("Fecha", ""))[:10]),
-        ("Tipo",              ruta.get("Tipo", "")),
-        ("Ruta Tipo",         ruta.get("Ruta_Tipo", "")),
-        ("Modo de Viaje",     ruta.get("Modo de Viaje", "")),
-        ("Cliente",           ruta.get("Cliente", "")),
-        ("Origen → Destino",  f"{ruta.get('Origen','')} → {ruta.get('Destino','')}"),
-        ("KM",                f"{safe_number(ruta.get('KM')):,.0f}"),
+def generar_pdf_profesional(
+    ruta: dict,
+    ingreso_total:     float,
+    costo_total:       float,
+    utilidad_bruta:    float,
+    costos_indirectos: float,
+    utilidad_neta:     float,
+    pct_bruta:         float,
+    pct_neta:          float,
+    simulando:         bool  = False,
+    rend_sim:          float = 0.0,
+    diesel_sim:        float = 0.0,
+) -> str:
+    """Genera el PDF y devuelve la ruta al archivo temporal."""
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(
+        tmp.name, pagesize=letter,
+        leftMargin=0.5 * inch, rightMargin=0.5 * inch,
+        topMargin=0.5 * inch,  bottomMargin=0.5 * inch,
+    )
+
+    styles = getSampleStyleSheet()
+    AZUL   = colors.HexColor("#1B2266")
+
+    title_s    = ParagraphStyle("T",  parent=styles["Normal"], fontSize=14,
+                                fontName="Helvetica-Bold", textColor=AZUL, spaceAfter=4)
+    subtitle_s = ParagraphStyle("S",  parent=styles["Normal"], fontSize=10,
+                                fontName="Helvetica-Bold", textColor=AZUL,
+                                spaceBefore=8, spaceAfter=3)
+    normal_s   = ParagraphStyle("N",  parent=styles["Normal"], fontSize=8)
+    footer_s   = ParagraphStyle("F",  parent=styles["Normal"], fontSize=7,
+                                textColor=colors.HexColor("#6c757d"), alignment=1)
+
+    story = []
+
+    # ── Encabezado ────────────────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Picus — Reporte de Ruta"), title_s))
+    if simulando:
+        story.append(Paragraph(
+            _safe_txt(f"SIMULACION — Rendimiento: {rend_sim:.2f} km/L · Diesel: ${diesel_sim:.2f}/L"),
+            normal_s,
+        ))
+    story.append(HRFlowable(width="100%", thickness=1, color=AZUL))
+    story.append(Spacer(1, 6))
+
+    # ── Datos Generales ───────────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Datos Generales"), subtitle_s))
+    gen_data = [
+        [_safe_txt("ID Ruta"),    _safe_txt(str(ruta.get("ID_Ruta",""))),
+         _safe_txt("Fecha"),      _safe_txt(str(ruta.get("Fecha",""))[:10])],
+        [_safe_txt("Tipo"),       _safe_txt(str(ruta.get("Tipo",""))),
+         _safe_txt("Ruta Tipo"),  _safe_txt(str(ruta.get("Ruta_Tipo","")))],
+        [_safe_txt("Modo"),       _safe_txt(str(ruta.get("Modo de Viaje",""))),
+         _safe_txt("Cliente"),    _safe_txt(str(ruta.get("Cliente","")))],
+        [_safe_txt("Origen"),     _safe_txt(str(ruta.get("Origen",""))),
+         _safe_txt("Destino"),    _safe_txt(str(ruta.get("Destino","")))],
+        [_safe_txt("KM"),         _safe_txt(f"{safe_number(ruta.get('KM',0)):,.0f}"),
+         _safe_txt("Pago x KM"),  _safe_txt(f"${safe_number(ruta.get('Pago por KM',0)):,.4f}")],
     ]
-    for label, val in campos:
-        pdf.cell(0, 8, safe_text(f"{label}: {val}"), ln=True)
+    gen_t = Table(gen_data, colWidths=[1.4*inch, 2.2*inch, 1.4*inch, 2.2*inch])
+    gen_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (0, -1), colors.HexColor("#EEF0F8")),
+        ("BACKGROUND",    (2, 0), (2, -1), colors.HexColor("#EEF0F8")),
+        ("FONTNAME",      (0, 0), (-1, -1), "Helvetica"),
+        ("FONTNAME",      (0, 0), (0, -1),  "Helvetica-Bold"),
+        ("FONTNAME",      (2, 0), (2, -1),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 7),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+    ]))
+    story.append(gen_t)
+    story.append(Spacer(1, 6))
 
-    pdf.ln(4)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, safe_text("Resultados de Utilidad:"), ln=True)
-    pdf.set_font("Arial", "", 11)
-    resultados = [
-        ("Ingreso Total",       f"${ingreso_total:,.2f}"),
-        ("Costo Total",         f"${costo_total:,.2f}"),
-        ("Utilidad Bruta",      f"${utilidad_bruta:,.2f}  ({pct_bruta:.1f}%)"),
-        ("Costos Indirectos",   f"${costos_indirectos:,.2f}"),
-        ("Utilidad Neta",       f"${utilidad_neta:,.2f}  ({pct_neta:.1f}%)"),
+    # ── Ingresos ─────────────────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Ingresos"), subtitle_s))
+    ing_data = [["Concepto", "Monto"]]
+    ing_data.append([_safe_txt("Ingreso Flete"),
+                     _safe_txt(f"${safe_number(ruta.get('Ingreso Flete',0)):,.2f}")])
+    ing_data.append([_safe_txt("Ingreso Cruce"),
+                     _safe_txt(f"${safe_number(ruta.get('Ingreso Cruce',0)):,.2f}")])
+    if safe_number(ruta.get("Ingresos_Extras", 0)) > 0:
+        ing_data.append([_safe_txt("Ingresos Extras cobrados"),
+                         _safe_txt(f"${safe_number(ruta.get('Ingresos_Extras',0)):,.2f}")])
+    ing_data.append([_safe_txt("INGRESO TOTAL"),
+                     _safe_txt(f"${ingreso_total:,.2f}")])
+    story.append(_tabla_std(ing_data, [3.5*inch, 3.5*inch]))
+    story.append(Spacer(1, 6))
+
+    # ── Costos Operativos ─────────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Costos Operativos"), subtitle_s))
+    rend_usado = rend_sim if simulando and rend_sim else safe_number(ruta.get("Rendimiento Camion", 2.5))
+    cos_data = [["Concepto", "Monto"]]
+    cos_data.append([_safe_txt(f"Diesel Camion ({rend_usado:.2f} km/L)"),
+                     _safe_txt(f"${safe_number(ruta.get('Costo_Diesel_Camion',0)):,.2f}")])
+    cos_data.append([_safe_txt("Sueldo Operador"),
+                     _safe_txt(f"${safe_number(ruta.get('Sueldo_Operador',0)):,.2f}")])
+    cos_data.append([_safe_txt("Bono ISR/IMSS"),
+                     _safe_txt(f"${safe_number(ruta.get('Bono',0)):,.2f}")])
+    cos_data.append([_safe_txt("Casetas"),
+                     _safe_txt(f"${safe_number(ruta.get('Casetas',0)):,.2f}")])
+    cos_data.append([_safe_txt("Costo Cruce"),
+                     _safe_txt(f"${safe_number(ruta.get('Costo Cruce Convertido',0)):,.2f}")])
+    story.append(_tabla_std(cos_data, [3.5*inch, 3.5*inch]))
+    story.append(Spacer(1, 6))
+
+    # ── Costos Fijos ─────────────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Costos Fijos"), subtitle_s))
+    fijos_items = [
+        ("Movimiento Local",  "Movimiento_Local"),
+        ("Puntualidad",       "Puntualidad"),
+        ("Pension",           "Pension"),
+        ("Estancia",          "Estancia"),
+        ("Fianza",            "Fianza"),
     ]
-    for label, val in resultados:
-        pdf.cell(0, 8, safe_text(f"{label}: {val}"), ln=True)
+    fijos_data = [["Concepto", "Monto"]]
+    hay_fijos = False
+    for label, campo in fijos_items:
+        val = safe_number(ruta.get(campo, 0))
+        if val > 0:
+            fijos_data.append([_safe_txt(label), _safe_txt(f"${val:,.2f}")])
+            hay_fijos = True
+    if not hay_fijos:
+        fijos_data.append([_safe_txt("(Sin costos fijos en esta ruta)"), ""])
+    story.append(_tabla_std(fijos_data, [3.5*inch, 3.5*inch]))
+    story.append(Spacer(1, 6))
 
-    pdf.ln(4)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, safe_text("Desglose de Costos:"), ln=True)
-    pdf.set_font("Arial", "", 10)
-    costos = [
-        ("Diesel Camión",    safe_number(ruta.get("Costo_Diesel_Camion"))),
-        ("Sueldo Operador",  safe_number(ruta.get("Sueldo_Operador"))),
-        ("Bono ISR/IMSS",    safe_number(ruta.get("Bono"))),
-        ("Casetas",          safe_number(ruta.get("Casetas"))),
-        ("Costo Cruce",      safe_number(ruta.get("Costo Cruce Convertido"))),
-        ("Mov. Local",       safe_number(ruta.get("Movimiento_Local"))),
-        ("Puntualidad",      safe_number(ruta.get("Puntualidad"))),
-        ("Pensión",          safe_number(ruta.get("Pension"))),
-        ("Estancia",         safe_number(ruta.get("Estancia"))),
-        ("Fianza",           safe_number(ruta.get("Fianza"))),
-        ("Extras",           safe_number(ruta.get("Costo_Extras"))),
+    # ── Otros Costos (Extras) ─────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Otros Costos"), subtitle_s))
+    extras_items = [
+        ("Pistas Extra",  "Pistas_Extra",  "Pistas_Cobrado"),
+        ("Stop",          "Stop",          "Stop_Cobrado"),
+        ("Falso",         "Falso",         "Falso_Cobrado"),
+        ("Gatas",         "Gatas",         "Gatas_Cobrado"),
+        ("Accesorios",    "Accesorios",    "Accesorios_Cobrado"),
+        ("Guias",         "Guias",         "Guias_Cobrado"),
     ]
-    for label, val in costos:
-        if val:
-            pdf.cell(0, 7, safe_text(f"  {label}: ${val:,.2f}"), ln=True)
+    otros_data = [["Concepto", "Monto", "Cobrado al cliente"]]
+    hay_extras = False
+    for label, campo, campo_cob in extras_items:
+        val = safe_number(ruta.get(campo, 0))
+        if val > 0:
+            cobrado = "Si" if bool(ruta.get(campo_cob, False)) else "No"
+            otros_data.append([_safe_txt(label), _safe_txt(f"${val:,.2f}"), _safe_txt(cobrado)])
+            hay_extras = True
+    if not hay_extras:
+        otros_data.append([_safe_txt("(Sin costos extras en esta ruta)"), "", ""])
+    story.append(_tabla_std(otros_data, [2.5*inch, 2.5*inch, 2.2*inch]))
+    story.append(Spacer(1, 8))
 
-    pdf.ln(4)
-    pdf.set_font("Arial", "I", 9)
-    pdf.cell(0, 8, safe_text(
-        f"Generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Cotizador Picus"
-    ), ln=True)
+    # ── Resumen de Utilidades ────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Resumen de Utilidades"), subtitle_s))
+    color_un = colors.HexColor("#16a34a") if utilidad_neta >= 0 else colors.HexColor("#dc2626")
+    pct_costo = (costo_total / ingreso_total * 100) if ingreso_total else 0
+    pct_ind   = (costos_indirectos / ingreso_total * 100) if ingreso_total else 0
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-        pdf.output(tmp.name)
-        tmp.seek(0)
-        return open(tmp.name, "rb").read()
+    util_data = [
+        ["Concepto",             "Monto",                        "%"],
+        ["Ingreso Total",        f"${ingreso_total:,.2f} MXP",   "100.00%"],
+        ["Costo Directo",        f"${costo_total:,.2f} MXP",     f"{pct_costo:.1f}%"],
+        ["Utilidad Bruta",       f"${utilidad_bruta:,.2f} MXP",  f"{pct_bruta:.1f}%"],
+        ["Costos Indirectos",    f"${costos_indirectos:,.2f} MXP", f"{pct_ind:.1f}%"],
+        ["Utilidad Neta",        f"${utilidad_neta:,.2f} MXP",   f"{pct_neta:.1f}%"],
+    ]
+    util_t = Table(util_data, colWidths=[2.5*inch, 2.5*inch, 2.2*inch])
+    util_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTNAME",      (0, 1), (0, -1),  "Helvetica-Bold"),
+        ("BACKGROUND",    (0, 1), (0, -1),  colors.HexColor("#f5f5f5")),
+        ("BACKGROUND",    (0, 5), (-1, 5),  color_un),
+        ("TEXTCOLOR",     (0, 5), (-1, 5),  colors.white),
+        ("FONTNAME",      (0, 5), (-1, 5),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 7),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+    ]))
+    story.append(util_t)
+    story.append(Spacer(1, 12))
+
+    # ── Footer ───────────────────────────────────────────────────
+    story.append(Paragraph(
+        _safe_txt(
+            f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Picus"
+            + (" (SIMULACION)" if simulando else "")
+        ),
+        footer_s,
+    ))
+
+    doc.build(story)
+    return tmp.name
 
 
 # ─────────────────────────────────────────────
@@ -182,6 +331,8 @@ def render() -> None:
         if st.button("🔄 Recargar rutas", key="pic_cons_reload"):
             _load_rutas_picus_cached.clear()
             st.rerun()
+    with rc2:
+        st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
     valores = cargar_datos_generales()
     df      = _load_rutas_picus_cached()
@@ -207,15 +358,15 @@ def render() -> None:
     if not sel:
         return
 
-    idx      = opciones.index(sel)
-    ruta     = df_filtrado.iloc[idx]
+    idx       = opciones.index(sel)
+    ruta      = df_filtrado.iloc[idx]
     tipo_ruta = str(ruta.get("Tipo", "")).strip().upper()
 
     rend_reg = float(safe_number(
         ruta.get("Rendimiento Camion", valores.get("Rendimiento Camion", 2.5))
     ))
 
-    # ── Ajustes para simulación ───────────────────────────────────────
+    # ── Simulación ────────────────────────────────────────────────────
     divider()
     section_header("⚙️", "Ajustes para Simulación")
     st.caption("Ajusta diesel y rendimiento para ver el impacto sin modificar la ruta.")
@@ -244,15 +395,12 @@ def render() -> None:
 
     simular = st.session_state.get("pic_simular", False)
 
-    # ── Cálculo de resultados ─────────────────────────────────────────
+    # ── Cálculo ───────────────────────────────────────────────────────
     ingreso_total = safe_number(ruta.get("Ingreso Total", 0))
     km            = safe_number(ruta.get("KM", 0))
 
     if simular:
-        valores_sim = {
-            "Rendimiento Camion": rendimiento_input,
-            "Costo Diesel":       costo_diesel_input,
-        }
+        valores_sim = {"Rendimiento Camion": rendimiento_input, "Costo Diesel": costo_diesel_input}
         costo_diesel_camion = calcular_diesel(km, valores_sim)
         alert("success", "🔧 Estás viendo una **simulación** con diesel/rendimiento ajustados.")
     else:
@@ -277,13 +425,9 @@ def render() -> None:
     tc_usd = safe_float(valores.get("Tipo de cambio USD", 17.5))
     mostrar_resultados_utilidad(
         st,
-        ingreso_total,
-        costo_total,
-        util["utilidad_bruta"],
-        util["costos_indirectos"],
-        util["utilidad_neta"],
-        util["porcentaje_bruta"],
-        util["porcentaje_neta"],
+        ingreso_total, costo_total,
+        util["utilidad_bruta"], util["costos_indirectos"],
+        util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
         tipo=tipo_ruta,
         tc_usd=tc_usd if str(ruta.get("Moneda", "")) == "USD" else 0.0,
     )
@@ -317,7 +461,7 @@ def render() -> None:
             st.caption(f"**Ingreso Total:** ${ingreso_total:,.2f}")
 
         with c2:
-            st.markdown("### 📉 Costos Directos")
+            st.markdown("### 📉 Costos Operativos")
             st.caption(f"**Diesel Camión:** ${costo_diesel_camion:,.2f}")
             st.caption(f"**Sueldo Operador:** ${safe_number(ruta.get('Sueldo_Operador')):,.2f}")
             st.caption(f"**Bono ISR/IMSS:** ${safe_number(ruta.get('Bono')):,.2f}")
@@ -334,7 +478,7 @@ def render() -> None:
             st.caption(f"**Total Costos Fijos:** ${safe_number(ruta.get('Costos_Fijos')):,.2f}")
 
         with c3:
-            st.markdown("### 🧾 Extras")
+            st.markdown("### 🧾 Otros Costos")
             extras_items = [
                 ("Pistas Extra",  "Pistas_Extra",  "Pistas_Cobrado"),
                 ("Stop",          "Stop",          "Stop_Cobrado"),
@@ -347,8 +491,8 @@ def render() -> None:
                 val = safe_number(ruta.get(campo, 0))
                 cobrado = bool(ruta.get(campo_cob, False))
                 if val > 0:
-                    icono = "✅" if cobrado else "—"
-                    st.caption(f"**{label}:** ${val:,.2f} {icono}")
+                    icono = "✅ cobrado" if cobrado else "— costo interno"
+                    st.caption(f"**{label}:** ${val:,.2f} _{icono}_")
             st.caption(f"**Total Costo Extras:** ${safe_number(ruta.get('Costo_Extras')):,.2f}")
             st.caption(f"**Total Ingreso Extras:** ${safe_number(ruta.get('Ingresos_Extras')):,.2f}")
 
@@ -363,21 +507,25 @@ def render() -> None:
     section_header("📥", "Generar PDF de esta Ruta")
 
     if st.button("📄 Generar PDF", key="pic_cons_pdf"):
-        try:
-            pdf_bytes = _generar_pdf(
-                ruta,
-                ingreso_total, costo_total,
-                util["utilidad_bruta"], util["costos_indirectos"],
-                util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
-                es_simulacion=simular,
-            )
-            nombre = f"ruta_{ruta.get('ID_Ruta','picus')}{'_sim' if simular else ''}.pdf"
-            st.download_button(
-                "⬇️ Descargar PDF",
-                data=pdf_bytes,
-                file_name=nombre,
-                mime="application/pdf",
-                key="pic_cons_dl_pdf",
-            )
-        except Exception as e:
-            alert("error", f"❌ Error generando PDF: {e}")
+        with st.spinner("Generando PDF..."):
+            try:
+                pdf_path = generar_pdf_profesional(
+                    ruta.to_dict(),
+                    ingreso_total, costo_total,
+                    util["utilidad_bruta"], util["costos_indirectos"],
+                    util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
+                    simulando=simular,
+                    rend_sim=rendimiento_input,
+                    diesel_sim=costo_diesel_input,
+                )
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        "📥 Descargar PDF",
+                        data=f.read(),
+                        file_name=f"ruta_{ruta.get('ID_Ruta','picus')}{'_sim' if simular else ''}.pdf",
+                        mime="application/pdf",
+                        key="pic_cons_dl_pdf",
+                    )
+                alert("success", "✅ PDF generado exitosamente.")
+            except Exception as e:
+                alert("error", f"❌ Error al generar PDF: {e}")
