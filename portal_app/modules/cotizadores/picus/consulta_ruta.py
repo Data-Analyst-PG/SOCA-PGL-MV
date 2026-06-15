@@ -362,57 +362,38 @@ def generar_pdf_profesional(
     story.append(_tabla_2col(cos_data))
     story.append(Spacer(1, 8))
 
-    # ── Costos Fijos ─────────────────────────────────────────────
-    story.append(Paragraph(_safe_txt("Costos Fijos"), subtitle_s))
-    fijos = [
-        ("Movimiento Local", "Movimiento_Local"),
+    # ── Otros Costos (conceptos frecuentes + extras) igual que Igloo
+    story.append(Paragraph(_safe_txt("Otros Costos"), subtitle_s))
+    otros_data = [["Concepto", "Monto"]]
+
+    for label, campo in [
         ("Puntualidad",      "Puntualidad"),
+        ("Movimiento Local", "Movimiento_Local"),
         ("Pension",          "Pension"),
         ("Estancia",         "Estancia"),
         ("Fianza",           "Fianza"),
-    ]
-    fijos_data = [["Concepto", "Monto"]]
-    for label, campo in fijos:
+    ]:
         val = safe_number(ruta.get(campo, 0))
         if val > 0:
-            fijos_data.append([_safe_txt(label), _safe_txt(f"${val:,.2f}")])
-    if len(fijos_data) == 1:
-        fijos_data.append([_safe_txt("(Sin costos fijos en esta ruta)"), ""])
-    story.append(_tabla_2col(fijos_data))
-    story.append(Spacer(1, 8))
+            otros_data.append([_safe_txt(label), _safe_txt(f"${val:,.2f}")])
 
-    # ── Otros Costos (con columna Cobrado) ───────────────────────
-    story.append(Paragraph(_safe_txt("Otros Costos"), subtitle_s))
-    extras = [
-        ("Pistas Extra",  "Pistas_Extra",  "Pistas_Cobrado"),
-        ("Stop",          "Stop",          "Stop_Cobrado"),
-        ("Falso",         "Falso",         "Falso_Cobrado"),
-        ("Gatas",         "Gatas",         "Gatas_Cobrado"),
-        ("Accesorios",    "Accesorios",    "Accesorios_Cobrado"),
-        ("Guias",         "Guias",         "Guias_Cobrado"),
-    ]
-    otros_data = [["Concepto", "Monto", "Cobrado al cliente"]]
-    for label, campo, campo_cob in extras:
+    for label, campo, campo_cob in [
+        ("Pistas Extra", "Pistas_Extra", "Pistas_Cobrado"),
+        ("Stop",         "Stop",         "Stop_Cobrado"),
+        ("Falso",        "Falso",        "Falso_Cobrado"),
+        ("Gatas",        "Gatas",        "Gatas_Cobrado"),
+        ("Accesorios",   "Accesorios",   "Accesorios_Cobrado"),
+        ("Guias",        "Guias",        "Guias_Cobrado"),
+    ]:
         val = safe_number(ruta.get(campo, 0))
         if val > 0:
-            cob = "Si" if bool(ruta.get(campo_cob, False)) else "No"
-            otros_data.append([_safe_txt(label), _safe_txt(f"${val:,.2f}"), _safe_txt(cob)])
+            cob_txt = " (cobrado)" if bool(ruta.get(campo_cob, False)) else ""
+            otros_data.append([_safe_txt(f"{label}{cob_txt}"), _safe_txt(f"${val:,.2f}")])
+
     if len(otros_data) == 1:
-        otros_data.append([_safe_txt("(Sin costos extras en esta ruta)"), "", ""])
-    otros_t = Table(otros_data, colWidths=[2.5*inch, 2.5*inch, 2.2*inch])
-    otros_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0),  AZUL),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 7),
-        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-        ("ALIGN",         (1, 1), (1, -1),  "RIGHT"),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-    ]))
-    story.append(otros_t)
+        otros_data.append([_safe_txt("(Sin costos extras en esta ruta)"), ""])
+
+    story.append(_tabla_2col(otros_data))
     story.append(Spacer(1, 20))
 
     # ── Footer ───────────────────────────────────────────────────
@@ -543,77 +524,87 @@ def render() -> None:
         tc_usd=tc_usd if str(ruta.get("Moneda", "")) == "USD" else 0.0,
     )
 
-    # ── Desglose UI ──────────────────────────────────────────────
+    # ── Utilidad en USD (igual que Igloo) ────────────────────────
+    moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
+    if moneda_flete == "USD":
+        tc_guardado = safe_number(ruta.get("Tipo de cambio", 0))
+        if tc_guardado == 0:
+            tc_guardado = safe_float(valores.get("Tipo de cambio USD", 17.5))
+        if tc_guardado > 0:
+            utilidad_neta_usd = util["utilidad_neta"] / tc_guardado
+            st.info(
+                f"**💵 Utilidad Neta en USD: ${utilidad_neta_usd:,.2f}**"
+                f"  _  (TC: {tc_guardado:.2f} MXP/USD)_"
+            )
+
+    # ── Desglose UI — 3 columnas igual a Igloo ───────────────────
     divider()
-    with st.expander("\U0001f4cb Desglose detallado de la ruta", expanded=False):
+    with st.expander("📋 Desglose detallado de la ruta", expanded=False):
         c1, c2, c3 = st.columns(3)
 
+        # COL 1 — Información General
         with c1:
-            st.markdown("### \U0001f4cb Informacion General")
-            st.caption(f"**ID:** {ruta.get('ID_Ruta','')}")
-            st.caption(f"**Fecha:** {str(ruta.get('Fecha',''))[:10]}")
-            st.caption(f"**Tipo:** {ruta.get('Tipo','')}")
-            st.caption(f"**Ruta Tipo:** {ruta.get('Ruta_Tipo','')}")
-            st.caption(f"**Modo de Viaje:** {ruta.get('Modo de Viaje','')}")
-            st.caption(f"**Cliente:** {ruta.get('Cliente','')}")
-            st.caption(f"**Origen Destino:** {ruta.get('Origen','')} -> {ruta.get('Destino','')}")
-            st.caption(f"**KM:** {safe_number(ruta.get('KM')):,.0f}")
-            st.caption(f"**Rendimiento:** {rend_reg:.2f} km/L")
-            st.caption(f"**Precio Diesel:** ${safe_number(ruta.get('Costo Diesel', 0)):,.2f}/L")
+            st.markdown("### 📋 Información General")
+            st.write(f"**Fecha:** {str(ruta.get('Fecha',''))[:10]}")
+            st.write(f"**ID de Ruta:** {ruta.get('ID_Ruta','')}")
+            st.write(f"**Tipo:** {ruta.get('Tipo','')}")
+            st.write(f"**Ruta Tipo:** {ruta.get('Ruta_Tipo','')}")
+            st.write(f"**Modo:** {ruta.get('Modo de Viaje','')}")
+            st.write(f"**Cliente:** {ruta.get('Cliente','')}")
+            st.write(f"**Origen → Destino:** {ruta.get('Origen','')} → {ruta.get('Destino','')}")
+            st.write(f"**KM:** {safe_number(ruta.get('KM')):,.0f}")
+            st.write(f"**Rendimiento Camión:** {rend_reg:.2f} km/L")
+            st.write(f"**Precio Diesel:** ${safe_number(ruta.get('Costo Diesel', 0)):,.2f}/L")
 
-            st.markdown("### \U0001f4b0 Ingresos")
-            st.caption(f"**Moneda Flete:** {ruta.get('Moneda','')}")
-            st.caption(f"**Ingreso Flete Original:** ${safe_number(ruta.get('Ingreso_Original')):,.2f}")
-            st.caption(f"**TC Flete:** {safe_number(ruta.get('Tipo de cambio')):,.4f}")
-            st.caption(f"**Ingreso Flete Convertido:** ${safe_number(ruta.get('Ingreso Flete')):,.2f}")
-            st.caption(f"**Moneda Cruce:** {ruta.get('Moneda_Cruce','')}")
-            st.caption(f"**Ingreso Cruce Original:** ${safe_number(ruta.get('Cruce_Original')):,.2f}")
-            st.caption(f"**TC Cruce:** {safe_number(ruta.get('Tipo cambio Cruce')):,.4f}")
-            st.caption(f"**Ingreso Cruce Convertido:** ${safe_number(ruta.get('Ingreso Cruce')):,.2f}")
-            st.caption(f"**Ingresos Extras:** ${safe_number(ruta.get('Ingresos_Extras')):,.2f}")
-            st.caption(f"**Ingreso Total:** ${ingreso_total:,.2f}")
-
+        # COL 2 — Ingresos
         with c2:
-            st.markdown("### \U0001f4c9 Costos Operativos")
-            st.caption(f"**Diesel Camion:** ${costo_diesel_camion:,.2f}")
-            st.caption(f"**Sueldo Operador:** ${safe_number(ruta.get('Sueldo_Operador')):,.2f}")
-            st.caption(f"**Bono ISR/IMSS:** ${safe_number(ruta.get('Bono')):,.2f}")
-            st.caption(f"**Casetas:** ${safe_number(ruta.get('Casetas')):,.2f}")
-            st.caption(f"**Costo Cruce:** ${safe_number(ruta.get('Costo Cruce')):,.2f}")
-            st.caption(f"**Costo Cruce Convertido:** ${safe_number(ruta.get('Costo Cruce Convertido')):,.2f}")
+            st.markdown("### 💰 Ingresos")
+            st.write(f"**Moneda Flete:** {ruta.get('Moneda','')}")
+            st.write(f"**Ingreso Flete Original:** ${safe_number(ruta.get('Ingreso_Original')):,.2f}")
+            st.write(f"**Tipo de cambio:** {safe_number(ruta.get('Tipo de cambio')):,.2f}")
+            st.write(f"**Ingreso Flete Convertido:** ${safe_number(ruta.get('Ingreso Flete')):,.2f}")
+            st.write(f"**Moneda Cruce:** {ruta.get('Moneda_Cruce','')}")
+            st.write(f"**Ingreso Cruce Original:** ${safe_number(ruta.get('Cruce_Original')):,.2f}")
+            st.write(f"**Ingreso Cruce Convertido:** ${safe_number(ruta.get('Ingreso Cruce')):,.2f}")
+            st.write(f"**Costo Cruce Convertido:** ${safe_number(ruta.get('Costo Cruce Convertido')):,.2f}")
+            st.write(f"**Ingreso Total:** ${ingreso_total:,.2f}")
 
-            st.markdown("### \U0001f512 Costos Fijos")
-            st.caption(f"**Movimiento Local:** ${safe_number(ruta.get('Movimiento_Local')):,.2f}")
-            st.caption(f"**Puntualidad:** ${safe_number(ruta.get('Puntualidad')):,.2f}")
-            st.caption(f"**Pension:** ${safe_number(ruta.get('Pension')):,.2f}")
-            st.caption(f"**Estancia:** ${safe_number(ruta.get('Estancia')):,.2f}")
-            st.caption(f"**Fianza:** ${safe_number(ruta.get('Fianza')):,.2f}")
-            st.caption(f"**Total Costos Fijos:** ${safe_number(ruta.get('Costos_Fijos')):,.2f}")
-
+        # COL 3 — Costos Directos (operativos + conceptos de costos + otros cobrados)
         with c3:
-            st.markdown("### \U0001f9fe Otros Costos")
+            st.markdown("### 📉 Costos Directos")
+            st.write(f"**Diesel Camión:** ${costo_diesel_camion:,.2f}")
+            st.write(f"**Sueldo Operador:** ${safe_number(ruta.get('Sueldo_Operador')):,.2f}")
+            st.write(f"**Bono ISR/IMSS:** ${safe_number(ruta.get('Bono')):,.2f}")
+            st.write(f"**Casetas:** ${safe_number(ruta.get('Casetas')):,.2f}")
+            st.write(f"**Costo Cruce:** ${safe_number(ruta.get('Costo Cruce Convertido')):,.2f}")
+
+            # Conceptos de costos frecuentes (todos van al costo)
+            conceptos_costos = {
+                "Movimiento Local": safe_number(ruta.get("Movimiento_Local", 0)),
+                "Puntualidad":      safe_number(ruta.get("Puntualidad", 0)),
+                "Pension":          safe_number(ruta.get("Pension", 0)),
+                "Estancia":         safe_number(ruta.get("Estancia", 0)),
+                "Fianza":           safe_number(ruta.get("Fianza", 0)),
+            }
+            for label, val in conceptos_costos.items():
+                if val > 0:
+                    st.write(f"**{label}:** ${val:,.2f}")
+
+            # Otros costos (cobrados o no)
             extras_items = [
-                ("Pistas Extra",  "Pistas_Extra",  "Pistas_Cobrado"),
-                ("Stop",          "Stop",          "Stop_Cobrado"),
-                ("Falso",         "Falso",         "Falso_Cobrado"),
-                ("Gatas",         "Gatas",         "Gatas_Cobrado"),
-                ("Accesorios",    "Accesorios",    "Accesorios_Cobrado"),
-                ("Guias",         "Guias",         "Guias_Cobrado"),
+                ("Pistas Extra", "Pistas_Extra", "Pistas_Cobrado"),
+                ("Stop",         "Stop",         "Stop_Cobrado"),
+                ("Falso",        "Falso",        "Falso_Cobrado"),
+                ("Gatas",        "Gatas",        "Gatas_Cobrado"),
+                ("Accesorios",   "Accesorios",   "Accesorios_Cobrado"),
+                ("Guias",        "Guias",        "Guias_Cobrado"),
             ]
             for label, campo, campo_cob in extras_items:
                 val     = safe_number(ruta.get(campo, 0))
                 cobrado = bool(ruta.get(campo_cob, False))
                 if val > 0:
-                    icono = "cobrado" if cobrado else "costo interno"
-                    st.caption(f"**{label}:** ${val:,.2f} _{icono}_")
-            st.caption(f"**Total Costo Extras:** ${safe_number(ruta.get('Costo_Extras')):,.2f}")
-            st.caption(f"**Total Ingreso Extras:** ${safe_number(ruta.get('Ingresos_Extras')):,.2f}")
-
-            st.markdown("### \U0001f4ca Utilidades")
-            st.caption(f"**Costo Total:** ${costo_total:,.2f}")
-            st.caption(f"**Utilidad Bruta:** ${util['utilidad_bruta']:,.2f} ({util['porcentaje_bruta']:.1f}%)")
-            st.caption(f"**Costos Indirectos:** ${util['costos_indirectos']:,.2f}")
-            st.caption(f"**Utilidad Neta:** ${util['utilidad_neta']:,.2f} ({util['porcentaje_neta']:.1f}%)")
+                    sufijo = " _(cobrado al cliente)_" if cobrado else ""
+                    st.write(f"**{label}:** ${val:,.2f}{sufijo}")
 
     # ── PDF ──────────────────────────────────────────────────────
     divider()
