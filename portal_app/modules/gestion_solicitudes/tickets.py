@@ -30,7 +30,7 @@ FASES_ACTIVAS    = {"Nuevo", "Capacitación", "Planteamiento", "Desarrollo", "Pr
 FASES_EN_PROCESO = {"Capacitación", "Planteamiento", "Desarrollo", "Pruebas", "Entrega", "En Proceso"}
 FASES_CERRADAS   = {"Concluido", "Cancelado"}
 
-ANALYSTS = ["Sin asignar", "Abel", "Sasha", "Adrian", "Heidi"]
+ANALYSTS = ["Sin asignar", "Aldo", "Heidi"]
 
 # Columnas que van a la tabla / Excel (en orden)
 COLS_TABLA = [
