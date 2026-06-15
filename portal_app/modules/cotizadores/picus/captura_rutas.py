@@ -161,19 +161,14 @@ def render() -> None:
         # ── Cruce ───────────────────────────────────────────────────
         st.markdown("### 🛂 Cruce")
         c1, c2, c3, c4 = st.columns(4)
-        moneda_ingreso     = c1.selectbox("Moneda Ingreso Flete",  ["MXP", "USD"], key="pic_mon_flete")
-        ingreso_flete      = c2.number_input("Ingreso Flete",      min_value=0.0,  key="pic_ing_flete")
-        moneda_cruce       = c3.selectbox("Moneda Ingreso Cruce",  ["MXP", "USD"], key="pic_mon_cruce")
-        ingreso_cruce      = c4.number_input("Ingreso Cruce",      min_value=0.0,  key="pic_ing_cruce")
-
-        cc1, cc2, cc3, cc4 = st.columns(4)
-        moneda_costo_cruce = cc1.selectbox("Moneda Costo Cruce", ["MXP", "USD"], key="pic_mon_cc")
-        costo_cruce        = cc2.number_input("Costo Cruce",     min_value=0.0,  key="pic_costo_cruce")
-        cc3.empty()
-        cc4.empty()
-
+        
+        moneda_cruce       = c1.selectbox("Moneda Ingreso Cruce",  ["MXP", "USD"], key="pic_mon_cruce")
+        ingreso_cruce      = c2.number_input("Ingreso Cruce",      min_value=0.0,  key="pic_ing_cruce")
+        moneda_costo_cruce = c3.selectbox("Moneda Costo Cruce", ["MXP", "USD"], key="pic_mon_cc")
+        costo_cruce        = c4.number_input("Costo Cruce",     min_value=0.0,  key="pic_costo_cruce")
+  
         # ── Ruta ────────────────────────────────────────────────────
-        st.markdown("### 🇲🇽 Ruta")
+        st.markdown("### 🇲🇽 Ruta Mexicana")
         # Fila 1: Origen | Destino (anchos)
         r1, r2 = st.columns(2)
         origen  = r1.text_input("📍 Origen",  placeholder="CIUDAD, ESTADO", key="pic_origen")
@@ -181,26 +176,30 @@ def render() -> None:
 
         # Fila 2: KM | Casetas
         r3, r4, r5, r6 = st.columns(4)
-        km      = r3.number_input("📏 Kilómetros",   min_value=0.0, step=10.0, key="pic_km")
-        casetas = r4.number_input("🚧 Casetas (MXP)", min_value=0.0,           key="pic_casetas")
-        r5.empty()
-        r6.empty()
+        moneda_ingreso     = r3.selectbox("Moneda Ingreso Flete",  ["MXP", "USD"], key="pic_mon_flete")
+        ingreso_flete      = r4.number_input("Ingreso Flete",      min_value=0.0,  key="pic_ing_flete")
+        km      = r5.number_input("📏 Kilómetros",   min_value=0.0, step=10.0, key="pic_km")
+        casetas = r6.number_input("🛣️ Casetas (MXP)", min_value=0.0,           key="pic_casetas")
 
         # ── Costos Fijos Internos ────────────────────────────────────
-        st.markdown("### 🔒 Costos Fijos Internos")
+        st.markdown("### 🔒 Conceptos de Costos")
         st.caption("Estos costos siempre van al costo de la ruta y nunca se cobran al cliente.")
-        f1, f2, f3, f4, f5 = st.columns(5)
+        f1, f2, f3, f4, = st.columns(4)
         movimiento_local = f1.number_input("🔄 Movimiento Local (MXP)", min_value=0.0, key="pic_mov_local")
         puntualidad      = f2.number_input("⏰ Puntualidad (MXP)",      min_value=0.0, key="pic_puntualidad")
         pension          = f3.number_input("🏨 Pensión (MXP)",           min_value=0.0, key="pic_pension")
         estancia         = f4.number_input("🛌 Estancia (MXP)",          min_value=0.0, key="pic_estancia")
-        fianza           = f5.number_input("🔒 Fianza (MXP)",            min_value=0.0, key="pic_fianza")
 
+        f1, f2, f3, f4, = st.columns(4)
+        fianza           = f1.number_input("🔒 Fianza (MXP)",            min_value=0.0, key="pic_fianza")
+        f2.empty()
+        f3.empty()
+        f4.empty()
         # ── Otros Costos ─────────────────────────────────────────────
         st.markdown("### 🧾 Otros Costos")
         st.caption("Captura el monto. Marca **'cobro'** si también se le cobra al cliente (suma al ingreso).")
 
-        o1, o2, o3, o4, o5, o6 = st.columns(6)
+        o1, o2, o3 = st.columns(3)
 
         with o1:
             pistas_extra   = st.number_input("Pistas Extra (MXP)", min_value=0.0, key="pic_pistas")
@@ -214,15 +213,16 @@ def render() -> None:
             falso           = st.number_input("Falso (MXP)", min_value=0.0, key="pic_falso")
             falso_cobrado   = st.checkbox("cobro", key="pic_falso_cob")
 
-        with o4:
+        o1, o2, o3 = st.columns(3)
+        with o1:
             gatas           = st.number_input("Gatas (MXP)", min_value=0.0, key="pic_gatas")
             gatas_cobrado   = st.checkbox("cobro", key="pic_gatas_cob")
 
-        with o5:
+        with o2:
             accesorios          = st.number_input("Accesorios (MXP)", min_value=0.0, key="pic_accesorios")
             accesorios_cobrado  = st.checkbox("cobro", key="pic_accesorios_cob")
 
-        with o6:
+        with o3:
             guias           = st.number_input("Guías (MXP)", min_value=0.0, key="pic_guias")
             guias_cobrado   = st.checkbox("cobro", key="pic_guias_cob")
 
