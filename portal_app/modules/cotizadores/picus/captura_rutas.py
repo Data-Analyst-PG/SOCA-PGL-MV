@@ -1,11 +1,45 @@
-from ui.components import section_header, alert, divider
-import os
+"""
+captura_rutas.py — Cotizador Picus
+Diseño homologado con Igloo / Lincoln:
+  - Sin st.title(), sin DEFAULTS locales, sin lógica de cálculo inline
+  - Toda la lógica centralizada en helpers.py
+  - Costos fijos separados (mov. local, puntualidad, pension, estancia, fianza)
+  - Casetas en bloque de ruta (junto con KM)
+  - Extras billables con checkbox individual por concepto
+  - Modo "Team" en lugar de "Operador" / "Team"
+  - section_header, kpi_row, semaforos_ruta de components.py
+  - Modal @st.dialog para confirmación de guardado
+"""
+from __future__ import annotations
+
+import re
 from datetime import datetime, timezone
-import pandas as pd
+
 import streamlit as st
 
 from services.supabase_client import get_supabase_client, get_authed_client, current_user
+from ui.components import section_header, alert, divider
 
+from .helpers import (
+    DEFAULTS,
+    TIPOS_RUTA,
+    cargar_datos_generales,
+    guardar_datos_generales,
+    safe_number,
+    safe_float,
+    calcular_diesel,
+    calcular_sueldo_bono,
+    calcular_costos_fijos,
+    calcular_extras,
+    calcular_utilidades,
+    mostrar_resultados_utilidad,
+    _datos_generales_path,
+)
+
+
+# ─────────────────────────────────────────────
+# Utilidades internas
+# ─────────────────────────────────────────────
 
 def _get_profile_name(user_id: str) -> str:
     if not user_id:
@@ -22,397 +56,410 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# =========================
-# Config local (archivo)
-# =========================
-DEFAULTS = {
-    "Rendimiento Camion": 2.5,
-    "Costo Diesel": 24.0,
-    "Pago x KM (General)": 1.63,
-    "Bono ISR IMSS RL": 462.66,
-    "Bono ISR IMSS Tramo": 185.06,
-    "Pago Vacio": 100.0,
-    "Pago Tramo": 300.0,
-    "Bono Rendimiento": 250.0,
-    "Bono Modo Team": 650.0,
-    "Tipo de cambio USD": 17.5,
-    "Tipo de cambio MXP": 1.0,
-}
+@st.cache_data(show_spinner=False, ttl=60)
+def _get_last_id_cached() -> str | None:
+    supabase = get_supabase_client()
+    if supabase is None:
+        return None
+    resp = supabase.table("Rutas_Picus").select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
+    if resp.data:
+        return resp.data[0].get("ID_Ruta")
+    return None
 
 
-def _datos_generales_path() -> str:
-    # Guarda en portal_app/.data para que sea consistente con tu repo
-    base = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".data")
-    base = os.path.abspath(base)
-    os.makedirs(base, exist_ok=True)
-    return os.path.join(base, "datos_generales_picus.csv")
-
-
-def cargar_datos_generales() -> dict:
-    path = _datos_generales_path()
-    if os.path.exists(path):
+def _generar_nuevo_id() -> str:
+    ultimo = _get_last_id_cached()
+    if ultimo and isinstance(ultimo, str) and len(ultimo) >= 4:
         try:
-            return pd.read_csv(path).set_index("Parametro").to_dict()["Valor"]
+            numero = int(str(ultimo)[3:]) + 1
         except Exception:
-            return DEFAULTS.copy()
-    return DEFAULTS.copy()
+            numero = 1
+    else:
+        numero = 1
+    return f"PIC{numero:06d}"
 
 
-def guardar_datos_generales(valores: dict) -> None:
-    path = _datos_generales_path()
-    df = pd.DataFrame(valores.items(), columns=["Parametro", "Valor"])
-    df.to_csv(path, index=False)
+def _normalizar(texto: str) -> str:
+    if not texto:
+        return ""
+    texto = str(texto).upper().strip()
+    texto = re.sub(r'\s+', ' ', texto)
+    texto = re.sub(r'\s*,\s*', ', ', texto)
+    return texto
 
 
-def safe_number(x):
-    return 0 if (x is None or (isinstance(x, float) and pd.isna(x))) else x
+# ─────────────────────────────────────────────
+# Modal de confirmación
+# ─────────────────────────────────────────────
+
+@st.dialog("✅ Ruta Guardada Exitosamente", width="small")
+def _modal_guardado(id_ruta: str) -> None:
+    alert("success", "**¡La ruta se guardó correctamente!**")
+    st.info(f"### 🆔 ID de la ruta\n`{id_ruta}`")
+    st.caption("Puedes consultarla en 'Consulta Ruta' o 'Gestión de Rutas'.")
+    if st.button("✅ Aceptar", type="primary", use_container_width=True, key="pic_modal_ok"):
+        st.session_state.pop("pic_ruta_guardada_id", None)
+        st.session_state.pop("pic_mostrar_modal", None)
+        st.session_state["pic_form_key"] = st.session_state.get("pic_form_key", 0) + 1
+        st.rerun()
 
 
-def render():
-    st.title("🚛 Captura de Rutas + Datos Generales (Picus)")
+# ─────────────────────────────────────────────
+# Render principal
+# ─────────────────────────────────────────────
 
-    # Supabase opcional (no tronar si no hay secrets/env)
+def render() -> None:
     supabase = get_supabase_client()
     if supabase is None:
         alert("warn", "⚠️ Supabase no configurado. Podrás revisar cálculos, pero NO guardar rutas en BD.")
 
-    # Detectar usuario logueado
     u = current_user() or {}
-    user_id = u.get("id") or u.get("sub") or ""
+    user_id       = u.get("id") or u.get("sub") or ""
     nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
 
-    # Estado
-    if "picus_revisar_ruta" not in st.session_state:
-        st.session_state.picus_revisar_ruta = False
+    # Modal si viene de un guardado previo
+    if st.session_state.get("pic_mostrar_modal"):
+        _modal_guardado(st.session_state["pic_ruta_guardada_id"])
 
     valores = cargar_datos_generales()
 
-    # =========================
-    # Configurar Datos Generales
-    # =========================
-    with st.expander("⚙️ Configurar Datos Generales", expanded=False):
-        col1, col2 = st.columns(2)
+    # ── Configuración de Parámetros ──────────────────────────────────
+    with st.expander("⚙️ Configuración de Parámetros", expanded=False):
         claves = list(DEFAULTS.keys())
-
+        c1, c2 = st.columns(2)
         for i, key in enumerate(claves):
-            col = col1 if i % 2 == 0 else col2
+            col = c1 if i % 2 == 0 else c2
             valores[key] = col.number_input(
                 key,
                 value=float(valores.get(key, DEFAULTS[key])),
                 step=0.1,
+                key=f"pic_param_{key}",
             )
-
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            if st.button("Guardar Datos Generales", key="picus_guardar_datos_generales"):
+        pc1, pc2 = st.columns([1, 3])
+        with pc1:
+            if st.button("💾 Guardar parámetros", key="pic_guardar_params"):
                 guardar_datos_generales(valores)
-                alert("success", "✅ Datos Generales guardados correctamente.")
-
-        with c2:
+                alert("success", "✅ Parámetros guardados correctamente.")
+        with pc2:
             st.caption(f"Archivo: `{_datos_generales_path()}`")
 
     divider()
     section_header("🛣️", "Nueva Ruta")
 
-    # =========================
-    # Helper: generar ID
-    # =========================
-    def generar_nuevo_id():
-        if supabase is None:
-            # Si no hay supabase, generamos un ID local por timestamp
-            return f"PICLOCAL{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    form_key = f"pic_captura_{st.session_state.get('pic_form_key', 0)}"
 
-        try:
-            resp = (
-                supabase.table("Rutas_Picus")
-                .select("ID_Ruta")
-                .order("ID_Ruta", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if resp.data and resp.data[0].get("ID_Ruta"):
-                ultimo = resp.data[0]["ID_Ruta"]
-                numero = int(str(ultimo)[3:]) + 1  # PIC000001
-            else:
-                numero = 1
-        except Exception as e:
-            st.warning(f"⚠️ No se pudo generar el ID automáticamente: {e}")
-            numero = 1
+    with st.form(form_key):
 
-        return f"PIC{numero:06d}"
-
-    # =========================
-    # Formulario principal
-    # =========================
-    with st.form("picus_captura_ruta"):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fecha = st.date_input("Fecha", value=datetime.today())
-            tipo = st.selectbox("Tipo de Ruta", ["IMPORTACION", "EXPORTACION", "VACIO"])
-            ruta_tipo = st.selectbox("Ruta Tipo", ["Ruta Larga", "Tramo"])
-            cliente = st.text_input("Nombre Cliente")
-            origen = st.text_input("Origen")
-            destino = st.text_input("Destino")
-            modo_viaje_ui = st.selectbox("Modo de Viaje", ["Operador", "Team"])
-            km = st.number_input("Kilómetros", min_value=0.0)
-            moneda_ingreso = st.selectbox("Moneda Ingreso Flete", ["MXP", "USD"])
-            ingreso_flete = st.number_input("Ingreso Flete", min_value=0.0)
-
-        with col2:
-            moneda_cruce = st.selectbox("Moneda Ingreso Cruce", ["MXP", "USD"])
-            ingreso_cruce = st.number_input("Ingreso Cruce", min_value=0.0)
-            moneda_costo_cruce = st.selectbox("Moneda Costo Cruce", ["MXP", "USD"])
-            costo_cruce = st.number_input("Costo Cruce", min_value=0.0)
-            movimiento_local = st.number_input("Movimiento Local (MXP)", min_value=0.0)
-            puntualidad = st.number_input("Puntualidad", min_value=0.0)
-            pension = st.number_input("Pensión (MXP)", min_value=0.0)
-            estancia = st.number_input("Estancia (MXP)", min_value=0.0)
-            fianza = st.number_input("Fianza (MXP)", min_value=0.0)
-            casetas = st.number_input("Casetas (MXP)", min_value=0.0)
+        # ── Información General ──────────────────────────────────────
+        st.markdown("### 📋 Información General")
+        g1, g2, g3, g4 = st.columns(4)
+        fecha         = g1.date_input("📅 Fecha", value=datetime.today(), key="pic_fecha")
+        tipo          = g2.selectbox("🚛 Tipo de Ruta", TIPOS_RUTA, key="pic_tipo")
+        ruta_tipo     = g3.selectbox("📌 Ruta Tipo", ["Ruta Larga", "Tramo"], key="pic_ruta_tipo")
+        modo_viaje_ui = g4.selectbox("👥 Modo de Viaje", ["Operador", "Team"], key="pic_modo")
 
         divider()
-        section_header("🧾", "Costos Extras")
-        col3, col4 = st.columns(2)
-        with col3:
-            pistas_extra = st.number_input("Pistas Extra (MXP)", min_value=0.0)
-            stop = st.number_input("Stop (MXP)", min_value=0.0)
-            falso = st.number_input("Falso (MXP)", min_value=0.0)
-            extras_cobrados = st.checkbox("✅ ¿Costos extras fueron cobrados al cliente?")
-        with col4:
-            gatas = st.number_input("Gatas (MXP)", min_value=0.0)
-            accesorios = st.number_input("Accesorios (MXP)", min_value=0.0)
-            guias = st.number_input("Guías (MXP)", min_value=0.0)
 
-        revisar = st.form_submit_button("🔍 Revisar Ruta")
+        # ── Datos del Cliente ────────────────────────────────────────
+        st.markdown("### 🏢 Cliente y Ruta")
+        d1, d2, d3 = st.columns(3)
+        cliente = d1.text_input("🏢 Nombre Cliente", placeholder="NOMBRE DE LA EMPRESA", key="pic_cliente")
+        origen  = d2.text_input("📍 Origen",  placeholder="CIUDAD, ESTADO", key="pic_origen")
+        destino = d3.text_input("📍 Destino", placeholder="CIUDAD, ESTADO", key="pic_destino")
 
-        if revisar:
-            st.session_state.picus_revisar_ruta = True
-            st.session_state.picus_datos_captura = {
-                "fecha": fecha,
-                "tipo": tipo,
-                "ruta_tipo": ruta_tipo,
-                "cliente": cliente,
-                "origen": origen,
-                "destino": destino,
-                "modo_viaje_ui": modo_viaje_ui,
-                "km": km,
-                "moneda_ingreso": moneda_ingreso,
-                "ingreso_flete": ingreso_flete,
-                "moneda_cruce": moneda_cruce,
-                "ingreso_cruce": ingreso_cruce,
-                "moneda_costo_cruce": moneda_costo_cruce,
-                "costo_cruce": costo_cruce,
-                "movimiento_local": movimiento_local,
-                "puntualidad": puntualidad,
-                "pension": pension,
-                "estancia": estancia,
-                "fianza": fianza,
-                "casetas": casetas,
-                "pistas_extra": pistas_extra,
-                "stop": stop,
-                "falso": falso,
-                "extras_cobrados": extras_cobrados,
-                "gatas": gatas,
-                "accesorios": accesorios,
-                "guias": guias,
-            }
+        divider()
 
-            # ===========
-            # Cálculos
-            # ===========
-            costo_cruce_convertido = costo_cruce * (valores["Tipo de cambio USD"] if moneda_costo_cruce == "USD" else 1)
+        # ── Ruta y Kilómetros ────────────────────────────────────────
+        st.markdown("### 🛣️ Kilómetros y Casetas")
+        r1, r2, r3, r4 = st.columns(4)
+        km      = r1.number_input("📏 Kilómetros", min_value=0.0, step=10.0, key="pic_km")
+        casetas = r2.number_input("🚧 Casetas (MXP)", min_value=0.0, key="pic_casetas")
+        r3.empty()
+        r4.empty()
 
-            costo_diesel_camion = (km / valores["Rendimiento Camion"]) * valores["Costo Diesel"]
+        divider()
 
-            pago_km = float(valores.get("Pago x KM (General)", 1.63))
-            bono = 0.0
-            sueldo = 0.0
+        # ── Cruce ───────────────────────────────────────────────────
+        st.markdown("### 🛂 Cruce")
+        c1, c2, c3, c4 = st.columns(4)
+        moneda_ingreso  = c1.selectbox("Moneda Ingreso Flete", ["MXP", "USD"], key="pic_mon_flete")
+        ingreso_flete   = c2.number_input("Ingreso Flete", min_value=0.0, key="pic_ing_flete")
+        moneda_cruce    = c3.selectbox("Moneda Ingreso Cruce", ["MXP", "USD"], key="pic_mon_cruce")
+        ingreso_cruce   = c4.number_input("Ingreso Cruce", min_value=0.0, key="pic_ing_cruce")
 
-            # Condicional por tipo de ruta
-            if ruta_tipo == "Tramo":
-                sueldo = float(valores.get("Pago Tramo", 300.0))
-                bono = float(valores.get("Bono ISR IMSS Tramo", 185.06))
-                modo_viaje_calc = "Operador"  # Forzar
-            elif tipo in ["IMPORTACION", "EXPORTACION"]:
-                sueldo = km * pago_km
-                bono_isr = float(valores.get("Bono ISR IMSS RL", 0))
-                bono_rend = float(valores.get("Bono Rendimiento", 0))
-                bono = bono_isr + bono_rend
-                modo_viaje_calc = modo_viaje_ui
-            else:  # VACIO
-                if km <= 100:
-                    sueldo = float(valores.get("Pago Vacio", 100.0))
-                else:
-                    sueldo = km * pago_km
-                bono = 0.0
-                modo_viaje_calc = modo_viaje_ui
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        moneda_costo_cruce = cc1.selectbox("Moneda Costo Cruce", ["MXP", "USD"], key="pic_mon_costo_cruce")
+        costo_cruce        = cc2.number_input("Costo Cruce", min_value=0.0, key="pic_costo_cruce")
+        cc3.empty()
+        cc4.empty()
 
-            # Bono Team (si no es tramo)
-            if ruta_tipo != "Tramo" and modo_viaje_calc == "Team":
-                sueldo += float(valores.get("Bono Modo Team", 650))
+        divider()
 
-            extras = sum(
-                map(
-                    safe_number,
-                    [
-                        movimiento_local,
-                        puntualidad,
-                        pension,
-                        estancia,
-                        fianza,
-                        pistas_extra,
-                        stop,
-                        falso,
-                        gatas,
-                        accesorios,
-                        guias,
-                    ],
-                )
-            )
+        # ── Costos Fijos (nunca se cobran) ───────────────────────────
+        st.markdown("### 🔒 Costos Fijos Internos")
+        st.caption("Estos costos siempre van al costo de la ruta y nunca se cobran al cliente.")
+        f1, f2, f3, f4, f5 = st.columns(5)
+        movimiento_local = f1.number_input("Movimiento Local (MXP)", min_value=0.0, key="pic_mov_local")
+        puntualidad      = f2.number_input("Puntualidad (MXP)",       min_value=0.0, key="pic_puntualidad")
+        pension          = f3.number_input("Pensión (MXP)",            min_value=0.0, key="pic_pension")
+        estancia         = f4.number_input("Estancia (MXP)",           min_value=0.0, key="pic_estancia")
+        fianza           = f5.number_input("Fianza (MXP)",             min_value=0.0, key="pic_fianza")
 
-            costo_total = costo_diesel_camion + sueldo + bono + casetas + extras + costo_cruce_convertido
+        divider()
 
-            tipo_cambio_flete = valores["Tipo de cambio USD"] if moneda_ingreso == "USD" else valores["Tipo de cambio MXP"]
-            tipo_cambio_cruce = valores["Tipo de cambio USD"] if moneda_cruce == "USD" else valores["Tipo de cambio MXP"]
+        # ── Costos Extras Billables ──────────────────────────────────
+        st.markdown("### 🧾 Costos Extras")
+        st.caption("Marca el checkbox si el costo fue cobrado al cliente — se suma al ingreso.")
 
-            ingreso_flete_convertido = ingreso_flete * tipo_cambio_flete
-            ingreso_cruce_convertido = ingreso_cruce * tipo_cambio_cruce
-            ingresos_extras = extras if extras_cobrados else 0
-            ingreso_total = ingreso_flete_convertido + ingreso_cruce_convertido + ingresos_extras
+        e1, e2, e3, e4 = st.columns(4)
 
-            utilidad_bruta = ingreso_total - costo_total
-            costos_indirectos = ingreso_total * 0.35
-            utilidad_neta = utilidad_bruta - costos_indirectos
-            porcentaje_bruta = (utilidad_bruta / ingreso_total * 100) if ingreso_total > 0 else 0
-            porcentaje_neta = (utilidad_neta / ingreso_total * 100) if ingreso_total > 0 else 0
+        with e1:
+            pistas_extra    = st.number_input("Pistas Extra (MXP)", min_value=0.0, key="pic_pistas")
+            pistas_cobrado  = st.checkbox("Cobrado al cliente", key="pic_pistas_cob")
 
-            st.session_state.picus_resultados = {
-                "modo_viaje_calc": modo_viaje_calc,
-                "pago_km": pago_km,
-                "bono": bono,
-                "costo_diesel_camion": costo_diesel_camion,
-                "extras": extras,
-                "ingresos_extras": ingresos_extras,
-                "tipo_cambio_flete": tipo_cambio_flete,
-                "tipo_cambio_cruce": tipo_cambio_cruce,
-                "tipo_cambio_costo_cruce": (valores["Tipo de cambio USD"] if moneda_costo_cruce == "USD" else valores["Tipo de cambio MXP"]),
-                "ingreso_total": ingreso_total,
-                "costo_total": costo_total,
-                "utilidad_bruta": utilidad_bruta,
-                "costos_indirectos": costos_indirectos,
-                "utilidad_neta": utilidad_neta,
-                "porcentaje_bruta": porcentaje_bruta,
-                "porcentaje_neta": porcentaje_neta,
-                "costo_cruce_convertido": costo_cruce_convertido,
-                "sueldo": sueldo,
-            }
+        with e2:
+            stop            = st.number_input("Stop (MXP)", min_value=0.0, key="pic_stop")
+            stop_cobrado    = st.checkbox("Cobrado al cliente", key="pic_stop_cob")
 
-            # ===========
-            # Mostrar
-            # ===========
-            def colored_bold(label, value, condition):
-                color = "green" if condition else "red"
-                return f"<strong>{label}:</strong> <span style='color:{color}; font-weight:bold'>{value}</span>"
+        with e3:
+            falso           = st.number_input("Falso (MXP)", min_value=0.0, key="pic_falso")
+            falso_cobrado   = st.checkbox("Cobrado al cliente", key="pic_falso_cob")
 
-            divider()
-            section_header("📊", "Ingresos y Utilidades")
+        with e4:
+            gatas           = st.number_input("Gatas (MXP)", min_value=0.0, key="pic_gatas")
+            gatas_cobrado   = st.checkbox("Cobrado al cliente", key="pic_gatas_cob")
 
-            st.write(f"**Ingreso Total:** ${ingreso_total:,.2f}")
-            st.write(f"**Costo Total:** ${costo_total:,.2f}")
-            st.markdown(colored_bold("Utilidad Bruta", f"${utilidad_bruta:,.2f}", utilidad_bruta >= 0), unsafe_allow_html=True)
-            st.markdown(colored_bold("% Utilidad Bruta", f"{porcentaje_bruta:.2f}%", porcentaje_bruta >= 50), unsafe_allow_html=True)
-            st.write(f"**Costos Indirectos (35%):** ${costos_indirectos:,.2f}")
-            st.markdown(colored_bold("Utilidad Neta", f"${utilidad_neta:,.2f}", utilidad_neta >= 0), unsafe_allow_html=True)
-            st.markdown(colored_bold("% Utilidad Neta", f"{porcentaje_neta:.2f}%", porcentaje_neta >= 15), unsafe_allow_html=True)
+        e5, e6, e7, e8 = st.columns(4)
 
-    # =========================
-    # Guardar Ruta
-    # =========================
-    if st.session_state.get("picus_revisar_ruta") and st.button("💾 Guardar Ruta", key="picus_guardar_ruta"):
-        if supabase is None:
-            alert("error", "Supabase no está configurado. No puedo guardar en BD.")
-            return
+        with e5:
+            accesorios          = st.number_input("Accesorios (MXP)", min_value=0.0, key="pic_accesorios")
+            accesorios_cobrado  = st.checkbox("Cobrado al cliente", key="pic_accesorios_cob")
 
-        d = st.session_state.get("picus_datos_captura", {})
-        r = st.session_state.get("picus_resultados", {})
+        with e6:
+            guias           = st.number_input("Guías (MXP)", min_value=0.0, key="pic_guias")
+            guias_cobrado   = st.checkbox("Cobrado al cliente", key="pic_guias_cob")
 
-        if not d or not r:
-            alert("error", "No hay datos para guardar. Primero revisa la ruta.")
-            return
+        e7.empty()
+        e8.empty()
 
-        nuevo_id = generar_nuevo_id()
+        divider()
+        revisar = st.form_submit_button("🔍 Revisar Ruta", use_container_width=True, type="primary")
 
-        # Confirmar no conflicto
-        try:
-            existe = supabase.table("Rutas_Picus").select("ID_Ruta").eq("ID_Ruta", nuevo_id).execute()
-            if existe.data:
-                alert("error", "⚠️ Conflicto al generar ID. Intenta de nuevo.")
-                return
-        except Exception:
-            # Si falla el check, igual intentamos insert (Supabase dirá si hay conflicto)
-            pass
+    # ── Cálculo al presionar Revisar ─────────────────────────────────
+    if revisar:
+        st.session_state["pic_revisar_ruta"] = True
 
-        nueva_ruta = {
-            "ID_Ruta": nuevo_id,
-            "Fecha": str(d["fecha"]),
-            "Tipo": d["tipo"],
-            "Ruta_Tipo": d["ruta_tipo"],
-            "Cliente": d["cliente"],
-            "Origen": d["origen"],
-            "Destino": d["destino"],
-            "Modo de Viaje": r["modo_viaje_calc"],
-            "KM": d["km"],
-            "Moneda": d["moneda_ingreso"],
-            "Ingreso_Original": d["ingreso_flete"],
-            "Tipo de cambio": r["tipo_cambio_flete"],
-            "Ingreso Flete": d["ingreso_flete"] * r["tipo_cambio_flete"],
-            "Moneda_Cruce": d["moneda_cruce"],
-            "Cruce_Original": d["ingreso_cruce"],
-            "Tipo cambio Cruce": r["tipo_cambio_cruce"],
-            "Ingreso Cruce": d["ingreso_cruce"] * r["tipo_cambio_cruce"],
-            "Moneda Costo Cruce": d["moneda_costo_cruce"],
-            "Costo Cruce": d["costo_cruce"],
-            "Costo Cruce Convertido": r["costo_cruce_convertido"],
-            "Ingreso Total": r["ingreso_total"],
-            "Pago por KM": r["pago_km"],
-            "Sueldo_Operador": r["sueldo"],
-            "Bono": r["bono"],
-            "Casetas": d["casetas"],
-            "Movimiento_Local": d["movimiento_local"],
-            "Puntualidad": d["puntualidad"],
-            "Pension": d["pension"],
-            "Estancia": d["estancia"],
-            "Fianza": d["fianza"],
-            "Pistas_Extra": d["pistas_extra"],
-            "Stop": d["stop"],
-            "Falso": d["falso"],
-            "Gatas": d["gatas"],
-            "Accesorios": d["accesorios"],
-            "Guias": d["guias"],
-            "Costo_Diesel_Camion": r["costo_diesel_camion"],
-            "Costo_Extras": r["extras"],
-            "Costo_Total_Ruta": r["costo_total"],
-            "Costo Diesel": valores["Costo Diesel"],
-            "Rendimiento Camion": valores["Rendimiento Camion"],
-            "Ingresos_Extras": r["ingresos_extras"],
-            "Extras_Cobrados": d["extras_cobrados"],
+        tc_usd = safe_float(valores.get("Tipo de cambio USD", 17.5))
+        tc_mxp = safe_float(valores.get("Tipo de cambio MXP", 1.0))
 
-            # ── Auditoría ──────────────────────────────
-            "created_by": nombre_usuario,
-            "created_at": _now_iso(),
-            "updated_by": None,
-            "updated_at": None,
-            "historial": [],
+        tipo_cambio_flete      = tc_usd if moneda_ingreso    == "USD" else tc_mxp
+        tipo_cambio_cruce      = tc_usd if moneda_cruce      == "USD" else tc_mxp
+        tipo_cambio_costo_cruce = tc_usd if moneda_costo_cruce == "USD" else tc_mxp
+
+        costo_cruce_convertido      = costo_cruce * tipo_cambio_costo_cruce
+        ingreso_flete_convertido    = ingreso_flete * tipo_cambio_flete
+        ingreso_cruce_convertido    = ingreso_cruce * tipo_cambio_cruce
+
+        costo_diesel_camion = calcular_diesel(km, valores)
+
+        sb = calcular_sueldo_bono(km, tipo, ruta_tipo, modo_viaje_ui, valores)
+        sueldo          = sb["sueldo"]
+        bono            = sb["bono"]
+        modo_viaje_calc = sb["modo_viaje_calc"]
+        pago_km         = sb["pago_km"]
+
+        costos_fijos = calcular_costos_fijos(
+            movimiento_local, puntualidad, pension, estancia, fianza,
+        )
+
+        extras_result = calcular_extras(
+            pistas_extra, stop, falso, gatas, accesorios, guias,
+            pistas_cobrado, stop_cobrado, falso_cobrado,
+            gatas_cobrado, accesorios_cobrado, guias_cobrado,
+        )
+        costo_extras   = extras_result["costo_extras"]
+        ingreso_extras = extras_result["ingreso_extras"]
+
+        ingreso_total = ingreso_flete_convertido + ingreso_cruce_convertido + ingreso_extras
+        costo_total   = (
+            costo_diesel_camion
+            + sueldo
+            + bono
+            + casetas
+            + costos_fijos
+            + costo_extras
+            + costo_cruce_convertido
+        )
+
+        util = calcular_utilidades(ingreso_total, costo_total, tipo)
+
+        st.session_state["pic_datos_captura"] = {
+            "fecha":              fecha,
+            "tipo":               tipo,
+            "ruta_tipo":          ruta_tipo,
+            "cliente":            _normalizar(cliente),
+            "origen":             _normalizar(origen),
+            "destino":            _normalizar(destino),
+            "modo_viaje_ui":      modo_viaje_ui,
+            "km":                 km,
+            "moneda_ingreso":     moneda_ingreso,
+            "ingreso_flete":      ingreso_flete,
+            "moneda_cruce":       moneda_cruce,
+            "ingreso_cruce":      ingreso_cruce,
+            "moneda_costo_cruce": moneda_costo_cruce,
+            "costo_cruce":        costo_cruce,
+            "casetas":            casetas,
+            "movimiento_local":   movimiento_local,
+            "puntualidad":        puntualidad,
+            "pension":            pension,
+            "estancia":           estancia,
+            "fianza":             fianza,
+            "pistas_extra":       pistas_extra,
+            "pistas_cobrado":     pistas_cobrado,
+            "stop":               stop,
+            "stop_cobrado":       stop_cobrado,
+            "falso":              falso,
+            "falso_cobrado":      falso_cobrado,
+            "gatas":              gatas,
+            "gatas_cobrado":      gatas_cobrado,
+            "accesorios":         accesorios,
+            "accesorios_cobrado": accesorios_cobrado,
+            "guias":              guias,
+            "guias_cobrado":      guias_cobrado,
         }
 
-        try:
-            supabase.table("Rutas_Picus").insert(nueva_ruta).execute()
-            alert("success", "✅ Ruta guardada exitosamente.")
-            st.session_state.picus_revisar_ruta = False
-            st.session_state.pop("picus_datos_captura", None)
-            st.session_state.pop("picus_resultados", None)
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Error al guardar ruta: {e}")
-            st.json(nueva_ruta)
+        st.session_state["pic_calc"] = {
+            "modo_viaje_calc":          modo_viaje_calc,
+            "pago_km":                  pago_km,
+            "sueldo":                   sueldo,
+            "bono":                     bono,
+            "costo_diesel_camion":      costo_diesel_camion,
+            "costos_fijos":             costos_fijos,
+            "costo_extras":             costo_extras,
+            "ingreso_extras":           ingreso_extras,
+            "tipo_cambio_flete":        tipo_cambio_flete,
+            "tipo_cambio_cruce":        tipo_cambio_cruce,
+            "tipo_cambio_costo_cruce":  tipo_cambio_costo_cruce,
+            "ingreso_flete_convertido": ingreso_flete_convertido,
+            "ingreso_cruce_convertido": ingreso_cruce_convertido,
+            "costo_cruce_convertido":   costo_cruce_convertido,
+            "ingreso_total":            ingreso_total,
+            "costo_total":              costo_total,
+            "utilidad_bruta":           util["utilidad_bruta"],
+            "costos_indirectos":        util["costos_indirectos"],
+            "utilidad_neta":            util["utilidad_neta"],
+            "porcentaje_bruta":         util["porcentaje_bruta"],
+            "porcentaje_neta":          util["porcentaje_neta"],
+        }
+
+    # ── Mostrar resultados ────────────────────────────────────────────
+    if st.session_state.get("pic_revisar_ruta"):
+        calc = st.session_state.get("pic_calc", {})
+        if not calc:
+            return
+
+        d   = st.session_state.get("pic_datos_captura", {})
+        tc_usd = safe_float(valores.get("Tipo de cambio USD", 17.5))
+
+        divider()
+        section_header("📊", "Resultado de la Ruta")
+
+        mostrar_resultados_utilidad(
+            st,
+            calc["ingreso_total"],
+            calc["costo_total"],
+            calc["utilidad_bruta"],
+            calc["costos_indirectos"],
+            calc["utilidad_neta"],
+            calc["porcentaje_bruta"],
+            calc["porcentaje_neta"],
+            tipo=d.get("tipo", ""),
+            tc_usd=tc_usd if d.get("moneda_ingreso") == "USD" else 0.0,
+        )
+
+        # ── Guardar Ruta ──────────────────────────────────────────────
+        if st.button("💾 Guardar Ruta", key="pic_save_route", type="primary"):
+            if supabase is None:
+                alert("error", "Supabase no está configurado. No se puede guardar en BD.")
+                return
+
+            nuevo_id = _generar_nuevo_id()
+
+            try:
+                existe = supabase.table("Rutas_Picus").select("ID_Ruta").eq("ID_Ruta", nuevo_id).execute()
+                if existe.data:
+                    _get_last_id_cached.clear()
+                    alert("error", "⚠️ Conflicto al generar ID. Intenta de nuevo.")
+                    return
+            except Exception:
+                pass
+
+            nueva_ruta = {
+                "ID_Ruta":              nuevo_id,
+                "Fecha":                str(d["fecha"]),
+                "Tipo":                 d["tipo"],
+                "Ruta_Tipo":            d["ruta_tipo"],
+                "Cliente":              d["cliente"],
+                "Origen":               d["origen"],
+                "Destino":              d["destino"],
+                "Modo de Viaje":        calc["modo_viaje_calc"],
+                "KM":                   d["km"],
+                "Moneda":               d["moneda_ingreso"],
+                "Ingreso_Original":     d["ingreso_flete"],
+                "Tipo de cambio":       calc["tipo_cambio_flete"],
+                "Ingreso Flete":        calc["ingreso_flete_convertido"],
+                "Moneda_Cruce":         d["moneda_cruce"],
+                "Cruce_Original":       d["ingreso_cruce"],
+                "Tipo cambio Cruce":    calc["tipo_cambio_cruce"],
+                "Ingreso Cruce":        calc["ingreso_cruce_convertido"],
+                "Moneda Costo Cruce":   d["moneda_costo_cruce"],
+                "Costo Cruce":          d["costo_cruce"],
+                "Costo Cruce Convertido": calc["costo_cruce_convertido"],
+                "Ingreso Total":        calc["ingreso_total"],
+                "Pago por KM":          calc["pago_km"],
+                "Sueldo_Operador":      calc["sueldo"],
+                "Bono":                 calc["bono"],
+                "Casetas":              d["casetas"],
+                "Movimiento_Local":     d["movimiento_local"],
+                "Puntualidad":          d["puntualidad"],
+                "Pension":              d["pension"],
+                "Estancia":             d["estancia"],
+                "Fianza":               d["fianza"],
+                "Pistas_Extra":         d["pistas_extra"],
+                "Pistas_Cobrado":       d["pistas_cobrado"],
+                "Stop":                 d["stop"],
+                "Stop_Cobrado":         d["stop_cobrado"],
+                "Falso":                d["falso"],
+                "Falso_Cobrado":        d["falso_cobrado"],
+                "Gatas":                d["gatas"],
+                "Gatas_Cobrado":        d["gatas_cobrado"],
+                "Accesorios":           d["accesorios"],
+                "Accesorios_Cobrado":   d["accesorios_cobrado"],
+                "Guias":                d["guias"],
+                "Guias_Cobrado":        d["guias_cobrado"],
+                "Costo_Diesel_Camion":  calc["costo_diesel_camion"],
+                "Costos_Fijos":         calc["costos_fijos"],
+                "Costo_Extras":         calc["costo_extras"],
+                "Ingresos_Extras":      calc["ingreso_extras"],
+                "Costo_Total_Ruta":     calc["costo_total"],
+                "Costo Diesel":         safe_float(valores.get("Costo Diesel", 24.0)),
+                "Rendimiento Camion":   safe_float(valores.get("Rendimiento Camion", 2.5)),
+                # Auditoría
+                "created_by":   nombre_usuario,
+                "created_at":   _now_iso(),
+                "updated_by":   None,
+                "updated_at":   None,
+                "historial":    [],
+            }
+
+            try:
+                supabase.table("Rutas_Picus").insert(nueva_ruta).execute()
+                _get_last_id_cached.clear()
+                st.session_state["pic_ruta_guardada_id"] = nuevo_id
+                st.session_state["pic_mostrar_modal"]    = True
+                st.session_state.pop("pic_revisar_ruta", None)
+                st.session_state.pop("pic_datos_captura", None)
+                st.session_state.pop("pic_calc", None)
+                st.rerun()
+            except Exception as e:
+                alert("error", f"❌ Error al guardar: {e}")
