@@ -181,35 +181,60 @@ def generar_pdf_profesional(
     rend_usado = rend_sim if simulando and rend_sim else safe_number(ruta.get("Rendimiento Camion", 2.5))
     diesel_usado = diesel_sim if simulando and diesel_sim else safe_number(ruta.get("Costo Diesel", 24.0))
 
+    # 8 columnas: etiqueta | valor | etiqueta | valor | etiqueta | valor | etiqueta | valor
+    # Anchos: etiquetas angostas, valores más anchos
+    W = [0.85*inch, 0.95*inch, 0.7*inch, 0.85*inch, 0.85*inch, 0.85*inch, 0.85*inch, 0.85*inch]
+    GRIS = colors.HexColor("#f0f2f6")
+    GRID_C = colors.HexColor("#dee2e6")
+
+    origen_p  = Paragraph(_safe_txt(str(ruta.get("Origen",  ""))), compact)
+    destino_p = Paragraph(_safe_txt(str(ruta.get("Destino", ""))), compact)
+    cliente_p = Paragraph(_safe_txt(str(ruta.get("Cliente", ""))), compact)
+
     info_data = [
-        [_safe_txt("ID de Ruta"), _safe_txt(str(ruta.get("ID_Ruta", ""))),
-         _safe_txt("Fecha"),      _safe_txt(str(ruta.get("Fecha", ""))[:10])],
-        [_safe_txt("Tipo"),       _safe_txt(str(ruta.get("Tipo", ""))),
-         _safe_txt("Ruta Tipo"),  _safe_txt(str(ruta.get("Ruta_Tipo", "")))],
-        [_safe_txt("Modo de Viaje"), _safe_txt(str(ruta.get("Modo de Viaje", ""))),
-         _safe_txt("Cliente"),    Paragraph(_safe_txt(str(ruta.get("Cliente", ""))), compact)],
-        [Paragraph(_safe_txt(str(ruta.get("Origen", ""))), compact), "",
-         Paragraph(_safe_txt(str(ruta.get("Destino", ""))), compact), ""],
-        [_safe_txt("KM"),         _safe_txt(f"{safe_number(ruta.get('KM', 0)):,.0f}"),
-         _safe_txt("Pago x KM"), _safe_txt(f"${safe_number(ruta.get('Pago por KM', 0)):,.4f}")],
-        [_safe_txt("Rendimiento Camion"), _safe_txt(f"{rend_usado:.2f} km/L"),
-         _safe_txt("Costo Diesel"),       _safe_txt(f"${diesel_usado:.2f}/L")],
+        # Fila 1: ID | val | Fecha | val | Tipo | val | Ruta Tipo | val
+        [_safe_txt("ID Ruta"),   _safe_txt(str(ruta.get("ID_Ruta",""))),
+         _safe_txt("Fecha"),     _safe_txt(str(ruta.get("Fecha",""))[:10]),
+         _safe_txt("Tipo"),      _safe_txt(str(ruta.get("Tipo",""))),
+         _safe_txt("Ruta Tipo"), _safe_txt(str(ruta.get("Ruta_Tipo","")))],
+        # Fila 2: Modo | val | Cliente | val (span 5 cols)
+        [_safe_txt("Modo"),      _safe_txt(str(ruta.get("Modo de Viaje",""))),
+         _safe_txt("Cliente"),   cliente_p,
+         "", "", "", ""],
+        # Fila 3: Origen → Destino sin etiqueta (span completo)
+        [origen_p, "", "", _safe_txt("->"), destino_p, "", "", ""],
+        # Fila 4: KM | val | Pago x KM | val | Rendimiento | val | Costo Diesel | val
+        [_safe_txt("KM"),        _safe_txt(f"{safe_number(ruta.get('KM',0)):,.0f}"),
+         _safe_txt("Pago x KM"), _safe_txt(f"${safe_number(ruta.get('Pago por KM',0)):,.4f}"),
+         _safe_txt("Rendimiento"),_safe_txt(f"{rend_usado:.2f} km/L"),
+         _safe_txt("Diesel"),    _safe_txt(f"${diesel_usado:.2f}/L")],
     ]
-    info_t = Table(info_data, colWidths=[1.4 * inch, 2.1 * inch, 1.4 * inch, 2.1 * inch])
+    info_t = Table(info_data, colWidths=W)
     info_t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f0f2f6")),
-        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#f0f2f6")),
-        ("FONTNAME",   (0, 0), (0, -1),  "Helvetica-Bold"),
-        ("FONTNAME",   (2, 0), (2, -1),  "Helvetica-Bold"),
+        # Fondo gris en columnas de etiqueta (0, 2, 4, 6)
+        ("BACKGROUND", (0, 0), (0, -1), GRIS),
+        ("BACKGROUND", (2, 0), (2, -1), GRIS),
+        ("BACKGROUND", (4, 0), (4, -1), GRIS),
+        ("BACKGROUND", (6, 0), (6, -1), GRIS),
+        # Negrita en etiquetas
+        ("FONTNAME",   (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME",   (2, 0), (2, -1), "Helvetica-Bold"),
+        ("FONTNAME",   (4, 0), (4, -1), "Helvetica-Bold"),
+        ("FONTNAME",   (6, 0), (6, -1), "Helvetica-Bold"),
         ("FONTSIZE",   (0, 0), (-1, -1), 7),
-        ("GRID",       (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
+        ("GRID",       (0, 0), (-1, -1), 0.5, GRID_C),
         ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        # fila origen/destino: span col 0+1 y col 2+3
-        ("SPAN",       (0, 3), (1, 3)),
-        ("SPAN",       (2, 3), (3, 3)),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+        # Fila 2: Cliente ocupa cols 3 a 7
+        ("SPAN",  (3, 1), (7, 1)),
+        # Fila 3 (origen → destino): origen cols 0-2, flecha col 3, destino cols 4-7
+        ("SPAN",  (0, 2), (2, 2)),
+        ("SPAN",  (4, 2), (7, 2)),
+        ("ALIGN", (3, 2), (3, 2), "CENTER"),
+        ("FONTNAME", (0, 2), (7, 2), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 2), (7, 2), colors.HexColor("#eef0f8")),
     ]))
     story.append(info_t)
     story.append(Spacer(1, 10))
