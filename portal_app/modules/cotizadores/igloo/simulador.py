@@ -31,6 +31,8 @@ from .helpers import (
     calcular_costos_indirectos,
     calcular_utilidades_vuelta_redonda,
     mostrar_resultados_utilidad,
+    filtrar_rutas_igloo,
+    label_ruta_igloo,
 )
 
 
@@ -48,35 +50,6 @@ def _load_rutas_igloo_cached(table_name: str) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
-
-# ─────────────────────────────────────────────
-# FILTROS Y LABEL
-# ─────────────────────────────────────────────
-def _filtrar_rutas(df: pd.DataFrame, prefix_key: str) -> pd.DataFrame:
-    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        tipos_disp    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
-        clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
-        filtro_tipo    = fc1.selectbox("Tipo",              tipos_disp,    key=f"{prefix_key}_ftipo")
-        filtro_cliente = fc2.selectbox("Cliente",           clientes_disp, key=f"{prefix_key}_fcli")
-        filtro_origen  = fc3.text_input("Origen contiene",                 key=f"{prefix_key}_forig")
-        filtro_destino = fc4.text_input("Destino contiene",                key=f"{prefix_key}_fdest")
-
-    resultado = df.copy()
-    if filtro_tipo    != "Todos": resultado = resultado[resultado["Tipo"] == filtro_tipo]
-    if filtro_cliente != "Todos": resultado = resultado[resultado["Cliente"].astype(str) == filtro_cliente]
-    if filtro_origen.strip():     resultado = resultado[resultado["Origen"].astype(str).str.contains(filtro_origen.strip(), case=False, na=False)]
-    if filtro_destino.strip():    resultado = resultado[resultado["Destino"].astype(str).str.contains(filtro_destino.strip(), case=False, na=False)]
-    return resultado
-
-
-def _format_ruta_label(row) -> str:
-    fecha = str(row.get("Fecha", ""))[:10]
-    return (
-        f"{row.get('ID_Ruta', '')} | {fecha} | "
-        f"{row.get('Tipo', '')} | {row.get('Cliente', '')} | "
-        f"{row.get('Origen', '')} → {row.get('Destino', '')}"
-    )
 
 
 # ─────────────────────────────────────────────
@@ -260,13 +233,13 @@ def render():
     divider()
     section_header("📌", "Paso 1 — Ruta Principal")
     st.caption("Filtra las rutas disponibles y selecciona la ruta de ida.")
-    df_filtrado_principal = _filtrar_rutas(df, "principal")
+    df_filtrado_principal = filtrar_rutas_igloo(df, "ig_sim")
 
     if df_filtrado_principal.empty:
         alert("warn", "No hay rutas que cumplan con los filtros seleccionados.")
         return
 
-    opciones_principal = [_format_ruta_label(row) for _, row in df_filtrado_principal.iterrows()]
+    opciones_principal = [label_ruta_igloo(row) for _, row in df_filtrado_principal.iterrows()]
     ruta_principal_label = st.selectbox(
         f"Selecciona la ruta principal ({len(df_filtrado_principal)} disponibles)",
         options=opciones_principal,
