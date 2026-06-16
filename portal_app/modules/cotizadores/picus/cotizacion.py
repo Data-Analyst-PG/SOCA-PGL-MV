@@ -190,7 +190,7 @@ def render():
     with col_emp:
         st.markdown("#### 🏢 Empresa")
         empresa_nombre    = st.text_input("Nombre de la Empresa",    key="pic_cot_emp_nom",  value="PICUS SA DE CV")
-        empresa_direccion = st.text_input("Dirección de la Empresa", key="pic_cot_emp_dir",  placeholder="Dirección completa")
+        empresa_direccion = st.text_input("Dirección de la Empresa", key="pic_cot_emp_dir",  value="Carr. Apto Km 3.8 Blvd Apto. 4, América, Nuevo Laredo, Tamps. 88284")
         empresa_mail      = st.text_input("Email de la Empresa",     key="pic_cot_emp_mail", placeholder="operaciones@picus.com")
         emp_c1, emp_c2    = st.columns(2)
         empresa_telefono  = emp_c1.text_input("Teléfono Empresa",   key="pic_cot_emp_tel",  placeholder="867 718 1823")
