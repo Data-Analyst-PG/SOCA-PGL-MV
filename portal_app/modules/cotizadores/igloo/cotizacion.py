@@ -330,7 +330,7 @@ def render():
             _y_max = _y_max_1 if _paginas_sim == 1 else _y_max_n
             if _y_sim > _y_max:
                 _paginas_sim += 1
-                _y_sim = 1.40  # consistente con el render real
+                _y_sim = 2.00  # consistente con el render real
 
             for _campo in _conceptos:
                 if _campo not in _rd or pd.isna(_rd[_campo]) or float(_rd[_campo] or 0) == 0:
