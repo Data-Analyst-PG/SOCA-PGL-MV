@@ -1,12 +1,12 @@
 """
 simulador.py — Cotizador Igloo
 Simulador de Vuelta Redonda.
-Diseño homologado con Lincoln y Set Logis:
-  - Sin st.title()
-  - Botón recargar en col [1,4]
-  - Resultados con mostrar_resultados_utilidad() → kpi_row + semaforos_ruta
-  - Detalles de cada tramo en expanders con st.caption()
-  - PDF sin cambios
+- Sin st.title(), recargar en col [1,4]
+- filtrar_rutas_igloo / label_ruta_igloo desde helpers (sin duplicados)
+- Detalle completo por ruta en expanders expanded=True
+- Columnas con todos los campos de cada ruta
+- mostrar_resultados_utilidad() para KPIs globales
+- PDF original personalizado (versión aprobada)
 """
 
 import tempfile
@@ -45,15 +45,24 @@ def _load_rutas_igloo_cached(table_name: str) -> pd.DataFrame:
     if supabase is None:
         return pd.DataFrame()
     try:
-        resp = supabase.table(table_name).select("*").order("Fecha", desc=True).execute()
-        return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
+        resp = supabase.table(table_name).select("*").execute()
+        df   = pd.DataFrame(resp.data)
+        if df.empty:
+            return df
+        for col in ["Origen", "Destino", "Cliente"]:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.strip().str.upper()
+        if "Fecha" in df.columns:
+            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
+        df["Ingreso Total"]    = pd.to_numeric(df.get("Ingreso Total",    0), errors="coerce").fillna(0.0)
+        df["Costo_Total_Ruta"] = pd.to_numeric(df.get("Costo_Total_Ruta", 0), errors="coerce").fillna(0.0)
+        return df
     except Exception:
         return pd.DataFrame()
 
 
-
 # ─────────────────────────────────────────────
-# PDF VUELTA REDONDA (sin cambios en lógica)
+# PDF ORIGINAL (versión aprobada)
 # ─────────────────────────────────────────────
 def generar_pdf_vuelta_redonda(rutas_seleccionadas, ingreso_total, costo_total,
                                 utilidad_bruta, costos_indirectos, utilidad_neta,
@@ -65,45 +74,47 @@ def generar_pdf_vuelta_redonda(rutas_seleccionadas, ingreso_total, costo_total,
         topMargin=0.5*inch,  bottomMargin=0.5*inch,
     )
     styles       = getSampleStyleSheet()
-    title_style  = ParagraphStyle("T",  parent=styles["Title"],   fontSize=16, textColor=colors.HexColor("#1B2266"), spaceAfter=6)
-    subtitle_style = ParagraphStyle("S", parent=styles["Heading2"], fontSize=11, textColor=colors.HexColor("#1B2266"), spaceBefore=12, spaceAfter=4)
-    compact_cell = ParagraphStyle("C",  parent=styles["Normal"],  fontSize=7, leading=8)
+    title_style  = ParagraphStyle("CustomTitle",    parent=styles["Title"],   fontSize=16, textColor=colors.HexColor("#1B2266"), spaceAfter=6)
+    subtitle_style = ParagraphStyle("CustomSubtitle", parent=styles["Heading2"], fontSize=11, textColor=colors.HexColor("#1B2266"), spaceBefore=12, spaceAfter=4)
+    normal       = ParagraphStyle("CustomNormal",   parent=styles["Normal"],  fontSize=9,  leading=12)
+    compact_cell = ParagraphStyle("CompactCell",    parent=styles["Normal"],  fontSize=7,  leading=8, spaceBefore=0, spaceAfter=0)
     story = []
 
-    # Encabezado
+    # ── Encabezado ──
     header_data = [[
-        Paragraph("<b>IGLOO TRANSPORT S DE RL DE CV</b>",
-                  ParagraphStyle("H",  parent=styles["Normal"], fontSize=13, textColor=colors.white)),
-        Paragraph("Simulador de Vuelta Redonda",
-                  ParagraphStyle("HR", parent=styles["Normal"], fontSize=9,  textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph("<b>IGLOO TRANSPORT S DE RL DE CV</b>", ParagraphStyle(
+            "Header", parent=styles["Normal"], fontSize=13, textColor=colors.white,
+        )),
+        Paragraph("Simulador de Vuelta Redonda", ParagraphStyle(
+            "HeaderRight", parent=styles["Normal"], fontSize=9, textColor=colors.white, alignment=TA_RIGHT,
+        )),
     ]]
     header_table = Table(header_data, colWidths=[5.0*inch, 2.0*inch])
     header_table.setStyle(TableStyle([
         ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",     (0,0), (-1,-1), colors.white),
         ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
         ("TOPPADDING",    (0,0), (-1,-1), 10),
         ("BOTTOMPADDING", (0,0), (-1,-1), 10),
         ("LEFTPADDING",   (0,0), (0,-1),  12),
         ("RIGHTPADDING",  (-1,0),(-1,-1), 12),
+        ("ROUNDEDCORNERS", [6,6,6,6]),
     ]))
     story.append(header_table)
     story.append(Spacer(1, 12))
-    story.append(Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles["Normal"]))
-    story.append(Spacer(1, 8))
 
-    # Resumen global
+    # ── Resumen global ──
     story.append(Paragraph("📊 Resumen de Vuelta Redonda", subtitle_style))
     color_utilidad = colors.HexColor("#28a745") if utilidad_neta >= 0 else colors.HexColor("#dc3545")
     pct_costo      = (costo_total       / ingreso_total * 100) if ingreso_total > 0 else 0
     pct_indirectos = (costos_indirectos / ingreso_total * 100) if ingreso_total > 0 else 0
-
     resumen_data = [
-        ["Concepto",        "Monto",                    "%"],
-        ["Ingreso Total",   f"${ingreso_total:,.2f} MXP",   "100.00%"],
-        ["Costo Directo",   f"${costo_total:,.2f} MXP",     f"{pct_costo:.2f}%"],
-        ["Utilidad Bruta",  f"${utilidad_bruta:,.2f} MXP",  f"{pct_bruta:.2f}%"],
-        ["Costos Indirectos", f"${costos_indirectos:,.2f} MXP", f"{pct_indirectos:.2f}%"],
-        ["Utilidad Neta",   f"${utilidad_neta:,.2f} MXP",   f"{pct_neta:.2f}%"],
+        ["Concepto",          "Monto",                              "%"],
+        ["Ingreso Total",     f"${ingreso_total:,.2f} MXP",         "100.00%"],
+        ["Costo Directo",     f"${costo_total:,.2f} MXP",           f"{pct_costo:.2f}%"],
+        ["Utilidad Bruta",    f"${utilidad_bruta:,.2f} MXP",        f"{pct_bruta:.2f}%"],
+        ["Costos Indirectos", f"${costos_indirectos:,.2f} MXP",     f"{pct_indirectos:.2f}%"],
+        ["Utilidad Neta",     f"${utilidad_neta:,.2f} MXP",         f"{pct_neta:.2f}%"],
     ]
     resumen_table = Table(resumen_data, colWidths=[2.5*inch, 2.5*inch, 2.0*inch])
     resumen_table.setStyle(TableStyle([
@@ -123,22 +134,22 @@ def generar_pdf_vuelta_redonda(rutas_seleccionadas, ingreso_total, costo_total,
     story.append(resumen_table)
     story.append(Spacer(1, 14))
 
-    # Detalle de cada ruta
+    # ── Detalle de cada ruta ──
     story.append(Paragraph("📋 Detalle de Rutas", subtitle_style))
     for i, ruta in enumerate(rutas_seleccionadas, 1):
         tipo_ruta = str(ruta.get("Tipo", ""))
         story.append(Paragraph(
             f"<b>{i}. {tipo_ruta} — {ruta.get('Cliente', 'N/A')}</b>",
-            ParagraphStyle("RH", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#1B2266")),
+            ParagraphStyle("RutaHeader", parent=normal, fontSize=10, textColor=colors.HexColor("#1B2266")),
         ))
         story.append(Spacer(1, 4))
 
         ruta_info = [
-            ["ID Ruta", str(ruta.get("ID_Ruta", "")),    "Fecha",    str(ruta.get("Fecha", ""))],
-            ["Tipo",    tipo_ruta,                         "KM",       f"{safe_number(ruta.get('KM',0)):,.2f}"],
-            ["Cliente", Paragraph(str(ruta.get("Cliente","")), compact_cell), "Modo", str(ruta.get("Modo de Viaje",""))],
-            ["Origen",  Paragraph(str(ruta.get("Origen", "")), compact_cell),
-             "Destino", Paragraph(str(ruta.get("Destino","")), compact_cell)],
+            ["ID Ruta",  str(ruta.get("ID_Ruta", "")), "Fecha",    str(ruta.get("Fecha", ""))],
+            ["Tipo",     tipo_ruta,                      "KM",       f"{safe_number(ruta.get('KM', 0)):,.2f}"],
+            ["Cliente",  Paragraph(str(ruta.get("Cliente", "")), compact_cell), "Modo", str(ruta.get("Modo de Viaje", "Sencillo"))],
+            ["Origen",   Paragraph(str(ruta.get("Origen",  "")), compact_cell),
+             "Destino",  Paragraph(str(ruta.get("Destino", "")), compact_cell)],
         ]
         ruta_table = Table(ruta_info, colWidths=[1.2*inch, 2.0*inch, 1.2*inch, 2.0*inch])
         ruta_table.setStyle(TableStyle([
@@ -156,20 +167,23 @@ def generar_pdf_vuelta_redonda(rutas_seleccionadas, ingreso_total, costo_total,
         story.append(ruta_table)
         story.append(Spacer(1, 6))
 
+        ing_orig       = safe_number(ruta.get("Ingreso_Original", 0))
+        moneda         = str(ruta.get("Moneda", "MXP"))
+        tc             = safe_number(ruta.get("Tipo de cambio", 1.0))
         ing_total_ruta = safe_number(ruta.get("Ingreso Total", 0))
         costo_ruta     = safe_number(ruta.get("Costo_Total_Ruta", 0))
         costos_ind_ruta = calcular_costos_indirectos(tipo_ruta, ing_total_ruta)
 
-        fin_data = [
-            ["Ingreso Original",   f"${safe_number(ruta.get('Ingreso_Original',0)):,.2f}"],
-            ["Moneda",              str(ruta.get("Moneda", "MXP"))],
-            ["Tipo de cambio",      f"{safe_number(ruta.get('Tipo de cambio',1.0)):,.2f}"],
+        financiera_data = [
+            ["Ingreso Original",    f"${ing_orig:,.2f}"],
+            ["Moneda",              moneda],
+            ["Tipo de cambio",      f"{tc:,.2f}"],
             ["Ingreso Total",       f"${ing_total_ruta:,.2f} MXP"],
             ["Costo Directo Ruta",  f"${costo_ruta:,.2f} MXP"],
-            ["Costos Indirectos (35%)" if costos_ind_ruta > 0 else "Costos Indirectos (0% — VACÍO)",
+            ["Costos Indirectos (35%)" if costos_ind_ruta > 0 else "Costos Indirectos (0% - VACÍO)",
              f"${costos_ind_ruta:,.2f} MXP"],
         ]
-        fin_table = Table(fin_data, colWidths=[2.5*inch, 3.5*inch])
+        fin_table = Table(financiera_data, colWidths=[2.5*inch, 3.5*inch])
         fin_table.setStyle(TableStyle([
             ("BACKGROUND", (0,0),(0,-1), colors.HexColor("#e8f4f8")),
             ("FONTSIZE",   (0,0),(-1,-1), 7),
@@ -184,11 +198,15 @@ def generar_pdf_vuelta_redonda(rutas_seleccionadas, ingreso_total, costo_total,
         story.append(fin_table)
         story.append(Spacer(1, 10))
 
-    # Footer
+    # ── Footer ──
+    usuario_nombre = "Usuario"
+    if hasattr(st, "session_state") and "usuario" in st.session_state:
+        usuario_data   = st.session_state.get("usuario", {})
+        usuario_nombre = usuario_data.get("Nombre", "Usuario")
     story.append(Spacer(1, 20))
     story.append(Paragraph(
-        f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Igloo Transport",
-        ParagraphStyle("F", parent=styles["Normal"], fontSize=7,
+        f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} por {usuario_nombre} — Igloo Transport",
+        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7,
                        textColor=colors.HexColor("#6c757d"), alignment=TA_CENTER),
     ))
     doc.build(story)
@@ -210,7 +228,7 @@ def render():
     # ── Recargar ──────────────────────────────────────────────────
     c1, c2 = st.columns([1, 4])
     with c1:
-        if st.button("🔄 Recargar", key="reload_rutas_simulador"):
+        if st.button("🔄 Recargar", key="igloo_sim_reload"):
             _load_rutas_igloo_cached.clear()
             st.rerun()
     with c2:
@@ -221,15 +239,7 @@ def render():
         alert("warn", "⚠️ No hay rutas registradas en Supabase.")
         return
 
-    # Normalizar texto
-    for col in ["Origen", "Destino", "Cliente", "Tipo"]:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.strip().str.upper()
-
-    if "Fecha" in df.columns:
-        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
-
-    # ── Paso 1: Ruta principal ────────────────────────────────────
+    # ── Paso 1: Ruta principal ─────────────────────────────────────
     divider()
     section_header("📌", "Paso 1 — Ruta Principal")
     st.caption("Filtra las rutas disponibles y selecciona la ruta de ida.")
@@ -245,133 +255,119 @@ def render():
         options=opciones_principal,
         key="sel_ruta_principal",
     )
-
     idx_principal  = opciones_principal.index(ruta_principal_label)
     ruta_principal = df_filtrado_principal.iloc[idx_principal]
 
     with st.expander("📋 Ver detalles de la ruta seleccionada", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            st.caption(f"**ID Ruta:** {ruta_principal.get('ID_Ruta', 'N/A')}")
-            st.caption(f"**Tipo:** {ruta_principal.get('Tipo', 'N/A')}")
-            st.caption(f"**Cliente:** {ruta_principal.get('Cliente', 'N/A')}")
-            st.caption(f"**Fecha:** {ruta_principal.get('Fecha', 'N/A')}")
+            st.markdown(f"**ID Ruta:** {ruta_principal.get('ID_Ruta', 'N/A')}")
+            st.markdown(f"**Tipo:** {ruta_principal.get('Tipo', 'N/A')}")
+            st.markdown(f"**Cliente:** {ruta_principal.get('Cliente', 'N/A')}")
+            st.markdown(f"**Fecha:** {ruta_principal.get('Fecha', 'N/A')}")
         with c2:
-            st.caption(f"**Origen:** {ruta_principal.get('Origen', 'N/A')}")
-            st.caption(f"**Destino:** {ruta_principal.get('Destino', 'N/A')}")
-            st.caption(f"**Ingreso Total:** ${safe_number(ruta_principal.get('Ingreso Total', 0)):,.2f}")
-            st.caption(f"**Costo Directo:** ${safe_number(ruta_principal.get('Costo_Total_Ruta', 0)):,.2f}")
+            st.markdown(f"**Origen:** {ruta_principal.get('Origen', 'N/A')}")
+            st.markdown(f"**Destino:** {ruta_principal.get('Destino', 'N/A')}")
+            st.markdown(f"**Ingreso Total:** ${safe_number(ruta_principal.get('Ingreso Total', 0)):,.2f}")
+            st.markdown(f"**Costo Directo:** ${safe_number(ruta_principal.get('Costo_Total_Ruta', 0)):,.2f}")
 
-    # ── Paso 2: Sugerir combinaciones ─────────────────────────────
+    # ── Paso 2: Sugerir combinaciones ──────────────────────────────
     divider()
     section_header("🔄", "Paso 2 — Selecciona el Regreso")
-    st.caption("Combinaciones sugeridas ordenadas por % utilidad combinada.")
 
-    tipo_principal     = str(ruta_principal.get("Tipo", "")).strip().upper()
-    destino_principal  = str(ruta_principal.get("Destino", "")).strip().upper()
-    origen_principal   = str(ruta_principal.get("Origen",  "")).strip().upper()
-    tipos_directos     = ["IMPORTACION", "EXPORTACION"]
-    tipos_conector     = ["VACIO", "DOM MEX"]
+    tipo_principal    = str(ruta_principal["Tipo"]).strip().upper()
+    destino_principal = str(ruta_principal["Destino"]).strip().upper()
+    tipos_conector    = ["VACIO", "DOM MEX"]
+    tipo_regreso      = "EXPORTACION" if tipo_principal == "IMPORTACION" else "IMPORTACION"
 
     sugerencias = []
 
-    # Rutas directas de regreso (origen del regreso = destino de la principal)
-    rutas_directas = df[
-        (df["Tipo"].isin(tipos_directos)) &
-        (df["Origen"] == destino_principal)
-    ].copy()
-
-    for _, regreso_row in rutas_directas.iterrows():
-        ingreso_t = safe_number(ruta_principal["Ingreso Total"]) + safe_number(regreso_row["Ingreso Total"])
-        costo_t   = safe_number(ruta_principal["Costo_Total_Ruta"]) + safe_number(regreso_row["Costo_Total_Ruta"])
-        utilidad  = ingreso_t - costo_t
-        porcentaje = (utilidad / ingreso_t * 100) if ingreso_t > 0 else 0
-        descripcion = (
-            f"{regreso_row.get('ID_Ruta','')} | {regreso_row['Fecha']} — "
-            f"{regreso_row['Cliente']} {regreso_row['Origen']} → "
-            f"{regreso_row['Destino']} ({porcentaje:.2f}%)"
-        )
-        sugerencias.append({
-            "descripcion": descripcion,
-            "tramos":      [regreso_row],
-            "utilidad":    utilidad,
-            "porcentaje":  porcentaje,
-        })
-
-    # Rutas con vacío como puente
-    rutas_vacio = df[
-        (df["Tipo"] == "VACIO") &
-        (df["Origen"] == destino_principal)
-    ].copy()
-
-    for _, vacio_row in rutas_vacio.iterrows():
-        destino_vacio = str(vacio_row.get("Destino", "")).strip().upper()
-        rutas_finales = df[
-            (df["Tipo"].isin(tipos_directos)) &
-            (df["Origen"] == destino_vacio)
+    # 1) Rutas directas desde el destino principal
+    if tipo_principal != "VACIO":
+        rutas_directas = df[
+            (df["Tipo"] == tipo_regreso) & (df["Origen"] == destino_principal)
         ].copy()
-        for _, final_row in rutas_finales.iterrows():
-            ingreso_t = (safe_number(ruta_principal["Ingreso Total"]) +
-                         safe_number(vacio_row["Ingreso Total"]) +
-                         safe_number(final_row["Ingreso Total"]))
-            costo_t   = (safe_number(ruta_principal["Costo_Total_Ruta"]) +
-                         safe_number(vacio_row["Costo_Total_Ruta"]) +
-                         safe_number(final_row["Costo_Total_Ruta"]))
-            utilidad  = ingreso_t - costo_t
+        for _, row in rutas_directas.iterrows():
+            ingreso_t  = safe_number(ruta_principal["Ingreso Total"]) + safe_number(row["Ingreso Total"])
+            costo_t    = safe_number(ruta_principal["Costo_Total_Ruta"]) + safe_number(row["Costo_Total_Ruta"])
+            utilidad   = ingreso_t - costo_t
             porcentaje = (utilidad / ingreso_t * 100) if ingreso_t > 0 else 0
-            descripcion = (
-                f"[VACÍO] {vacio_row.get('ID_Ruta','')} + "
-                f"{final_row.get('ID_Ruta','')} | {final_row['Cliente']} "
-                f"{final_row['Origen']} → {final_row['Destino']} ({porcentaje:.2f}%)"
-            )
             sugerencias.append({
-                "descripcion": descripcion,
-                "tramos":      [vacio_row, final_row],
-                "utilidad":    utilidad,
-                "porcentaje":  porcentaje,
+                "descripcion": (
+                    f"{row.get('ID_Ruta','')} | {row['Fecha']} — "
+                    f"{row['Cliente']} {row['Origen']} → {row['Destino']} ({porcentaje:.2f}%)"
+                ),
+                "tramos":     [row],
+                "utilidad":   utilidad,
+                "porcentaje": porcentaje,
             })
 
-    # Rutas tipo conector como final
-    if tipo_principal in tipos_directos:
-        rutas_conector = df[
-            (df["Tipo"].isin(tipos_conector)) &
+    # 2) Rutas con VACÍO o DOM MEX + ruta cliente
+    for tipo_con in tipos_conector:
+        rutas_conector = df[(df["Tipo"] == tipo_con) & (df["Origen"] == destino_principal)].copy()
+        for _, con_row in rutas_conector.iterrows():
+            destino_con = str(con_row["Destino"]).strip().upper()
+            rutas_finales = df[
+                (df["Tipo"] == tipo_regreso) & (df["Origen"] == destino_con)
+            ].copy()
+            for _, final_row in rutas_finales.iterrows():
+                ingreso_t  = safe_number(ruta_principal["Ingreso Total"]) + safe_number(final_row["Ingreso Total"])
+                costo_t    = (safe_number(ruta_principal["Costo_Total_Ruta"]) +
+                              safe_number(con_row["Costo_Total_Ruta"]) +
+                              safe_number(final_row["Costo_Total_Ruta"]))
+                utilidad   = ingreso_t - costo_t
+                porcentaje = (utilidad / ingreso_t * 100) if ingreso_t > 0 else 0
+                label_con  = "Vacío" if tipo_con == "VACIO" else "Dom Mex"
+                sugerencias.append({
+                    "descripcion": (
+                        f"{final_row.get('ID_Ruta','')} | {final_row['Fecha']} — "
+                        f"{final_row['Cliente']} ({label_con} → "
+                        f"{con_row['Origen']} → {con_row['Destino']}) → "
+                        f"{final_row['Destino']} ({porcentaje:.2f}%)"
+                    ),
+                    "tramos":     [con_row, final_row],
+                    "utilidad":   utilidad,
+                    "porcentaje": porcentaje,
+                })
+
+    # 3) Si principal es VACIO o DOM MEX: buscar import/export desde su destino
+    if tipo_principal in tipos_conector:
+        rutas_finales = df[
+            (df["Tipo"].isin(["IMPORTACION", "EXPORTACION"])) &
             (df["Origen"] == destino_principal)
         ].copy()
-        for _, con_row in rutas_conector.iterrows():
-            ingreso_t = safe_number(ruta_principal["Ingreso Total"]) + safe_number(con_row["Ingreso Total"])
-            costo_t   = safe_number(ruta_principal["Costo_Total_Ruta"]) + safe_number(con_row["Costo_Total_Ruta"])
-            utilidad  = ingreso_t - costo_t
+        for _, final_row in rutas_finales.iterrows():
+            ingreso_t  = safe_number(ruta_principal["Ingreso Total"]) + safe_number(final_row["Ingreso Total"])
+            costo_t    = safe_number(ruta_principal["Costo_Total_Ruta"]) + safe_number(final_row["Costo_Total_Ruta"])
+            utilidad   = ingreso_t - costo_t
             porcentaje = (utilidad / ingreso_t * 100) if ingreso_t > 0 else 0
-            descripcion = (
-                f"{con_row.get('ID_Ruta','')} | {con_row['Fecha']} — "
-                f"{con_row['Tipo']} {con_row['Origen']} → "
-                f"{con_row['Destino']} ({porcentaje:.2f}%)"
-            )
             sugerencias.append({
-                "descripcion": descripcion,
-                "tramos":      [con_row],
-                "utilidad":    utilidad,
-                "porcentaje":  porcentaje,
+                "descripcion": (
+                    f"{final_row.get('ID_Ruta','')} | {final_row['Fecha']} — "
+                    f"{final_row['Cliente']} {final_row['Origen']} → "
+                    f"{final_row['Destino']} ({porcentaje:.2f}%)"
+                ),
+                "tramos":     [final_row],
+                "utilidad":   utilidad,
+                "porcentaje": porcentaje,
             })
 
     sugerencias = sorted(sugerencias, key=lambda x: x["porcentaje"], reverse=True)
 
     if not sugerencias:
-        alert("warn", "⚠️ No se encontraron combinaciones posibles para esta ruta.")
+        alert("warn", "⚠️ No se encontraron combinaciones posibles.")
         return
 
     st.caption(f"📊 Se encontraron **{len(sugerencias)} combinaciones posibles**")
-    descripciones    = [s["descripcion"] for s in sugerencias]
-    seleccion_desc   = st.selectbox(
-        "Selecciona una opción de regreso",
-        descripciones,
-        index=0,
-        key="sel_regreso_sugerido",
+    descripciones  = [s["descripcion"] for s in sugerencias]
+    seleccion_desc = st.selectbox(
+        "Selecciona una opción de regreso sugerida",
+        descripciones, index=0, key="sel_regreso_sugerido",
     )
-    seleccion_obj    = next(s for s in sugerencias if s["descripcion"] == seleccion_desc)
+    seleccion_obj      = next(s for s in sugerencias if s["descripcion"] == seleccion_desc)
     rutas_seleccionadas = [ruta_principal.to_dict()] + [t.to_dict() for t in seleccion_obj["tramos"]]
 
-    # ── Botón simular ─────────────────────────────────────────────
+    # ── Botón simular ──────────────────────────────────────────────
     divider()
     b1, b2, b3 = st.columns([1, 2, 1])
     with b2:
@@ -388,76 +384,94 @@ def render():
             st.session_state.igloo_simulacion_realizada = True
             st.rerun()
 
-    # ── Resultados ────────────────────────────────────────────────
+    # ── Resultados ─────────────────────────────────────────────────
     if st.session_state.igloo_simulacion_realizada:
         divider()
+
+        # Expander por ruta con detalle completo
         section_header("📊", "Resumen de Vuelta Redonda")
+        for i, r in enumerate(st.session_state.rutas_seleccionadas, 1):
+            tipo_r   = str(r.get("Tipo", "")).strip().upper()
+            ing_r    = safe_number(r.get("Ingreso Total", 0))
+            costo_r  = safe_number(r.get("Costo_Total_Ruta", 0))
+            ind_r    = calcular_costos_indirectos(tipo_r, ing_r)
 
-        ingreso_total     = st.session_state.ingreso_total
-        costo_total       = st.session_state.costo_total
-        utilidad_bruta    = st.session_state.utilidad_bruta
-        costos_indirectos = st.session_state.costos_indirectos
-        utilidad_neta     = st.session_state.utilidad_neta
-        pct_bruta         = st.session_state.pct_bruta
-        pct_neta          = st.session_state.pct_neta
+            with st.expander(f"{i}. {tipo_r} — {r.get('Cliente', 'N/A')}", expanded=True):
+                st.markdown(f"**ID Ruta:** {r.get('ID_Ruta', 'N/A')}")
+                st.markdown(f"- Fecha: {r.get('Fecha', 'N/A')}")
+                st.markdown(f"- {r.get('Origen','')} → {r.get('Destino','')}")
+                st.markdown(f"- Ingreso Total: **${ing_r:,.2f}**")
+                st.markdown(f"- Costo Directo Ruta: ${costo_r:,.2f}")
+                if ind_r > 0:
+                    st.markdown(f"- *Costos Indirectos (35%): ${ind_r:,.2f}*")
+                else:
+                    st.markdown("- *Costos Indirectos: $0.00 (VACÍO)*")
 
-        # Tipo combinado: usar el de la ruta principal para los umbrales
-        tipo_combinado = str(st.session_state.rutas_seleccionadas[0].get("Tipo", "IMPORTACION"))
-
+        # KPIs globales
+        divider()
         mostrar_resultados_utilidad(
             st,
-            ingreso_total, costo_total,
-            utilidad_bruta, costos_indirectos,
-            utilidad_neta, pct_bruta, pct_neta,
-            tipo=tipo_combinado,
-            tc_usd=0.0,  # vuelta redonda siempre MXP
+            st.session_state.ingreso_total,
+            st.session_state.costo_total,
+            st.session_state.utilidad_bruta,
+            st.session_state.costos_indirectos,
+            st.session_state.utilidad_neta,
+            st.session_state.pct_bruta,
+            st.session_state.pct_neta,
         )
 
-        # ── Detalle de cada tramo ─────────────────────────────────
+        # Detalle completo por columnas
         divider()
-        section_header("🗺️", "Detalle de Tramos")
-        for i, r in enumerate(st.session_state.rutas_seleccionadas, 1):
-            tipo_tramo = str(r.get("Tipo", ""))
-            ing_ruta   = safe_number(r.get("Ingreso Total", 0))
-            costo_ruta = safe_number(r.get("Costo_Total_Ruta", 0))
-            ind_ruta   = calcular_costos_indirectos(tipo_tramo, ing_ruta)
-            ut_ruta    = ing_ruta - costo_ruta
+        section_header("📋", "Detalle de Rutas")
 
-            etiqueta = f"{'🔵' if tipo_tramo == 'IMPORTACION' else '🟠' if tipo_tramo == 'EXPORTACION' else '⚪'} Tramo {i}: {tipo_tramo} — {r.get('Cliente','N/A')} | {r.get('Origen','')} → {r.get('Destino','')}"
-            with st.expander(etiqueta, expanded=False):
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.caption(f"**ID:** {r.get('ID_Ruta','')}")
-                    st.caption(f"**Fecha:** {r.get('Fecha','')}")
-                    st.caption(f"**KM:** {safe_number(r.get('KM',0)):,.2f}")
-                    st.caption(f"**Modo:** {r.get('Modo de Viaje','')}")
-                with c2:
-                    st.caption(f"**Ingreso Total:** ${ing_ruta:,.2f}")
-                    st.caption(f"**Costo Directo:** ${costo_ruta:,.2f}")
-                    st.caption(f"**Utilidad Bruta:** ${ut_ruta:,.2f}")
-                with c3:
-                    st.caption(f"**Costos Ind. (35%):** ${ind_ruta:,.2f}" if ind_ruta > 0 else "**Costos Ind.:** $0.00 (VACÍO)")
-                    st.caption(f"**Ut. Neta tramo:** ${ut_ruta - ind_ruta:,.2f}")
-                    st.caption(f"**Moneda:** {r.get('Moneda','MXP')}")
+        tipos_orden = ["IMPORTACION", "VACIO", "EXPORTACION", "DOM MEX"]
+        rutas_con_tipo = [r for t in tipos_orden
+                          for r in st.session_state.rutas_seleccionadas
+                          if r.get("Tipo") == t]
 
-        # ── PDF ───────────────────────────────────────────────────
+        if rutas_con_tipo:
+            cols = st.columns(len(rutas_con_tipo))
+            for col, ruta in zip(cols, rutas_con_tipo):
+                with col:
+                    st.markdown(f"**{ruta.get('Tipo', '')}**")
+                    st.markdown(f"Fecha: {ruta.get('Fecha', 'N/A')}")
+                    st.markdown(f"Cliente: {ruta.get('Cliente', 'N/A')}")
+                    st.markdown(f"Ruta: {ruta.get('Origen', 'N/A')} → {ruta.get('Destino', 'N/A')}")
+                    st.markdown(f"KM: {safe_number(ruta.get('KM')):,.2f}")
+                    st.markdown(f"Ingreso Original: ${safe_number(ruta.get('Ingreso_Original')):,.2f}")
+                    st.markdown(f"Moneda: {ruta.get('Moneda', 'N/A')}")
+                    st.markdown(f"Tipo de cambio: {safe_number(ruta.get('Tipo de cambio')):,.2f}")
+                    st.markdown(f"**Ingreso Flete: ${safe_number(ruta.get('Ingreso Flete')):,.2f}**")
+                    st.markdown(f"Cruce Original: ${safe_number(ruta.get('Cruce_Original')):,.2f}")
+                    st.markdown(f"**Ingreso Total: ${safe_number(ruta.get('Ingreso Total')):,.2f}**")
+                    st.markdown(f"Costo Diesel: ${safe_number(ruta.get('Costo Diesel')):,.2f}")
+                    st.markdown(f"Diesel Camión: ${safe_number(ruta.get('Costo_Diesel_Camion')):,.2f}")
+                    st.markdown(f"Diesel Termo: ${safe_number(ruta.get('Costo_Diesel_Termo')):,.2f}")
+                    st.markdown(f"Sueldo: ${safe_number(ruta.get('Sueldo_Operador')):,.2f}")
+                    st.markdown(f"Casetas: ${safe_number(ruta.get('Casetas')):,.2f}")
+
+        # ── PDF ────────────────────────────────────────────────────
         divider()
-        section_header("📥", "Descargar Reporte")
+        section_header("📥", "Descargar PDF de la Simulación")
         b1, b2, b3 = st.columns([1, 2, 1])
         with b2:
-            if st.button("📄 Generar PDF", key="btn_gen_pdf", use_container_width=True):
+            if st.button("📄 Generar PDF Profesional", key="btn_gen_pdf", use_container_width=True):
                 try:
                     pdf_path = generar_pdf_vuelta_redonda(
                         st.session_state.rutas_seleccionadas,
-                        ingreso_total, costo_total,
-                        utilidad_bruta, costos_indirectos,
-                        utilidad_neta, pct_bruta, pct_neta,
+                        st.session_state.ingreso_total,
+                        st.session_state.costo_total,
+                        st.session_state.utilidad_bruta,
+                        st.session_state.costos_indirectos,
+                        st.session_state.utilidad_neta,
+                        st.session_state.pct_bruta,
+                        st.session_state.pct_neta,
                     )
                     primer_ruta  = st.session_state.rutas_seleccionadas[0]
-                    nombre_pdf   = f"VR_Igloo_{primer_ruta.get('ID_Ruta','SinID')}.pdf"
+                    nombre_pdf   = f"Simulacion_VueltaRedonda_{primer_ruta.get('ID_Ruta', 'SinID')}.pdf"
                     with open(pdf_path, "rb") as f:
                         st.download_button(
-                            "📥 Descargar PDF",
+                            label="📥 Descargar PDF",
                             data=f.read(),
                             file_name=nombre_pdf,
                             mime="application/pdf",
@@ -468,3 +482,4 @@ def render():
                     alert("success", "✅ PDF generado exitosamente.")
                 except Exception as e:
                     alert("error", f"❌ Error generando PDF: {e}")
+                    st.exception(e)
