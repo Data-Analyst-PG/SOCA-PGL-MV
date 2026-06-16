@@ -34,6 +34,8 @@ from .helpers import (
     calcular_utilidades,
     calcular_costos_indirectos,
     mostrar_resultados_utilidad,
+    filtrar_rutas_igloo,
+    label_ruta_igloo,
 )
 
 
@@ -56,42 +58,6 @@ def _load_rutas_igloo_cached(table_name: str) -> pd.DataFrame:
 def _project_root() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-
-# ─────────────────────────────────────────────
-# FILTROS Y LABEL
-# ─────────────────────────────────────────────
-def _filtrar_rutas(df: pd.DataFrame, prefix_key: str) -> pd.DataFrame:
-    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
-        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-        with fc1:
-            tipos_disp = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())
-            filtro_tipo = st.selectbox("Tipo", tipos_disp, key=f"{prefix_key}_ftipo")
-        with fc2:
-            clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist())
-            filtro_cliente = st.selectbox("Cliente", clientes_disp, key=f"{prefix_key}_fcliente")
-        with fc3:
-            filtro_origen = st.text_input("Origen contiene", key=f"{prefix_key}_forigen")
-        with fc4:
-            filtro_destino = st.text_input("Destino contiene", key=f"{prefix_key}_fdestino")
-        with fc5:
-            filtro_id = st.text_input("ID Ruta", key=f"{prefix_key}_fid", placeholder="IG000123")
-
-    resultado = df.copy()
-    if filtro_tipo    != "Todos": resultado = resultado[resultado["Tipo"] == filtro_tipo]
-    if filtro_cliente != "Todos": resultado = resultado[resultado["Cliente"].astype(str) == filtro_cliente]
-    if filtro_origen.strip():     resultado = resultado[resultado["Origen"].astype(str).str.contains(filtro_origen.strip(), case=False, na=False)]
-    if filtro_destino.strip():    resultado = resultado[resultado["Destino"].astype(str).str.contains(filtro_destino.strip(), case=False, na=False)]
-    if filtro_id.strip():         resultado = resultado[resultado["ID_Ruta"].astype(str).str.contains(filtro_id.strip(), case=False, na=False)]
-    return resultado
-
-
-def _format_ruta_label(row) -> str:
-    fecha = str(row.get("Fecha", ""))[:10]
-    return (
-        f"{row.get('ID_Ruta', '')} | {fecha} | "
-        f"{row.get('Tipo', '')} | {row.get('Cliente', '')} | "
-        f"{row.get('Origen', '')} → {row.get('Destino', '')}"
-    )
 
 
 # ─────────────────────────────────────────────
@@ -424,7 +390,7 @@ def render():
         df.set_index("ID_Ruta", inplace=True, drop=False)
 
     # ── Filtros y selector ────────────────────────────────────────
-    df_filtrado = _filtrar_rutas(df, "igloo_cons")
+    df_filtrado = filtrar_rutas_igloo(df, "ig_cons")
     if df_filtrado.empty:
         alert("info", "No hay rutas que coincidan con los filtros.")
         return
@@ -432,7 +398,7 @@ def render():
     index_sel = st.selectbox(
         "Selecciona la ruta a consultar",
         df_filtrado.index.tolist(),
-        format_func=lambda i: _format_ruta_label(df_filtrado.loc[i]),
+        format_func=lambda i: label_ruta_igloo(df_filtrado.loc[i]),
         key="igloo_cons_select",
     )
 
