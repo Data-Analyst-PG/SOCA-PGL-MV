@@ -406,3 +406,51 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
         max_costo_indirecto=35.0,
         min_ut_neta=15.0,
     )
+
+
+# ─────────────────────────────────────────────
+# Filtros y label — compartidos por consulta_ruta,
+# gestion_rutas y simulador para evitar keys duplicadas
+# ─────────────────────────────────────────────
+def filtrar_rutas_igloo(df, prefix: str):
+    """
+    Muestra un expander con filtros opcionales y devuelve el DataFrame filtrado.
+    Usar con un prefix único por módulo:
+      - consulta_ruta  → "ig_cons"
+      - gestion ver    → "ig_ver"
+      - gestion del    → "ig_del"
+      - gestion edit   → "ig_ed"
+      - simulador      → "ig_sim"
+    """
+    import streamlit as st
+
+    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
+        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+        tipos_disp    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
+        clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
+        filtro_tipo    = fc1.selectbox("Tipo",              tipos_disp,    key=f"{prefix}_ftipo")
+        filtro_cliente = fc2.selectbox("Cliente",           clientes_disp, key=f"{prefix}_fcli")
+        filtro_origen  = fc3.text_input("Origen contiene",                 key=f"{prefix}_forig")
+        filtro_destino = fc4.text_input("Destino contiene",                key=f"{prefix}_fdest")
+        filtro_id      = fc5.text_input("ID Ruta", placeholder="IG000001", key=f"{prefix}_fid")
+
+    out = df.copy()
+    if filtro_tipo    != "Todos": out = out[out["Tipo"].astype(str) == filtro_tipo]
+    if filtro_cliente != "Todos": out = out[out["Cliente"].astype(str) == filtro_cliente]
+    if filtro_origen.strip():     out = out[out["Origen"].astype(str).str.upper().str.contains(filtro_origen.strip().upper(), na=False)]
+    if filtro_destino.strip():    out = out[out["Destino"].astype(str).str.upper().str.contains(filtro_destino.strip().upper(), na=False)]
+    if filtro_id.strip():         out = out[out["ID_Ruta"].astype(str).str.upper().str.contains(filtro_id.strip().upper(), na=False)]
+    return out
+
+
+def label_ruta_igloo(row) -> str:
+    """
+    Formatea una fila de ruta para selectboxes.
+    Resultado: "IG000001 | 2026-01-15 | IMPORTACION | CLIENTE | Origen → Destino"
+    """
+    fecha = str(row.get("Fecha", ""))[:10]
+    return (
+        f"{row.get('ID_Ruta', '')} | {fecha} | "
+        f"{row.get('Tipo', '')} | {row.get('Cliente', '')} | "
+        f"{row.get('Origen', '')} → {row.get('Destino', '')}"
+    )
