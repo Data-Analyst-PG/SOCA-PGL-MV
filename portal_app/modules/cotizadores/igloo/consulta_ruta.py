@@ -296,8 +296,24 @@ def generar_pdf_profesional(ruta, ingreso_total, costo_total,
     story.append(ing_table)
     story.append(Spacer(1, 8))
 
-    # ── Costos Operativos ─────────────────────────────────────────
-    story.append(Paragraph("Costos Operativos", subtitle_style))
+    # ── Costos Operativos + Otros Costos (lado a lado) ───────────
+    # Cada tabla ocupa mitad del ancho de página (~3.55 inch por lado)
+    _W = 3.45 * inch   # ancho de cada sub-tabla
+    _GAP = 0.1 * inch  # espacio entre columnas
+
+    _hdr_style = [
+        ("BACKGROUND", (0,0),(-1,0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",  (0,0),(-1,0),  colors.white),
+        ("FONTNAME",   (0,0),(-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",   (0,0),(-1,-1), 7),
+        ("GRID",       (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
+        ("ALIGN",      (1,1),(-1,-1), "RIGHT"),
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("TOPPADDING",    (0,0),(-1,-1), 1),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 1),
+    ]
+
+    # Tabla izquierda: Costos Operativos
     costos_op_data = [
         ["Concepto", "Monto"],
         ["Diesel Camión ({:.2f} Km/L)".format(safe_number(ruta.get("Rendimiento Camion", 0))),
@@ -309,58 +325,53 @@ def generar_pdf_profesional(ruta, ingreso_total, costo_total,
         ["Casetas",          f"${safe_number(ruta.get('Casetas', 0)):,.2f}"],
         ["Costo Cruce",      f"${safe_number(ruta.get('Costo Cruce Convertido', 0)):,.2f}"],
     ]
-    costos_table = Table(costos_op_data, colWidths=[3.5*inch, 3.5*inch])
-    costos_table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0),(-1,0),  colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",  (0,0),(-1,0),  colors.white),
-        ("FONTNAME",   (0,0),(-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",   (0,0),(-1,-1), 7),
-        ("GRID",       (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
-        ("ALIGN",      (1,1),(-1,-1), "RIGHT"),
-        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
-        ("TOPPADDING",    (0,0),(-1,-1), 1),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 1),
-    ]))
-    story.append(costos_table)
-    story.append(Spacer(1, 8))
+    costos_table = Table(costos_op_data, colWidths=[_W * 0.62, _W * 0.38])
+    costos_table.setStyle(TableStyle(_hdr_style))
 
-    # ── Otros Costos ──────────────────────────────────────────────
-    story.append(Paragraph("Otros Costos", subtitle_style))
+    # Tabla derecha: Otros Costos
     otros_items = [
-        ("Puntualidad",     safe_number(ruta.get("Puntualidad",      0))),
-        ("Fianza Termo",    safe_number(ruta.get("Fianza_Termo",     0))),
-        ("Lavado Termo",    safe_number(ruta.get("Lavado_Termo",     0))),
-        ("Movimiento Local", safe_number(ruta.get("Movimiento_Local",0))),
-        ("Pensión",         safe_number(ruta.get("Pension",          0))),
-        ("Estancia",        safe_number(ruta.get("Estancia",         0))),
-        ("Renta Termo",     safe_number(ruta.get("Renta_Termo",      0))),
-        ("Pistas Extra",    safe_number(ruta.get("Pistas_Extra",     0))),
-        ("Stop",            safe_number(ruta.get("Stop",             0))),
-        ("Falso",           safe_number(ruta.get("Falso",            0))),
-        ("Gatas",           safe_number(ruta.get("Gatas",            0))),
-        ("Accesorios",      safe_number(ruta.get("Accesorios",       0))),
-        ("Guías",           safe_number(ruta.get("Guias",            0))),
+        ("Puntualidad",      safe_number(ruta.get("Puntualidad",      0))),
+        ("Fianza Termo",     safe_number(ruta.get("Fianza_Termo",     0))),
+        ("Lavado Termo",     safe_number(ruta.get("Lavado_Termo",     0))),
+        ("Movimiento Local", safe_number(ruta.get("Movimiento_Local", 0))),
+        ("Pensión",          safe_number(ruta.get("Pension",          0))),
+        ("Estancia",         safe_number(ruta.get("Estancia",         0))),
+        ("Renta Termo",      safe_number(ruta.get("Renta_Termo",      0))),
+        ("Pistas Extra",     safe_number(ruta.get("Pistas_Extra",     0))),
+        ("Stop",             safe_number(ruta.get("Stop",             0))),
+        ("Falso",            safe_number(ruta.get("Falso",            0))),
+        ("Gatas",            safe_number(ruta.get("Gatas",            0))),
+        ("Accesorios",       safe_number(ruta.get("Accesorios",       0))),
+        ("Guías",            safe_number(ruta.get("Guias",            0))),
     ]
     otros_data = [["Concepto", "Monto"]]
     for concepto, monto in otros_items:
         if monto > 0:
             otros_data.append([concepto, f"${monto:,.2f}"])
     if len(otros_data) == 1:
-        otros_data.append(["(Sin costos extras en esta ruta)", ""])
+        otros_data.append(["(Sin costos extras)", ""])
 
-    otros_table = Table(otros_data, colWidths=[3.5*inch, 3.5*inch])
-    otros_table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0),(-1,0),  colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",  (0,0),(-1,0),  colors.white),
-        ("FONTNAME",   (0,0),(-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",   (0,0),(-1,-1), 7),
-        ("GRID",       (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
-        ("ALIGN",      (1,1),(-1,-1), "RIGHT"),
-        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
-        ("TOPPADDING",    (0,0),(-1,-1), 1),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 1),
+    otros_table = Table(otros_data, colWidths=[_W * 0.62, _W * 0.38])
+    otros_table.setStyle(TableStyle(_hdr_style))
+
+    # Títulos de sección encima de cada tabla
+    titulo_co  = Paragraph("Costos Operativos", subtitle_style)
+    titulo_oc  = Paragraph("Otros Costos",      subtitle_style)
+
+    # Tabla contenedora lado a lado
+    side_by_side = Table(
+        [[titulo_co,   titulo_oc  ],
+         [costos_table, otros_table]],
+        colWidths=[_W + _GAP, _W],
+    )
+    side_by_side.setStyle(TableStyle([
+        ("VALIGN",      (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING",(0,0), (-1,-1), 0),
+        ("TOPPADDING",  (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 0),
     ]))
-    story.append(otros_table)
+    story.append(side_by_side)
     story.append(Spacer(1, 12))
 
     # ── Footer ────────────────────────────────────────────────────
