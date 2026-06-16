@@ -162,24 +162,29 @@ def render():
     fecha = st.date_input("📅 Fecha de cotización", value=date.today(), format="DD/MM/YYYY")
 
     # ---------------------------
-    # DATOS DE CLIENTE Y EMPRESA
+    # DATOS DE CLIENTE Y EMPRESA (2 columnas, igual que Picus)
     # ---------------------------
-    # 🆕 Usar tabs para mejor organización
-    tab1, tab2 = st.tabs(["👤 Datos del Cliente", "🏢 Datos de la Empresa"])
-    
-    with tab1:
-        cliente_nombre = st.text_input("Nombre del Cliente")
-        cliente_direccion = st.text_input("Dirección del Cliente")
-        cliente_mail = st.text_input("📧 Email del Cliente")
-        cliente_telefono = st.text_input("📞 Teléfono del Cliente")
-        cliente_ext = st.text_input("Ext Cliente")
+    divider()
+    section_header("🏢", "Datos del Cliente y Empresa")
+    col_cli, col_emp = st.columns(2)
 
-    with tab2:
-        empresa_nombre = st.text_input("Nombre de tu Empresa", "IGLOO TRANSPORT S DE RL DE CV")
-        empresa_direccion = st.text_input("Dirección de la Empresa", "Carr. Apto Km 3.8 Blvd Apto. 4, América, Nuevo Laredo, Tamps. 88284")
-        empresa_mail = st.text_input("📧 Email de la Empresa", "esmeralda.resendez@palosgarza.com")
-        empresa_telefono = st.text_input("📞 Teléfono de la Empresa", "867 718 1823")
-        empresa_ext = st.text_input("Ext Empresa", "1104")
+    with col_cli:
+        st.markdown("#### 👤 Cliente")
+        cliente_nombre    = st.text_input("Nombre del Cliente",    key="ig_cot_cli_nom",  placeholder="NOMBRE DE LA EMPRESA")
+        cliente_direccion = st.text_input("Dirección del Cliente", key="ig_cot_cli_dir",  placeholder="Calle, Ciudad, Estado")
+        cliente_mail      = st.text_input("Email del Cliente",     key="ig_cot_cli_mail", placeholder="correo@empresa.com")
+        cli_c1, cli_c2   = st.columns(2)
+        cliente_telefono  = cli_c1.text_input("Teléfono",          key="ig_cot_cli_tel",  placeholder="867 123 4567")
+        cliente_ext       = cli_c2.text_input("Ext.",              key="ig_cot_cli_ext",  placeholder="1000")
+
+    with col_emp:
+        st.markdown("#### 🏢 Empresa")
+        empresa_nombre    = st.text_input("Nombre de la Empresa",    key="ig_cot_emp_nom",  value="IGLOO TRANSPORT S DE RL DE CV")
+        empresa_direccion = st.text_input("Dirección de la Empresa", key="ig_cot_emp_dir",  value="Carr. Apto Km 3.8 Blvd Apto. 4, América, Nuevo Laredo, Tamps. 88284")
+        empresa_mail      = st.text_input("Email de la Empresa",     key="ig_cot_emp_mail", value="esmeralda.resendez@palosgarza.com")
+        emp_c1, emp_c2   = st.columns(2)
+        empresa_telefono  = emp_c1.text_input("Teléfono Empresa",   key="ig_cot_emp_tel",  value="867 718 1823")
+        empresa_ext       = emp_c2.text_input("Ext. Empresa",       key="ig_cot_emp_ext",  value="1104")
 
     # ---------------------------
     # SELECCIÓN DE RUTAS
@@ -222,7 +227,7 @@ def render():
     # ---------------------------
     rutas_config = {}
 
-    CONCEPTOS = [
+    CONCEPTOS_TODOS = [
         "Ingreso_Original", "Cruce_Original",
         "Movimiento_Local", "Puntualidad", "Pension", "Estancia",
         "Pistas_Extra", "Stop", "Falso", "Gatas", "Accesorios",
@@ -232,31 +237,49 @@ def render():
     ]
 
     if ids_seleccionados:
-        section_header("⚙️", "Configuración de Conceptos")
-        
-        # 🆕 Usar expander para cada ruta (más limpio)
+        divider()
+        section_header("⚙️", "Configuración de Conceptos por Ruta")
         for ruta_sel in ids_seleccionados:
-            with st.expander(f"📋 Configurar: {ruta_sel}", expanded=False):
-                default_sumar = ["Ingreso_Original", "Cruce_Original"]
-                default_visual = ["Casetas", "Pension", "Estancia"]
+            id_ruta = ruta_sel.split(" | ")[0].strip()
+            if id_ruta not in df.index:
+                continue
+            ruta_data = df.loc[id_ruta]
 
+            # Solo conceptos con valor capturado > 0
+            conceptos_disponibles = [
+                c for c in CONCEPTOS_TODOS
+                if c in ruta_data
+                and ruta_data[c] is not None
+                and not pd.isna(ruta_data[c])
+                and float(ruta_data[c] or 0) > 0
+            ]
+
+            default_sumar  = [c for c in ["Ingreso_Original", "Cruce_Original"] if c in conceptos_disponibles]
+            default_visual = [c for c in ["Casetas", "Pension", "Estancia"] if c in conceptos_disponibles]
+
+            with st.expander(f"📋 Configurar: {ruta_sel}", expanded=False):
+                if not conceptos_disponibles:
+                    alert("info", "Esta ruta no tiene conceptos con valor capturado.")
+                    rutas_config[ruta_sel] = {"sumar": [], "visual": []}
+                    continue
                 colS, colV = st.columns(2)
                 with colS:
                     sumar = st.multiselect(
                         "➕ Sumar al total (Azul)",
-                        options=CONCEPTOS,
-                        default=[c for c in default_sumar if c in CONCEPTOS],
-                        key=f"igloo_sumar_{ruta_sel}"
+                        options=conceptos_disponibles,
+                        default=default_sumar,
+                        key=f"igloo_sumar_{ruta_sel}",
+                        format_func=label_de,
                     )
                 with colV:
                     solo_visual = st.multiselect(
                         "👁️ Mostrar sin sumar (Gris)",
-                        options=[c for c in CONCEPTOS if c not in sumar],
+                        options=[c for c in conceptos_disponibles if c not in sumar],
                         default=[c for c in default_visual if c not in sumar],
-                        key=f"igloo_visual_{ruta_sel}"
+                        key=f"igloo_visual_{ruta_sel}",
+                        format_func=label_de,
                     )
-
-                sumar = [c for c in sumar if c not in solo_visual]
+                sumar       = [c for c in sumar       if c not in solo_visual]
                 solo_visual = [c for c in solo_visual if c not in sumar]
                 rutas_config[ruta_sel] = {"sumar": sumar, "visual": solo_visual}
 
@@ -307,7 +330,7 @@ def render():
             _y_max = _y_max_1 if _paginas_sim == 1 else _y_max_n
             if _y_sim > _y_max:
                 _paginas_sim += 1
-                _y_sim = 2.00
+                _y_sim = 1.40  # consistente con el render real
 
             for _campo in _conceptos:
                 if _campo not in _rd or pd.isna(_rd[_campo]) or float(_rd[_campo] or 0) == 0:
@@ -462,7 +485,7 @@ def render():
             if y + y_necesario_header > y_max:
                 pdf.add_page()
                 pagina_actual += 1
-                y = 2.00  # 🔧 Y inicial en páginas siguientes
+                y = 1.40  # Y inicial en páginas siguientes
 
             # Título de ruta
             pdf.set_body_font(bold=True, size=7)
