@@ -106,12 +106,20 @@ def _cargar_pool_ubicaciones() -> list[str]:
 
 
 def _buscar_ubicacion(termino: str) -> list[str]:
-    """Filtra el pool por lo que el usuario está escribiendo."""
+    """
+    Filtra el pool por lo que el usuario está escribiendo.
+    Si no hay coincidencias, devuelve el término mismo como opción
+    para que el usuario pueda confirmar una ubicación nueva.
+    """
     if not termino or len(termino) < 2:
         return []
-    termino = termino.upper()
+    termino_upper = termino.upper()
     pool = _cargar_pool_ubicaciones()
-    return [u for u in pool if termino in u]
+    coincidencias = [u for u in pool if termino_upper in u]
+    if not coincidencias:
+        # Permitir capturar texto libre devolviendo el mismo término como opción
+        return [termino_upper]
+    return coincidencias
 
 
 # ─────────────────────────────────────────────
