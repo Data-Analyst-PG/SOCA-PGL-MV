@@ -12,3 +12,4 @@ reportlab
 beautifulsoup4
 lxml
 pdfplumber
+streamlit-searchbox
