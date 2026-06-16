@@ -407,7 +407,7 @@ def render():
     # ── Recargar ──────────────────────────────────────────────────
     c1, c2 = st.columns([1, 4])
     with c1:
-        if st.button("🔄 Recargar", key="igloo_cons_reload"):
+        if st.button("🔄 Recargar", key="igloo_gest_reload"):
             _load_rutas_igloo_cached.clear()
             st.rerun()
     with c2:
