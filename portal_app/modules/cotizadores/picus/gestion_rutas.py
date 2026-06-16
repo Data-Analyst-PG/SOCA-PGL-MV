@@ -165,13 +165,16 @@ def render() -> None:
         section_header("📋", "Rutas Registradas")
         df_filtrado = _filtrar(df, "pic_ver")
 
-        cols_mostrar = [c for c in [
-            "ID_Ruta","Fecha","Tipo","Ruta_Tipo","Cliente","Origen","Destino",
-            "Modo de Viaje","KM","Ingreso Total","Costo_Total_Ruta",
-        ] if c in df_filtrado.columns]
+        # Excluir solo columnas de auditoría interna y historial JSONB
+        # que no aportan valor visual en la tabla
+        cols_excluir = {"historial", "created_at", "updated_at"}
+        cols_mostrar = [c for c in df_filtrado.columns if c not in cols_excluir]
 
-        st.dataframe(df_filtrado[cols_mostrar] if cols_mostrar else df_filtrado,
-                     use_container_width=True)
+        st.dataframe(
+            df_filtrado[cols_mostrar],
+            use_container_width=True,
+            hide_index=True,
+        )
         st.caption(f"**{len(df_filtrado)}** rutas mostradas de **{len(df)}** totales.")
 
         divider()
@@ -472,13 +475,49 @@ def render() -> None:
 
                     # Campos anteriores para auditoría
                     campos_auditados = [
+                        # Datos de la ruta
                         "Tipo","Ruta_Tipo","Cliente","Origen","Destino","Modo de Viaje",
                         "KM","Moneda","Ingreso_Original","Moneda_Cruce","Cruce_Original",
-                        "Costo Cruce","Casetas","Movimiento_Local","Puntualidad",
-                        "Pension","Estancia","Fianza","Pistas_Extra","Stop","Falso",
-                        "Gatas","Accesorios","Guias","Ingreso Total","Costo_Total_Ruta",
+                        "Tipo de cambio","Tipo cambio Cruce",
+                        "Ingreso Flete","Ingreso Cruce","Ingreso Total",
+                        "Costo Cruce","Costo Cruce Convertido",
+                        # Costos operativos calculados
+                        "Costo_Diesel_Camion","Sueldo_Operador","Bono",
+                        "Casetas","Costos_Fijos","Costo_Extras","Ingresos_Extras",
+                        "Costo_Total_Ruta","Pago por KM",
+                        # Conceptos de costos
+                        "Movimiento_Local","Puntualidad","Pension","Estancia","Fianza",
+                        # Otros costos
+                        "Pistas_Extra","Pistas_Cobrado",
+                        "Stop","Stop_Cobrado",
+                        "Falso","Falso_Cobrado",
+                        "Gatas","Gatas_Cobrado",
+                        "Accesorios","Accesorios_Cobrado",
+                        "Guias","Guias_Cobrado",
+                        # Parámetros con los que se calculó (datos generales)
+                        "Rendimiento Camion","Costo Diesel",
                     ]
-                    datos_anteriores = {c: ruta.get(c) for c in campos_auditados if c in ruta.index}
+                    # Convertir a tipos Python nativos para evitar int64/float64 no serializables
+                    def _to_native(v):
+                        if v is None:
+                            return None
+                        try:
+                            import math
+                            if isinstance(v, float) and math.isnan(v):
+                                return None
+                        except Exception:
+                            pass
+                        if hasattr(v, "item"):   # numpy int64, float64, bool_
+                            return v.item()
+                        if hasattr(v, "isoformat"):  # date / datetime
+                            return str(v)
+                        return v
+
+                    datos_anteriores = {
+                        c: _to_native(ruta.get(c))
+                        for c in campos_auditados
+                        if c in ruta.index
+                    }
 
                     historial_actual.append({
                         "at":               _now_iso(),
