@@ -139,8 +139,8 @@ def generar_pdf_profesional(
     compact    = ParagraphStyle("CC", parent=styles["Normal"], fontSize=7, leading=8)
     subtitle_s = ParagraphStyle("S", parent=styles["Normal"], fontSize=11,
                                 fontName="Helvetica-Bold", textColor=AZUL,
-                                spaceBefore=12, spaceAfter=4)
-    normal_s   = ParagraphStyle("N", parent=styles["Normal"], fontSize=9, leading=12)
+                                spaceBefore=8, spaceAfter=2)
+    normal_s   = ParagraphStyle("N", parent=styles["Normal"], fontSize=9, leading=10)
     footer_s   = ParagraphStyle("F", parent=styles["Normal"], fontSize=7,
                                 textColor=colors.HexColor("#6c757d"), alignment=TA_CENTER)
 
@@ -148,7 +148,7 @@ def generar_pdf_profesional(
 
     # ── Header azul (igual que plataforma anterior) ───────────────
     header_data = [[
-        Paragraph(_safe_txt("PICUS"), ParagraphStyle(
+        Paragraph(_safe_txt("PICUS S. A. DE C. V."), ParagraphStyle(
             "HL", parent=styles["Normal"], fontSize=13, textColor=colors.white,
         )),
         Paragraph(_safe_txt("Consulta Individual de Ruta"), ParagraphStyle(
@@ -164,6 +164,7 @@ def generar_pdf_profesional(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ("LEFTPADDING",   (0, 0), (0, -1),  12),
         ("RIGHTPADDING",  (-1, 0), (-1, -1), 12),
+        ("ROUNDEDCORNERS", [6, 6, 6, 6]),
     ]))
     story.append(header_t)
     story.append(Spacer(1, 12))
@@ -208,8 +209,8 @@ def generar_pdf_profesional(
         ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN",      (1, 0), (1, -1),  "LEFT"),
         ("ALIGN",      (3, 0), (3, -1),  "LEFT"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("LEFTPADDING",   (0, 0), (-1, -1), 6),
     ]))
     story.append(info_t)
