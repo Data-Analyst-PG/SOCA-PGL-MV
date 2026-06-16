@@ -1,132 +1,395 @@
 """
-gestion_rutas.py — Cotizador Igloo
-Gestión: Ver tabla / Eliminar / Editar rutas guardadas.
-Diseño homologado con Lincoln y Set Logis:
+consulta_ruta.py — Cotizador Igloo
+PDF original personalizado (versión aprobada) +
+render() homologado con Lincoln y Set Logis:
   - Sin st.title()
-  - Tabs: Ver Rutas | Eliminar | Editar
-  - Form de edición con st.markdown("### emoji Título") por sección
-  - Checkboxes individuales de cobro por extra
-  - "Sencillo" en lugar de "Operador"
-  - Modal @st.dialog para confirmación
+  - Botón recargar en col [1,4]
+  - Resultados con mostrar_resultados_utilidad() → kpi_row + semaforos_ruta
+  - Desglose con st.caption() por sección
 """
 
-import re
-from datetime import datetime, timezone
-from io import BytesIO
+import os
+import tempfile
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
-from services.supabase_client import get_supabase_client, get_authed_client, current_user
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable,
+)
+
+from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
 
 from .helpers import (
-    DEFAULTS, TIPOS_RUTA,
+    TIPOS_RUTA,
     cargar_datos_generales,
     safe_number, safe_float,
-    calcular_sueldo_y_bono, calcular_diesel,
-    calcular_costos_fijos, calcular_extras,
-    calcular_utilidades, mostrar_resultados_utilidad,
+    calcular_utilidades,
+    calcular_costos_indirectos,
+    mostrar_resultados_utilidad,
 )
 
 
 # ─────────────────────────────────────────────
-# HELPERS
+# CACHE
 # ─────────────────────────────────────────────
-def _get_profile_name(user_id: str) -> str:
-    if not user_id:
-        return ""
-    try:
-        supabase = get_authed_client()
-        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
-        return (res.data or {}).get("full_name") or ""
-    except Exception:
-        return ""
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 @st.cache_data(show_spinner=False, ttl=120)
 def _load_rutas_igloo_cached(table_name: str) -> pd.DataFrame:
     supabase = get_supabase_client()
     if supabase is None:
         return pd.DataFrame()
     try:
-        resp = supabase.table(table_name).select("*").order("Fecha", desc=True).execute()
-        if resp.data:
-            return pd.DataFrame(resp.data)
+        resp = supabase.table(table_name).select("*").execute()
+        return pd.DataFrame(resp.data)
+    except Exception as e:
+        st.error(f"Error consultando Supabase: {e}")
         return pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
 
 
-def _to_excel_bytes(df: pd.DataFrame) -> bytes:
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df.to_excel(w, index=False, sheet_name="Rutas Igloo")
-    buf.seek(0)
-    return buf.getvalue()
+def _project_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 
-def normalizar_texto(texto):
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = re.sub(r'\s+', ' ', texto)
-    texto = re.sub(r'\s*,\s*', ', ', texto)
-    return texto
+# ─────────────────────────────────────────────
+# FILTROS Y LABEL
+# ─────────────────────────────────────────────
+def _filtrar_rutas(df: pd.DataFrame, prefix_key: str) -> pd.DataFrame:
+    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
+        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+        with fc1:
+            tipos_disp = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())
+            filtro_tipo = st.selectbox("Tipo", tipos_disp, key=f"{prefix_key}_ftipo")
+        with fc2:
+            clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist())
+            filtro_cliente = st.selectbox("Cliente", clientes_disp, key=f"{prefix_key}_fcliente")
+        with fc3:
+            filtro_origen = st.text_input("Origen contiene", key=f"{prefix_key}_forigen")
+        with fc4:
+            filtro_destino = st.text_input("Destino contiene", key=f"{prefix_key}_fdestino")
+        with fc5:
+            filtro_id = st.text_input("ID Ruta", key=f"{prefix_key}_fid", placeholder="IG000123")
+
+    resultado = df.copy()
+    if filtro_tipo    != "Todos": resultado = resultado[resultado["Tipo"] == filtro_tipo]
+    if filtro_cliente != "Todos": resultado = resultado[resultado["Cliente"].astype(str) == filtro_cliente]
+    if filtro_origen.strip():     resultado = resultado[resultado["Origen"].astype(str).str.contains(filtro_origen.strip(), case=False, na=False)]
+    if filtro_destino.strip():    resultado = resultado[resultado["Destino"].astype(str).str.contains(filtro_destino.strip(), case=False, na=False)]
+    if filtro_id.strip():         resultado = resultado[resultado["ID_Ruta"].astype(str).str.contains(filtro_id.strip(), case=False, na=False)]
+    return resultado
 
 
-def _label(row) -> str:
+def _format_ruta_label(row) -> str:
+    fecha = str(row.get("Fecha", ""))[:10]
     return (
-        f"{row.get('ID_Ruta', '')} | {row.get('Fecha', '')} | "
+        f"{row.get('ID_Ruta', '')} | {fecha} | "
         f"{row.get('Tipo', '')} | {row.get('Cliente', '')} | "
         f"{row.get('Origen', '')} → {row.get('Destino', '')}"
     )
 
 
-def _filtrar(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    with st.expander("🔎 Filtros (opcional)", expanded=False):
-        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-        tipos    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
-        clientes = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
-        f_tipo = fc1.selectbox("Tipo",            tipos,    key=f"{prefix}_ftipo")
-        f_cli  = fc2.selectbox("Cliente",          clientes, key=f"{prefix}_fcli")
-        f_id   = fc3.text_input("ID Ruta",         key=f"{prefix}_fid",   placeholder="IG000001").strip().upper()
-        f_orig = fc4.text_input("Origen contiene", key=f"{prefix}_forig").strip().upper()
-        f_dest = fc5.text_input("Destino contiene",key=f"{prefix}_fdest").strip().upper()
-
-    out = df.copy()
-    if f_tipo != "Todos":
-        out = out[out["Tipo"] == f_tipo]
-    if f_cli != "Todos":
-        out = out[out["Cliente"].astype(str) == f_cli]
-    if f_id:
-        out = out[out["ID_Ruta"].astype(str).str.upper().str.contains(f_id, na=False)]
-    if f_orig:
-        out = out[out["Origen"].astype(str).str.upper().str.contains(f_orig, na=False)]
-    if f_dest:
-        out = out[out["Destino"].astype(str).str.upper().str.contains(f_dest, na=False)]
-    return out
-
-
 # ─────────────────────────────────────────────
-# MODAL CONFIRMACIÓN EDICIÓN
+# PDF ORIGINAL PERSONALIZADO (versión aprobada)
 # ─────────────────────────────────────────────
-@st.dialog("✅ Ruta Actualizada Exitosamente", width="small")
-def _modal_edicion(id_ruta: str) -> None:
-    alert("success", "**¡La ruta se actualizó correctamente!**")
-    st.info(f"### 🆔 ID de la ruta\n`{id_ruta}`")
-    st.caption("Los cambios se han guardado y registrado en el historial.")
-    if st.button("✅ Aceptar", type="primary", use_container_width=True, key="igloo_modal_ed_ok"):
-        st.session_state.pop("igloo_ruta_editada_id", None)
-        st.session_state.pop("igloo_mostrar_modal_edicion", None)
-        st.session_state.pop("igloo_datos_edicion", None)
-        st.session_state.pop("igloo_calc_edicion", None)
-        st.session_state.igloo_revisar_edicion = False
-        st.rerun()
+def generar_pdf_profesional(ruta, ingreso_total, costo_total,
+                             utilidad_bruta, costos_indirectos,
+                             utilidad_neta, pct_bruta, pct_neta,
+                             simulando=False, rend_sim=None, diesel_sim=None):
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(
+        tmp.name, pagesize=letter,
+        leftMargin=0.6*inch, rightMargin=0.6*inch,
+        topMargin=0.5*inch, bottomMargin=0.5*inch,
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "CustomTitle", parent=styles["Title"],
+        fontSize=16, textColor=colors.HexColor("#1B2266"), spaceAfter=6,
+    )
+    subtitle_style = ParagraphStyle(
+        "CustomSubtitle", parent=styles["Heading2"],
+        fontSize=11, textColor=colors.HexColor("#1B2266"),
+        spaceBefore=12, spaceAfter=4,
+    )
+    normal = ParagraphStyle(
+        "CustomNormal", parent=styles["Normal"], fontSize=9, leading=12,
+    )
+    compact_cell = ParagraphStyle(
+        "CompactCell", parent=styles["Normal"],
+        fontSize=7, leading=8, spaceBefore=0, spaceAfter=0,
+    )
+
+    story = []
+
+    # ── Encabezado ──────────────────────────────────────────────
+    header_data = [[
+        Paragraph("<b>IGLOO TRANSPORT S DE RL DE CV</b>", ParagraphStyle(
+            "Header", parent=styles["Normal"], fontSize=13, textColor=colors.white,
+        )),
+        Paragraph("Consulta Individual de Ruta", ParagraphStyle(
+            "HeaderRight", parent=styles["Normal"], fontSize=9,
+            textColor=colors.white, alignment=TA_RIGHT,
+        )),
+    ]]
+    header_table = Table(header_data, colWidths=[5.0*inch, 2.0*inch])
+    header_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",     (0,0), (-1,-1), colors.white),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("TOPPADDING",    (0,0), (-1,-1), 10),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
+        ("LEFTPADDING",   (0,0), (0,-1),  12),
+        ("RIGHTPADDING",  (-1,0),(-1,-1), 12),
+        ("ROUNDEDCORNERS", [6,6,6,6]),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 12))
+
+    if simulando:
+        story.append(Paragraph(
+            "<i>* Este reporte fue generado con valores de simulaci&oacute;n</i>",
+            ParagraphStyle("SimNote", parent=normal, textColor=colors.HexColor("#e67e22")),
+        ))
+        story.append(Spacer(1, 6))
+
+    # ── Datos Generales ──────────────────────────────────────────
+    story.append(Paragraph("Datos Generales de la Ruta", subtitle_style))
+
+    tipo_ruta     = str(ruta.get("Tipo", ""))
+    cliente_texto = Paragraph(str(ruta.get("Cliente", "")), compact_cell)
+    origen_texto  = Paragraph(str(ruta.get("Origen",  "")), compact_cell)
+    destino_texto = Paragraph(str(ruta.get("Destino", "")), compact_cell)
+
+    info_data = [
+        ["ID de Ruta",    str(ruta.get("ID_Ruta", "")),   "Fecha",        str(ruta.get("Fecha", ""))],
+        ["Tipo",          tipo_ruta,                        "Modo de Viaje", str(ruta.get("Modo de Viaje", "Sencillo"))],
+        ["Cliente",       cliente_texto,                    "KM",           f"{safe_number(ruta.get('KM', 0)):,.2f}"],
+        ["Origen",        origen_texto,                     "Destino",      destino_texto],
+        ["Costo Diesel/L", f"${safe_number(ruta.get('Costo Diesel', 0)):,.2f}",
+         "Horas Termo",  f"{safe_number(ruta.get('Horas_Termo', 0)):,.2f} hrs"],
+    ]
+    if tipo_ruta == "DOM MEX":
+        modo_pago = str(ruta.get("Modo_Pago_Dom", "km"))
+        info_data.append(["Modo Pago DOM MEX", "Por kilómetro" if modo_pago == "km" else "Pago fijo", "", ""])
+
+    info_table = Table(info_data, colWidths=[1.4*inch, 2.1*inch, 1.4*inch, 2.1*inch])
+    info_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0),(0,-1), colors.HexColor("#f0f2f6")),
+        ("BACKGROUND", (2,0),(2,-1), colors.HexColor("#f0f2f6")),
+        ("FONTSIZE",   (0,0),(-1,-1), 7),
+        ("FONTNAME",   (0,0),(0,-1),  "Helvetica-Bold"),
+        ("FONTNAME",   (2,0),(2,-1),  "Helvetica-Bold"),
+        ("GRID",       (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("TOPPADDING",    (0,0),(-1,-1), 1),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 1),
+        ("LEFTPADDING",   (0,0),(-1,-1), 6),
+    ]))
+    story.append(info_table)
+    story.append(Spacer(1, 10))
+
+    # ── Resumen de Utilidades ─────────────────────────────────────
+    story.append(Paragraph("Resumen de Utilidades (MXP)", subtitle_style))
+
+    color_utilidad = colors.HexColor("#28a745") if utilidad_neta >= 0 else colors.HexColor("#dc3545")
+    pct_costo      = (costo_total       / ingreso_total * 100) if ingreso_total > 0 else 0
+    pct_indirectos = (costos_indirectos / ingreso_total * 100) if ingreso_total > 0 else 0
+
+    resumen_data = [
+        ["Concepto",          "Valor",                              "%"],
+        ["Ingreso Total",     f"${ingreso_total:,.2f} MXP",        "100.00%"],
+        ["Costo Directo",     f"${costo_total:,.2f} MXP",          f"{pct_costo:.2f}%"],
+        ["Utilidad Bruta",    f"${utilidad_bruta:,.2f} MXP",       f"{pct_bruta:.2f}%"],
+        ["Costos Indirectos", f"${costos_indirectos:,.2f} MXP",    f"{pct_indirectos:.2f}%"],
+        ["Utilidad Neta",     f"${utilidad_neta:,.2f} MXP",        f"{pct_neta:.2f}%"],
+    ]
+    resumen_table = Table(resumen_data, colWidths=[2.5*inch, 2.5*inch, 2.0*inch])
+    resumen_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",  (0,0), (-1,0),  colors.white),
+        ("FONTNAME",   (0,0), (-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",   (0,0), (-1,-1), 7),
+        ("GRID",       (0,0), (-1,-1), 0.5, colors.HexColor("#dee2e6")),
+        ("ALIGN",      (1,1), (-1,-1), "RIGHT"),
+        ("BACKGROUND", (0,5), (-1,5),  color_utilidad),
+        ("TEXTCOLOR",  (0,5), (-1,5),  colors.white),
+        ("FONTNAME",   (0,5), (-1,5),  "Helvetica-Bold"),
+        ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
+        ("TOPPADDING",    (0,0),(-1,-1), 2),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 2),
+    ]))
+    story.append(resumen_table)
+    story.append(Spacer(1, 8))
+
+    # ── Utilidad en USD (si aplica) ───────────────────────────────
+    moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
+    if moneda_flete == "USD":
+        tipo_cambio_flete = safe_number(ruta.get("Tipo de cambio", 0))
+        if tipo_cambio_flete == 0:
+            tipo_cambio_flete = safe_number(cargar_datos_generales().get("Tipo de cambio USD", 19.5))
+        if tipo_cambio_flete > 0:
+            utilidad_neta_usd = utilidad_neta / tipo_cambio_flete
+            story.append(Paragraph(
+                "<i>* Utilidad convertida a USD usando el tipo de cambio de esta ruta</i>",
+                ParagraphStyle("NotaUSD", parent=normal, textColor=colors.HexColor("#6c757d"), fontSize=8),
+            ))
+            story.append(Spacer(1, 4))
+            usd_data = [
+                ["Utilidad Neta (USD)", f"${utilidad_neta_usd:,.2f} USD"],
+                ["Tipo de Cambio",      f"${tipo_cambio_flete:,.2f} MXP"],
+            ]
+            usd_table = Table(usd_data, colWidths=[3.5*inch, 3.5*inch])
+            usd_table.setStyle(TableStyle([
+                ("BACKGROUND", (0,0),(0,-1), colors.HexColor("#e8f4f8")),
+                ("FONTNAME",   (0,0),(0,-1), "Helvetica-Bold"),
+                ("FONTSIZE",   (0,0),(-1,-1), 7),
+                ("GRID",       (0,0),(-1,-1), 0.5, colors.HexColor("#0d6efd")),
+                ("ALIGN",      (1,0),(1,-1),  "RIGHT"),
+                ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+                ("TOPPADDING",    (0,0),(-1,-1), 1),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 1),
+            ]))
+            story.append(usd_table)
+            story.append(Spacer(1, 8))
+
+    story.append(Spacer(1, 6))
+
+    # ── Ingresos ──────────────────────────────────────────────────
+    story.append(Paragraph("Ingresos", subtitle_style))
+    ingresos_data = [
+        ["Concepto", "Moneda", "Original", "Tipo Cambio", "Convertido (MXP)"],
+        [
+            "Flete",
+            str(ruta.get("Moneda", "")),
+            f"${safe_number(ruta.get('Ingreso_Original', 0)):,.2f}",
+            f"{safe_number(ruta.get('Tipo de cambio', 0)):,.2f}",
+            f"${safe_number(ruta.get('Ingreso Flete', 0)):,.2f}",
+        ],
+        [
+            "Cruce",
+            str(ruta.get("Moneda_Cruce", "")),
+            f"${safe_number(ruta.get('Cruce_Original', 0)):,.2f}",
+            f"{safe_number(ruta.get('Tipo cambio Cruce', 0)):,.2f}",
+            f"${safe_number(ruta.get('Ingreso Cruce', 0)):,.2f}",
+        ],
+    ]
+    ing_table = Table(ingresos_data, colWidths=[1.2*inch, 0.8*inch, 1.4*inch, 1.2*inch, 1.6*inch])
+    ing_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0),(-1,0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",  (0,0),(-1,0),  colors.white),
+        ("FONTNAME",   (0,0),(-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",   (0,0),(-1,-1), 7),
+        ("GRID",       (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
+        ("ALIGN",      (2,1),(-1,-1), "RIGHT"),
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("TOPPADDING",    (0,0),(-1,-1), 1),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 1),
+    ]))
+    story.append(ing_table)
+    story.append(Spacer(1, 8))
+
+    # ── Costos Operativos + Otros Costos (lado a lado) ───────────
+    # Cada tabla ocupa mitad del ancho de página (~3.55 inch por lado)
+    _W = 3.45 * inch   # ancho de cada sub-tabla
+    _GAP = 0.1 * inch  # espacio entre columnas
+
+    _hdr_style = [
+        ("BACKGROUND", (0,0),(-1,0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",  (0,0),(-1,0),  colors.white),
+        ("FONTNAME",   (0,0),(-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",   (0,0),(-1,-1), 7),
+        ("GRID",       (0,0),(-1,-1), 0.5, colors.HexColor("#dee2e6")),
+        ("ALIGN",      (1,1),(-1,-1), "RIGHT"),
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("TOPPADDING",    (0,0),(-1,-1), 1),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 1),
+    ]
+
+    # Tabla izquierda: Costos Operativos
+    costos_op_data = [
+        ["Concepto", "Monto"],
+        ["Diesel Camión ({:.2f} Km/L)".format(safe_number(ruta.get("Rendimiento Camion", 0))),
+         f"${safe_number(ruta.get('Costo_Diesel_Camion', 0)):,.2f}"],
+        ["Diesel Termo ({:.2f} Hrs*L)".format(safe_number(ruta.get("Rendimiento Termo", 0))),
+         f"${safe_number(ruta.get('Costo_Diesel_Termo', 0)):,.2f}"],
+        ["Sueldo Operador",  f"${safe_number(ruta.get('Sueldo_Operador', 0)):,.2f}"],
+        ["Bono ISR/IMSS",    f"${safe_number(ruta.get('Bono', 0)):,.2f}"],
+        ["Casetas",          f"${safe_number(ruta.get('Casetas', 0)):,.2f}"],
+        ["Costo Cruce",      f"${safe_number(ruta.get('Costo Cruce Convertido', 0)):,.2f}"],
+    ]
+    costos_table = Table(costos_op_data, colWidths=[_W * 0.62, _W * 0.38])
+    costos_table.setStyle(TableStyle(_hdr_style))
+
+    # Tabla derecha: Otros Costos
+    otros_items = [
+        ("Puntualidad",      safe_number(ruta.get("Puntualidad",      0))),
+        ("Fianza Termo",     safe_number(ruta.get("Fianza_Termo",     0))),
+        ("Lavado Termo",     safe_number(ruta.get("Lavado_Termo",     0))),
+        ("Movimiento Local", safe_number(ruta.get("Movimiento_Local", 0))),
+        ("Pensión",          safe_number(ruta.get("Pension",          0))),
+        ("Estancia",         safe_number(ruta.get("Estancia",         0))),
+        ("Renta Termo",      safe_number(ruta.get("Renta_Termo",      0))),
+        ("Pistas Extra",     safe_number(ruta.get("Pistas_Extra",     0))),
+        ("Stop",             safe_number(ruta.get("Stop",             0))),
+        ("Falso",            safe_number(ruta.get("Falso",            0))),
+        ("Gatas",            safe_number(ruta.get("Gatas",            0))),
+        ("Accesorios",       safe_number(ruta.get("Accesorios",       0))),
+        ("Guías",            safe_number(ruta.get("Guias",            0))),
+    ]
+    otros_data = [["Concepto", "Monto"]]
+    for concepto, monto in otros_items:
+        if monto > 0:
+            otros_data.append([concepto, f"${monto:,.2f}"])
+    if len(otros_data) == 1:
+        otros_data.append(["(Sin costos extras)", ""])
+
+    otros_table = Table(otros_data, colWidths=[_W * 0.62, _W * 0.38])
+    otros_table.setStyle(TableStyle(_hdr_style))
+
+    # Títulos de sección encima de cada tabla
+    titulo_co  = Paragraph("Costos Operativos", subtitle_style)
+    titulo_oc  = Paragraph("Otros Costos",      subtitle_style)
+
+    # Tabla contenedora lado a lado
+    side_by_side = Table(
+        [[titulo_co,   titulo_oc  ],
+         [costos_table, otros_table]],
+        colWidths=[_W + _GAP, _W],
+    )
+    side_by_side.setStyle(TableStyle([
+        ("VALIGN",      (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING",(0,0), (-1,-1), 0),
+        ("TOPPADDING",  (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 0),
+    ]))
+    story.append(side_by_side)
+    story.append(Spacer(1, 12))
+
+    # ── Footer ────────────────────────────────────────────────────
+    fecha_generacion = datetime.now().strftime("%d/%m/%Y %H:%M")
+    usuario_nombre   = "Usuario"
+    if hasattr(st, "session_state") and "usuario" in st.session_state:
+        usuario_data   = st.session_state.get("usuario", {})
+        usuario_nombre = usuario_data.get("Nombre", "Usuario")
+
+    story.append(Spacer(1, 20))
+    story.append(Paragraph(
+        f"Reporte generado el {fecha_generacion} por {usuario_nombre} — Igloo Transport",
+        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7,
+                       textColor=colors.HexColor("#6c757d"), alignment=TA_CENTER),
+    ))
+
+    doc.build(story)
+    return tmp.name
 
 
 # ─────────────────────────────────────────────
@@ -138,491 +401,199 @@ def render():
         alert("warn", "⚠️ Supabase no configurado.")
         return
 
-    u = current_user() or {}
-    user_id        = u.get("id") or u.get("sub") or ""
-    nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
-
     TABLE_RUTAS = "Rutas"
+    valores     = cargar_datos_generales()
 
-    # Modal de edición si aplica
-    if st.session_state.get("igloo_mostrar_modal_edicion") and st.session_state.get("igloo_ruta_editada_id"):
-        _modal_edicion(st.session_state["igloo_ruta_editada_id"])
-
+    # ── Recargar ──────────────────────────────────────────────────
     c1, c2 = st.columns([1, 4])
     with c1:
-        if st.button("🔄 Recargar", key="igloo_gestion_reload"):
+        if st.button("🔄 Recargar", key="igloo_cons_reload"):
             _load_rutas_igloo_cached.clear()
             st.rerun()
     with c2:
-        st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar/editar algo.")
+        st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
-    valores = cargar_datos_generales()
-    df      = _load_rutas_igloo_cached(TABLE_RUTAS)
-
+    df = _load_rutas_igloo_cached(TABLE_RUTAS)
     if df.empty:
-        alert("info", "No hay rutas guardadas aún.")
+        alert("warn", "⚠️ No hay rutas guardadas todavía.")
         return
 
-    st.session_state.setdefault("igloo_revisar_edicion", False)
+    if "Fecha" in df.columns:
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.date
+    if "ID_Ruta" in df.columns:
+        df.set_index("ID_Ruta", inplace=True, drop=False)
 
-    # ══════════════════════════════════════════════════════════════
-    # TABS
-    # ══════════════════════════════════════════════════════════════
-    tab_ver, tab_del, tab_edit = st.tabs(["📋 Ver Rutas", "🗑️ Eliminar", "✏️ Editar"])
+    # ── Filtros y selector ────────────────────────────────────────
+    df_filtrado = _filtrar_rutas(df, "igloo_cons")
+    if df_filtrado.empty:
+        alert("info", "No hay rutas que coincidan con los filtros.")
+        return
 
-    # ── TAB VER ───────────────────────────────────────────────────
-    with tab_ver:
-        section_header("📋", "Rutas Registradas")
-        df_tabla = _filtrar(df, "ig_ver")
+    index_sel = st.selectbox(
+        "Selecciona la ruta a consultar",
+        df_filtrado.index.tolist(),
+        format_func=lambda i: _format_ruta_label(df_filtrado.loc[i]),
+        key="igloo_cons_select",
+    )
 
-        COLS = [
-            "ID_Ruta", "Fecha", "Tipo", "Cliente", "Modo de Viaje",
-            "Origen", "Destino", "KM",
-            "Ingreso Total", "Costo_Total_Ruta", "Utilidad_Bruta",
-            "Porcentaje_Utilidad_Bruta", "Costos_Indirectos", "Utilidad_Neta",
-            "Porcentaje_Utilidad_Neta", "created_by",
+    ruta      = df_filtrado.loc[index_sel]
+    tipo_ruta = str(ruta.get("Tipo", "")).strip().upper()
+    rend_reg  = float(safe_number(
+        ruta.get("Rendimiento_Camion", ruta.get("Rendimiento Camion", valores.get("Rendimiento Camion", 2.5)))
+    ))
+
+    # ── Ajustes para simulación ───────────────────────────────────
+    divider()
+    section_header("⚙️", "Ajustes para Simulación")
+    costo_diesel_input = st.number_input(
+        "Costo del Diesel ($/L)",
+        value=float(valores.get("Costo Diesel", 24.0)),
+        key="igloo_cons_diesel",
+    )
+    st.markdown(f"> Rendimiento Camión **registrado**: **{rend_reg:.2f} km/L** (solo referencia)")
+    rendimiento_input = st.number_input(
+        "Rendimiento Camión para Simulación (km/L)",
+        value=float(rend_reg),
+        key="igloo_cons_rend_sim",
+    )
+    if st.button("🔁 Simular", key="igloo_cons_sim"):
+        st.session_state["igloo_simular"] = True
+
+    # ── Cálculo y resultados ──────────────────────────────────────
+    simulando = st.session_state.get("igloo_simular", False)
+
+    if simulando:
+        km          = safe_number(ruta.get("KM", 0))
+        horas_termo = safe_number(ruta.get("Horas_Termo", 0))
+        rend_termo  = float(valores.get("Rendimiento Termo", 3.0))
+
+        costo_diesel_camion = (km / rendimiento_input) * costo_diesel_input if rendimiento_input else 0
+        costo_diesel_termo  = horas_termo * rend_termo * costo_diesel_input
+
+        ingreso_total = safe_number(ruta.get("Ingreso Total", 0))
+        costo_total   = (
+            costo_diesel_camion + costo_diesel_termo
+            + safe_number(ruta.get("Sueldo_Operador", 0))
+            + safe_number(ruta.get("Bono", 0))
+            + safe_number(ruta.get("Casetas", 0))
+            + safe_number(ruta.get("Costo Cruce Convertido", 0))
+            + safe_number(ruta.get("Costo_Extras", 0))
+        )
+
+        alert("success", "🔧 Estás viendo una **simulación** con los valores de diesel/rendimiento ajustados.")
+
+        if st.button("🔄 Volver a valores reales", key="igloo_cons_back_real"):
+            st.session_state["igloo_simular"] = False
+            st.rerun()
+    else:
+        ingreso_total = safe_number(ruta.get("Ingreso Total", 0))
+        costo_total   = safe_number(ruta.get("Costo_Total_Ruta", 0))
+
+    util              = calcular_utilidades(ingreso_total, costo_total, tipo_ruta)
+    utilidad_bruta    = util["utilidad_bruta"]
+    costos_indirectos = util["costos_indirectos"]
+    utilidad_neta     = util["utilidad_neta"]
+    porcentaje_bruta  = util["porcentaje_bruta"]
+    porcentaje_neta   = util["porcentaje_neta"]
+
+    mostrar_resultados_utilidad(
+        st, ingreso_total, costo_total,
+        utilidad_bruta, costos_indirectos, utilidad_neta,
+        porcentaje_bruta, porcentaje_neta, tipo=tipo_ruta,
+    )
+
+    # ── Utilidad en USD (UI) ──────────────────────────────────────
+    moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
+    if moneda_flete == "USD":
+        tipo_cambio = safe_number(ruta.get("Tipo de cambio", 0))
+        if tipo_cambio == 0:
+            tipo_cambio = safe_number(valores.get("Tipo de cambio USD", 19.5))
+            st.warning(f"⚠️ Esta ruta no tiene tipo de cambio guardado. Se usa el actual: ${tipo_cambio:,.2f}")
+        if tipo_cambio > 0:
+            utilidad_neta_usd = utilidad_neta / tipo_cambio
+            divider()
+            st.info(f"**💵 Utilidad en Dólares**\n\nUtilidad Neta: **${utilidad_neta_usd:,.2f} USD** _(TC: ${tipo_cambio:,.2f} MXP)_")
+
+    # ── Detalles y costos ─────────────────────────────────────────
+    divider()
+    section_header("📋", "Detalles y Costos de la Ruta")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.write(f"**Fecha:** {ruta.get('Fecha', '')}")
+        st.write(f"**ID de Ruta:** {ruta.get('ID_Ruta', '')}")
+        st.write(f"**Tipo:** {ruta.get('Tipo', '')}")
+        st.write(f"**Modo:** {ruta.get('Modo de Viaje', 'Sencillo')}")
+        st.write(f"**Cliente:** {ruta.get('Cliente', '')}")
+        st.write(f"**Origen → Destino:** {ruta.get('Origen', '')} → {ruta.get('Destino', '')}")
+        st.write(f"**KM:** {safe_number(ruta.get('KM', 0)):,.2f}")
+        st.write(f"**Horas Termo:** {safe_number(ruta.get('Horas_Termo', 0)):,.2f} hrs")
+        st.write(f"**Rendimiento Camión (registrado):** {rend_reg:.2f} km/L")
+        st.write(f"**Precio Diesel:** ${safe_number(ruta.get('Costo Diesel', 0)):,.2f} L")
+        if tipo_ruta == "DOM MEX":
+            modo_p = ruta.get("Modo_Pago_Dom", "km")
+            st.write(f"**Modo Pago DOM MEX:** {'Por km' if modo_p == 'km' else 'Fijo'}")
+
+    with col2:
+        st.write(f"**Moneda Flete:** {ruta.get('Moneda', '')}")
+        st.write(f"**Ingreso Flete Original:** ${safe_number(ruta.get('Ingreso_Original', 0)):,.2f}")
+        st.write(f"**Tipo de cambio:** {safe_number(ruta.get('Tipo de cambio', 0)):,.2f}")
+        st.write(f"**Ingreso Flete Convertido:** ${safe_number(ruta.get('Ingreso Flete', 0)):,.2f}")
+        st.write(f"**Moneda Cruce:** {ruta.get('Moneda_Cruce', '')}")
+        st.write(f"**Ingreso Cruce Original:** ${safe_number(ruta.get('Cruce_Original', 0)):,.2f}")
+        st.write(f"**Ingreso Cruce Convertido:** ${safe_number(ruta.get('Ingreso Cruce', 0)):,.2f}")
+        st.write(f"**Costo Cruce Convertido:** ${safe_number(ruta.get('Costo Cruce Convertido', 0)):,.2f}")
+        st.write(f"**Diesel Camión:** ${safe_number(ruta.get('Costo_Diesel_Camion', 0)):,.2f}")
+        st.write(f"**Diesel Termo:** ${safe_number(ruta.get('Costo_Diesel_Termo', 0)):,.2f}")
+        st.write(f"**Sueldo Operador:** ${safe_number(ruta.get('Sueldo_Operador', 0)):,.2f}")
+        st.write(f"**Bono:** ${safe_number(ruta.get('Bono', 0)):,.2f}")
+        st.write(f"**Casetas:** ${safe_number(ruta.get('Casetas', 0)):,.2f}")
+
+    with col3:
+        st.write("**Otros Costos:**")
+        extras_items = [
+            ("Lavado Termo",    "Lavado_Termo"),
+            ("Movimiento Local","Movimiento_Local"),
+            ("Puntualidad",     "Puntualidad"),
+            ("Pensión",         "Pension"),
+            ("Estancia",        "Estancia"),
+            ("Fianza Termo",    "Fianza_Termo"),
+            ("Renta Termo",     "Renta_Termo"),
+            ("Pistas Extra",    "Pistas_Extra"),
+            ("Stop",            "Stop"),
+            ("Falso",           "Falso"),
+            ("Gatas",           "Gatas"),
+            ("Accesorios",      "Accesorios"),
+            ("Guías",           "Guias"),
         ]
-        cols_disp = [c for c in COLS if c in df_tabla.columns]
-        st.dataframe(
-            df_tabla[cols_disp] if cols_disp else df_tabla,
-            use_container_width=True,
-            hide_index=True,
+        for label, key in extras_items:
+            st.write(f"- {label}: ${safe_number(ruta.get(key, 0)):,.2f}")
+
+    # ── PDF ───────────────────────────────────────────────────────
+    divider()
+    section_header("📥", "Descargar PDF de la Consulta")
+
+    try:
+        pdf_path  = generar_pdf_profesional(
+            ruta, ingreso_total, costo_total,
+            utilidad_bruta, costos_indirectos, utilidad_neta,
+            porcentaje_bruta, porcentaje_neta,
+            simulando=simulando,
+            rend_sim=rendimiento_input if simulando else None,
+            diesel_sim=costo_diesel_input if simulando else None,
         )
-        st.caption(f"Mostrando {len(df_tabla)} de {len(df)} rutas")
-        st.download_button(
-            "📥 Descargar Excel",
-            data=_to_excel_bytes(df_tabla[cols_disp] if cols_disp else df_tabla),
-            file_name=f"rutas_igloo_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="ig_dl_excel",
-        )
-
-    # ── TAB ELIMINAR ──────────────────────────────────────────────
-    with tab_del:
-        section_header("🗑️", "Eliminar Ruta")
-
-        df_del = df.copy()
-        if "ID_Ruta" not in df_del.columns:
-            alert("warn", "No se puede identificar rutas.")
-            return
-        df_del = df_del.set_index("ID_Ruta", drop=False)
-
-        df_del_f = _filtrar(df_del.reset_index(drop=True), "ig_del")
-
-        if df_del_f.empty:
-            alert("info", "No hay rutas con los filtros aplicados.")
-        else:
-            df_del_f = df_del_f.set_index("ID_Ruta", drop=False)
-            idx_del = st.selectbox(
-                "Selecciona ruta a eliminar",
-                options=[""] + df_del_f.index.tolist(),
-                format_func=lambda i: "— Elige una ruta —" if i == "" else _label(df_del_f.loc[i]),
-                key="ig_del_select",
+        file_name = (
+            f"Consulta_{ruta.get('Cliente','Cliente')}_"
+            f"{ruta.get('Origen','')}_{ruta.get('Destino','')}.pdf"
+        ).replace("/", "-")
+        with open(pdf_path, "rb") as f:
+            st.download_button(
+                label="📄 Descargar PDF Profesional",
+                data=f,
+                file_name=file_name,
+                mime="application/pdf",
             )
-            if idx_del:
-                st.warning(f"⚠️ ¿Eliminar la ruta **{idx_del}**? Esta acción no se puede deshacer.")
-                if st.button("🗑️ Confirmar Eliminación", key="ig_del_confirm", type="primary"):
-                    try:
-                        supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", idx_del).execute()
-                        alert("success", f"✅ Ruta **{idx_del}** eliminada.")
-                        _load_rutas_igloo_cached.clear()
-                        st.rerun()
-                    except Exception as ex:
-                        alert("error", f"❌ Error al eliminar: {ex}")
-
-    # ── TAB EDITAR ────────────────────────────────────────────────
-    with tab_edit:
-        section_header("✏️", "Editar Ruta")
-
-        df_ed = df.copy()
-        if "ID_Ruta" not in df_ed.columns:
-            return
-        df_ed = df_ed.set_index("ID_Ruta", drop=False)
-
-        df_ed_f = _filtrar(df_ed.reset_index(drop=True), "ig_ed")
-        if df_ed_f.empty:
-            alert("info", "No hay rutas con los filtros aplicados.")
-            return
-
-        df_ed_f = df_ed_f.set_index("ID_Ruta", drop=False)
-        idx_sel = st.selectbox(
-            f"Selecciona ruta a editar ({len(df_ed_f)} encontrada/s)",
-            options=[""] + df_ed_f.index.tolist(),
-            format_func=lambda i: "— Elige una ruta —" if i == "" else _label(df_ed_f.loc[i]),
-            key="ig_ed_select",
-        )
-        if not idx_sel:
-            alert("info", "Selecciona una ruta para editarla.")
-            return
-
-        ruta = df_ed_f.loc[idx_sel].to_dict()
-        st.caption(f"🖊️ Creada por: **{ruta.get('created_by', 'N/A')}** el {str(ruta.get('created_at', ''))[:10]}")
-
-        # Historial (solo lectura, fuera del form)
-        historial = ruta.get("historial") or []
-        if isinstance(historial, list) and historial:
-            with st.expander(f"📜 Historial de modificaciones ({len(historial)})", expanded=False):
-                for entrada in reversed(historial):
-                    ts  = str(entrada.get("timestamp", ""))[:16].replace("T", " ")
-                    usr = entrada.get("usuario", "—")
-                    mot = entrada.get("motivo", "—")
-                    st.caption(f"**{ts}** · {usr} · _{mot}_")
-                    cambios = entrada.get("cambios_anteriores", {})
-                    if cambios:
-                        c1, c2 = st.columns(2)
-                        c1.caption(f"Ingreso: **${safe_number(cambios.get('Ingreso_Original', 0)):,.2f}**")
-                        c1.caption(f"Costo: **${safe_number(cambios.get('Costo_Total_Ruta', 0)):,.2f}**")
-                        c2.caption(f"Ut. Neta: **${safe_number(cambios.get('Utilidad_Neta', 0)):,.2f}**")
-                    st.divider()
-
-        tipo_index = TIPOS_RUTA.index(ruta["Tipo"]) if ruta.get("Tipo") in TIPOS_RUTA else 0
-        modo_list  = ["Sencillo", "Team"]
-        modo_index = modo_list.index(ruta.get("Modo de Viaje", "Sencillo")) if ruta.get("Modo de Viaje") in modo_list else 0
-
-        # ── Parámetros de la ruta ──────────────────────────────────
-        with st.expander("⚙️ Configuración de Parámetros", expanded=False):
-            st.caption("Valores guardados originalmente con esta ruta.")
-            col1, col2, col3 = st.columns(3)
-            claves = list(DEFAULTS.keys())
-            for i, key in enumerate(claves):
-                col = [col1, col2, col3][i % 3]
-                valores[key] = col.number_input(
-                    key,
-                    value=float(ruta.get(key, valores.get(key, DEFAULTS[key]))),
-                    step=0.1,
-                    key=f"igloo_edit_gen_{key}",
-                )
-
-        # ══════════════════════════════════════════════════════════
-        # FORMULARIO DE EDICIÓN
-        # ══════════════════════════════════════════════════════════
-        with st.form("igloo_editar_ruta_form"):
-
-            # Motivo obligatorio
-            motivo = st.text_input(
-                "✏️ Motivo de modificación (obligatorio)",
-                placeholder="Describe el motivo del cambio...",
-                key="igloo_motivo_edicion",
-            )
-
-            divider()
-
-            # ── Información General ───────────────────────────────
-            st.markdown("### 📋 Información General")
-            c1, c2, c3, c4 = st.columns(4)
-            fecha      = c1.date_input("📅 Fecha", value=pd.to_datetime(ruta.get("Fecha"), errors="coerce").date() if ruta.get("Fecha") else datetime.today().date())
-            tipo       = c2.selectbox("🚛 Tipo de Ruta", TIPOS_RUTA, index=tipo_index)
-            cliente    = c3.text_input("🏢 Nombre Cliente", value=str(ruta.get("Cliente", "")), placeholder="NOMBRE DE LA EMPRESA")
-            modo_viaje = c4.selectbox("👥 Modo de Viaje", modo_list, index=modo_index)
-
-            # ── Cruce ─────────────────────────────────────────────
-            st.markdown("### 🛂 Cruce")
-            c1, c2, c3, c4 = st.columns(4)
-            moneda_cruce       = c1.selectbox("Moneda Ingreso Cruce", ["MXP", "USD"],
-                                               index=["MXP","USD"].index(str(ruta.get("Moneda_Cruce","MXP"))))
-            ingreso_cruce      = c2.number_input("Ingreso Cruce", min_value=0.0,
-                                                  value=float(safe_number(ruta.get("Cruce_Original", 0))))
-            moneda_costo_cruce = c3.selectbox("Moneda Costo Cruce", ["MXP", "USD"],
-                                               index=["MXP","USD"].index(str(ruta.get("Moneda Costo Cruce","MXP"))))
-            costo_cruce        = c4.number_input("Costo Cruce", min_value=0.0,
-                                                  value=float(safe_number(ruta.get("Costo Cruce", 0))))
-
-            # ── Ruta Mexicana ─────────────────────────────────────
-            st.markdown("### 🇲🇽 Ruta Mexicana")
-            c1, c2 = st.columns(2)
-            origen  = c1.text_input("📍 Origen",  value=str(ruta.get("Origen", "")),  placeholder="CIUDAD, ESTADO")
-            destino = c2.text_input("📍 Destino", value=str(ruta.get("Destino", "")), placeholder="CIUDAD, ESTADO")
-
-            c1, c2, c3, c4 = st.columns(4)
-            moneda_ingreso = c1.selectbox("Moneda Ingreso Flete", ["MXP", "USD"],
-                                           index=["MXP","USD"].index(str(ruta.get("Moneda","MXP"))))
-            ingreso_flete  = c2.number_input("Ingreso Flete", min_value=0.0,
-                                              value=float(safe_number(ruta.get("Ingreso_Original", 0))))
-            km             = c3.number_input("📏 Kilómetros",    min_value=0.0,
-                                              value=float(safe_number(ruta.get("KM", 0))))
-            casetas        = c4.number_input("🛣️ Casetas (MXP)", min_value=0.0,
-                                              value=float(safe_number(ruta.get("Casetas", 0))))
-
-            if tipo == "DOM MEX":
-                c1, _, _, _ = st.columns(4)
-                modo_pago_actual = ruta.get("Modo_Pago_Dom", "km")
-                modo_pago_dom = c1.selectbox(
-                    "Modo pago operador",
-                    ["km", "fijo"],
-                    format_func=lambda x: "Por kilómetro" if x == "km" else "Pago fijo",
-                    index=["km", "fijo"].index(modo_pago_actual) if modo_pago_actual in ["km","fijo"] else 0,
-                )
-            else:
-                modo_pago_dom = "km"
-
-            # ── Termo y Costos Fijos ──────────────────────────────
-            st.markdown("### 🌡️ Termo y Conceptos de Costos")
-            c1, c2, c3, c4 = st.columns(4)
-            horas_termo      = c1.number_input("⏱️ Horas Termo",            min_value=0.0, value=float(safe_number(ruta.get("Horas_Termo", 0))))
-            lavado_termo     = c2.number_input("🧼 Lavado Termo (MXP)",     min_value=0.0, value=float(safe_number(ruta.get("Lavado_Termo", 0))))
-            movimiento_local = c3.number_input("🔄 Movimiento Local (MXP)", min_value=0.0, value=float(safe_number(ruta.get("Movimiento_Local", 0))))
-            # Puntualidad: deshacer el factor Team para mostrar valor base
-            punt_guardada    = safe_number(ruta.get("Puntualidad", 0))
-            factor_guardado  = 2 if ruta.get("Modo de Viaje") == "Team" else 1
-            puntualidad      = c4.number_input("⏰ Puntualidad (MXP)",      min_value=0.0, value=float(punt_guardada / factor_guardado))
-
-            c1, c2, c3, c4 = st.columns(4)
-            pension      = c1.number_input("🏨 Pensión (MXP)",      min_value=0.0, value=float(safe_number(ruta.get("Pension", 0))))
-            estancia     = c2.number_input("🛌 Estancia (MXP)",     min_value=0.0, value=float(safe_number(ruta.get("Estancia", 0))))
-            fianza_termo = c3.number_input("🔒 Fianza Termo (MXP)", min_value=0.0, value=float(safe_number(ruta.get("Fianza_Termo", 0))))
-            renta_termo  = c4.number_input("📦 Renta Termo (MXP)",  min_value=0.0, value=float(safe_number(ruta.get("Renta_Termo", 0))))
-
-            # ── Otros Costos ──────────────────────────────────────
-            st.markdown("### 🧾 Otros Costos")
-            st.caption("Captura el monto. Marca **'cobro'** si también se le cobra al cliente (suma al ingreso).")
-
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                pistas_extra = st.number_input("Pistas Extra (MXP)", min_value=0.0, value=float(safe_number(ruta.get("Pistas_Extra", 0))), key="ig_ed_pistas")
-                cobra_pistas = st.checkbox("cobro", value=bool(ruta.get("Cobra_Pistas", False)), key="ig_ed_cobra_pistas")
-            with c2:
-                stop         = st.number_input("Stop (MXP)",         min_value=0.0, value=float(safe_number(ruta.get("Stop", 0))),         key="ig_ed_stop")
-                cobra_stop   = st.checkbox("cobro", value=bool(ruta.get("Cobra_Stop", False)),   key="ig_ed_cobra_stop")
-            with c3:
-                falso        = st.number_input("Falso (MXP)",        min_value=0.0, value=float(safe_number(ruta.get("Falso", 0))),        key="ig_ed_falso")
-                cobra_falso  = st.checkbox("cobro", value=bool(ruta.get("Cobra_Falso", False)),  key="ig_ed_cobra_falso")
-
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                gatas        = st.number_input("Gatas (MXP)",        min_value=0.0, value=float(safe_number(ruta.get("Gatas", 0))),        key="ig_ed_gatas")
-                cobra_gatas  = st.checkbox("cobro", value=bool(ruta.get("Cobra_Gatas", False)),  key="ig_ed_cobra_gatas")
-            with c2:
-                accesorios   = st.number_input("Accesorios (MXP)",   min_value=0.0, value=float(safe_number(ruta.get("Accesorios", 0))),   key="ig_ed_acc")
-                cobra_acc    = st.checkbox("cobro", value=bool(ruta.get("Cobra_Accesorios", False)), key="ig_ed_cobra_acc")
-            with c3:
-                guias        = st.number_input("Guías (MXP)",        min_value=0.0, value=float(safe_number(ruta.get("Guias", 0))),        key="ig_ed_guias")
-                cobra_guias  = st.checkbox("cobro", value=bool(ruta.get("Cobra_Guias", False)),  key="ig_ed_cobra_guias")
-
-            divider()
-            revisar = st.form_submit_button("🔍 Revisar Cambios", use_container_width=True)
-
-        # ══════════════════════════════════════════════════════════
-        # CÁLCULOS AL REVISAR
-        # ══════════════════════════════════════════════════════════
-        if revisar:
-            if not motivo or not motivo.strip():
-                alert("error", "⚠️ Debes especificar un motivo para la modificación.")
-                return
-
-            cliente_norm = normalizar_texto(cliente)
-            origen_norm  = normalizar_texto(origen)
-            destino_norm = normalizar_texto(destino)
-
-            st.session_state.igloo_revisar_edicion = True
-            st.session_state.igloo_datos_edicion   = {
-                "id_ruta":            idx_sel,
-                "motivo":             motivo.strip(),
-                "fecha":              fecha,
-                "tipo":               tipo,
-                "cliente":            cliente_norm,
-                "origen":             origen_norm,
-                "destino":            destino_norm,
-                "modo_viaje":         modo_viaje,
-                "km":                 km,
-                "moneda_ingreso":     moneda_ingreso,
-                "ingreso_flete":      ingreso_flete,
-                "moneda_cruce":       moneda_cruce,
-                "ingreso_cruce":      ingreso_cruce,
-                "moneda_costo_cruce": moneda_costo_cruce,
-                "costo_cruce":        costo_cruce,
-                "horas_termo":        horas_termo,
-                "lavado_termo":       lavado_termo,
-                "movimiento_local":   movimiento_local,
-                "puntualidad":        puntualidad,
-                "pension":            pension,
-                "estancia":           estancia,
-                "fianza_termo":       fianza_termo,
-                "renta_termo":        renta_termo,
-                "casetas":            casetas,
-                "pistas_extra":       pistas_extra,
-                "cobra_pistas":       cobra_pistas,
-                "stop":               stop,
-                "cobra_stop":         cobra_stop,
-                "falso":              falso,
-                "cobra_falso":        cobra_falso,
-                "gatas":              gatas,
-                "cobra_gatas":        cobra_gatas,
-                "accesorios":         accesorios,
-                "cobra_acc":          cobra_acc,
-                "guias":              guias,
-                "cobra_guias":        cobra_guias,
-                "modo_pago_dom":      modo_pago_dom,
-            }
-
-            # ── Cálculo ───────────────────────────────────────────
-            factor          = 2 if modo_viaje == "Team" else 1
-            puntualidad_val = puntualidad * factor
-
-            extras = calcular_extras(pistas_extra, stop, falso, gatas, accesorios, guias)
-            ingreso_extras_cobrados = (
-                (pistas_extra if cobra_pistas else 0.0) +
-                (stop         if cobra_stop   else 0.0) +
-                (falso        if cobra_falso  else 0.0) +
-                (gatas        if cobra_gatas  else 0.0) +
-                (accesorios   if cobra_acc    else 0.0) +
-                (guias        if cobra_guias  else 0.0)
-            )
-
-            costos_fijos = calcular_costos_fijos(
-                lavado_termo, movimiento_local, puntualidad_val, pension, estancia,
-                fianza_termo, renta_termo, casetas,
-            )
-
-            tc_usd        = float(valores.get("Tipo de cambio USD", 19.5))
-            ingreso_total = ingreso_flete * (tc_usd if moneda_ingreso == "USD" else 1)
-            ingreso_total += ingreso_cruce * (tc_usd if moneda_cruce  == "USD" else 1)
-            ingreso_total += ingreso_extras_cobrados
-
-            costo_cruce_convertido      = costo_cruce * (tc_usd if moneda_costo_cruce == "USD" else 1)
-            diesel_camion, diesel_termo = calcular_diesel(km, horas_termo, valores)
-            pago_km, sueldo, bono       = calcular_sueldo_y_bono(tipo, km, modo_viaje, valores, modo_pago_dom)
-
-            costo_total = diesel_camion + diesel_termo + sueldo + bono + costos_fijos + extras + costo_cruce_convertido
-
-            util = calcular_utilidades(ingreso_total, costo_total, tipo)
-
-            st.session_state.igloo_calc_edicion = {
-                "tipo_cambio_flete":        tc_usd if moneda_ingreso     == "USD" else 1.0,
-                "tipo_cambio_cruce":        tc_usd if moneda_cruce       == "USD" else 1.0,
-                "tipo_cambio_costo_cruce":  tc_usd if moneda_costo_cruce == "USD" else 1.0,
-                "ingreso_flete_convertido": ingreso_flete * (tc_usd if moneda_ingreso == "USD" else 1),
-                "ingreso_cruce_convertido": ingreso_cruce * (tc_usd if moneda_cruce   == "USD" else 1),
-                "costo_cruce_convertido":   costo_cruce_convertido,
-                "ingreso_extras_cobrados":  ingreso_extras_cobrados,
-                "ingreso_total":            ingreso_total,
-                "costo_diesel_camion":      diesel_camion,
-                "costo_diesel_termo":       diesel_termo,
-                "pago_km":                  pago_km,
-                "sueldo":                   sueldo,
-                "bono":                     bono,
-                "puntualidad_val":          puntualidad_val,
-                "costos_fijos":             costos_fijos,
-                "extras":                   extras,
-                "costo_total":              costo_total,
-                "costos_indirectos":        util["costos_indirectos"],
-                "utilidad_bruta":           util["utilidad_bruta"],
-                "utilidad_neta":            util["utilidad_neta"],
-                "porcentaje_bruta":         util["porcentaje_bruta"],
-                "porcentaje_neta":          util["porcentaje_neta"],
-            }
-
-            mostrar_resultados_utilidad(
-                st, ingreso_total, costo_total,
-                util["utilidad_bruta"], util["costos_indirectos"],
-                util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
-                tipo=tipo,
-                tc_usd=tc_usd,
-            )
-
-        # ── Guardar Cambios ───────────────────────────────────────
-        if st.session_state.get("igloo_revisar_edicion", False):
-            if st.button("💾 Guardar Cambios", key="igloo_confirmar_edicion", type="primary"):
-                d    = st.session_state.get("igloo_datos_edicion", {})
-                calc = st.session_state.get("igloo_calc_edicion", {})
-
-                if not d:
-                    alert("error", "No hay datos de edición.")
-                    return
-
-                # Historial
-                historial_anterior = ruta.get("historial") or []
-                if not isinstance(historial_anterior, list):
-                    historial_anterior = []
-
-                nueva_entrada = {
-                    "timestamp": _now_iso(),
-                    "usuario":   nombre_usuario,
-                    "motivo":    d["motivo"],
-                    "cambios_anteriores": {
-                        "Cliente":        ruta.get("Cliente"),
-                        "Origen":         ruta.get("Origen"),
-                        "Destino":        ruta.get("Destino"),
-                        "KM":             ruta.get("KM"),
-                        "Ingreso_Original": ruta.get("Ingreso_Original"),
-                        "Cruce_Original": ruta.get("Cruce_Original"),
-                        "Costo_Total_Ruta": ruta.get("Costo_Total_Ruta"),
-                        "Utilidad_Neta":  ruta.get("Utilidad_Neta"),
-                    },
-                }
-                historial_actualizado = historial_anterior + [nueva_entrada]
-
-                ruta_actualizada = {
-                    "Fecha":              str(d["fecha"]),
-                    "Tipo":               d["tipo"],
-                    "Cliente":            d["cliente"],
-                    "Origen":             d["origen"],
-                    "Destino":            d["destino"],
-                    "Modo de Viaje":      d["modo_viaje"],
-                    "KM":                 d["km"],
-                    "Moneda":             d["moneda_ingreso"],
-                    "Ingreso_Original":   d["ingreso_flete"],
-                    "Tipo de cambio":     calc.get("tipo_cambio_flete"),
-                    "Ingreso Flete":      calc.get("ingreso_flete_convertido"),
-                    "Moneda_Cruce":       d["moneda_cruce"],
-                    "Cruce_Original":     d["ingreso_cruce"],
-                    "Tipo cambio Cruce":  calc.get("tipo_cambio_cruce"),
-                    "Ingreso Cruce":      calc.get("ingreso_cruce_convertido"),
-                    "Moneda Costo Cruce": d["moneda_costo_cruce"],
-                    "Costo Cruce":        d["costo_cruce"],
-                    "Costo Cruce Convertido": calc.get("costo_cruce_convertido"),
-                    "Ingreso Total":      calc.get("ingreso_total"),
-                    "Pago por KM":        calc.get("pago_km"),
-                    "Sueldo_Operador":    calc.get("sueldo"),
-                    "Bono":               calc.get("bono"),
-                    "Casetas":            d["casetas"],
-                    "Horas_Termo":        d["horas_termo"],
-                    "Lavado_Termo":       d["lavado_termo"],
-                    "Movimiento_Local":   d["movimiento_local"],
-                    "Puntualidad":        calc.get("puntualidad_val"),
-                    "Pension":            d["pension"],
-                    "Estancia":           d["estancia"],
-                    "Fianza_Termo":       d["fianza_termo"],
-                    "Renta_Termo":        d["renta_termo"],
-                    "Pistas_Extra":       d["pistas_extra"],
-                    "Stop":               d["stop"],
-                    "Falso":              d["falso"],
-                    "Gatas":              d["gatas"],
-                    "Accesorios":         d["accesorios"],
-                    "Guias":              d["guias"],
-                    "Costo_Diesel_Camion": calc.get("costo_diesel_camion"),
-                    "Costo_Diesel_Termo":  calc.get("costo_diesel_termo"),
-                    "Costo_Extras":        calc.get("extras"),
-                    "Costo_Total_Ruta":    calc.get("costo_total"),
-                    "Costos_Indirectos":   calc.get("costos_indirectos"),
-                    "Utilidad_Bruta":      calc.get("utilidad_bruta"),
-                    "Utilidad_Neta":       calc.get("utilidad_neta"),
-                    "Porcentaje_Utilidad_Bruta": calc.get("porcentaje_bruta"),
-                    "Porcentaje_Utilidad_Neta":  calc.get("porcentaje_neta"),
-                    "Modo_Pago_Dom":       d.get("modo_pago_dom", "km"),
-                    # Cobros individuales
-                    "Cobra_Pistas":        d.get("cobra_pistas",  False),
-                    "Cobra_Stop":          d.get("cobra_stop",    False),
-                    "Cobra_Falso":         d.get("cobra_falso",   False),
-                    "Cobra_Gatas":         d.get("cobra_gatas",   False),
-                    "Cobra_Accesorios":    d.get("cobra_acc",     False),
-                    "Cobra_Guias":         d.get("cobra_guias",   False),
-                    # Legacy
-                    "Extras_Cobrados":     False,
-                    # Parámetros
-                    "Costo Diesel":        float(valores.get("Costo Diesel", 24.0)),
-                    "Rendimiento Camion":  float(valores.get("Rendimiento Camion", 2.5)),
-                    "Rendimiento Termo":   float(valores.get("Rendimiento Termo", 3.0)),
-                    "updated_by":          nombre_usuario,
-                    "updated_at":          _now_iso(),
-                    "historial":           historial_actualizado,
-                }
-
-                try:
-                    supabase.table(TABLE_RUTAS).update(ruta_actualizada).eq("ID_Ruta", d["id_ruta"]).execute()
-                    st.session_state.igloo_ruta_editada_id       = d["id_ruta"]
-                    st.session_state.igloo_mostrar_modal_edicion = True
-                    _load_rutas_igloo_cached.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Error al actualizar la ruta: {e}")
-                    st.exception(e)
+    except Exception as e:
+        alert("error", f"Error generando PDF: {e}")
+        st.caption("Asegúrate de tener instalado `reportlab`.")
