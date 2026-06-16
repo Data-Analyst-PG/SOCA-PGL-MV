@@ -188,7 +188,7 @@ def render():
             modo_pago_dom = "km"
 
         # ── Termo y Costos Fijos ──────────────────────────────────
-        st.markdown("### 🌡️ Termo y Costos Fijos")
+        st.markdown("### 🌡️ Termo y Conceptos de Costos")
         c1, c2, c3, c4 = st.columns(4)
         horas_termo      = c1.number_input("⏱️ Horas Termo",            min_value=0.0, key="igloo_horas")
         lavado_termo     = c2.number_input("🧼 Lavado Termo (MXP)",     min_value=0.0, key="igloo_lav")
