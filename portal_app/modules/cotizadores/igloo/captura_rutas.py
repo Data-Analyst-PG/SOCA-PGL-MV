@@ -171,6 +171,8 @@ def render():
 
     # ── Parámetros ────────────────────────────────────────────────
     with st.expander("⚙️ Configuración de Parámetros", expanded=False):
+        tc_banxico = float(valores.get("Tipo de cambio USD", 19.5))
+        st.caption(f"💱 Banxico FIX del día: **${tc_banxico:,.4f} MXP/USD** — se actualiza automáticamente cada 24h.")
         col1, col2, col3 = st.columns(3)
         claves = list(DEFAULTS.keys())
         for i, key in enumerate(claves):
