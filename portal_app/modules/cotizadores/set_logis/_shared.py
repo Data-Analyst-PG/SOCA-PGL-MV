@@ -109,10 +109,26 @@ def cargar_datos_generales() -> dict:
                         out[k] = float(v)
                     except Exception:
                         out[k] = v
-                return out
+                for k, v in DEFAULTS.items():
+                    if k not in out:
+                        out[k] = v
+            else:
+                out = DEFAULTS.copy()
         except Exception:
-            pass
-    return DEFAULTS.copy()
+            out = DEFAULTS.copy()
+    else:
+        out = DEFAULTS.copy()
+
+    # TC FIX de Banxico (cache 24h)
+    try:
+        from services.banxico import get_tipo_cambio_fix
+        tc = get_tipo_cambio_fix()
+        if tc:
+            out["Tipo de Cambio USD/MXP"] = tc
+    except Exception:
+        pass
+
+    return out
 
 
 def guardar_datos_generales(valores: dict) -> None:
