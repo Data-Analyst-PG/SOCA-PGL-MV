@@ -28,5 +28,7 @@ def get_tipo_cambio_fix() -> float:
         data  = resp.json()
         valor = data["bmx"]["series"][0]["datos"][0]["dato"]
         return float(valor)
-    except Exception:
+    except Exception as e:
+        import streamlit as st
+        st.warning(f"⚠️ Banxico error: {e}")
         return None
