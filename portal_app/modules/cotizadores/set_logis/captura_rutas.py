@@ -73,9 +73,13 @@ def _panel_datos_generales(valores: dict) -> dict:
 
         st.markdown("**Tipo de Cambio y Costo Indirecto**")
         tc1, tc2, tc3 = st.columns(3)
-        valores["Tipo de Cambio USD/MXP"] = tc1.number_input(
-            "TC USD/MXP", value=float(valores.get("Tipo de Cambio USD/MXP", 18.50)),
-            step=0.1, format="%.2f", key="sl_tc")
+        with tc1:
+            tc_valor = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
+            st.caption(f"💱 Banxico FIX: **${tc_valor:,.4f}**")
+            valores["Tipo de Cambio USD/MXP"] = st.number_input(
+                "TC USD/MXP", value=tc_valor,
+                step=0.1, format="%.4f", key="sl_tc",
+                help="Valor FIX cargado automáticamente desde Banxico (actualización diaria)")
         valores["CXM Indirecto"] = tc2.number_input(
             "CXM Indirecto ($/mi)", value=float(valores.get("CXM Indirecto", 0.10)),
             step=0.01, format="%.4f", key="sl_cxm_ind")
