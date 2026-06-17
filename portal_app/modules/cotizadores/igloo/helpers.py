@@ -70,7 +70,11 @@ def _datos_generales_path() -> str:
 
 
 def cargar_datos_generales() -> dict:
-    """Lee el CSV de datos generales y lo fusiona con DEFAULTS."""
+    """
+    Lee el CSV de datos generales y lo fusiona con DEFAULTS.
+    Si Banxico está disponible, sobreescribe el tipo de cambio USD
+    con el valor FIX del día (cacheado 24h).
+    """
     path = _datos_generales_path()
     if os.path.exists(path):
         try:
@@ -85,10 +89,24 @@ def cargar_datos_generales() -> dict:
                     except Exception:
                         pass
                     vals[p] = v
-                return {**DEFAULTS, **vals}
+                resultado = {**DEFAULTS, **vals}
+            else:
+                resultado = DEFAULTS.copy()
         except Exception:
-            pass
-    return DEFAULTS.copy()
+            resultado = DEFAULTS.copy()
+    else:
+        resultado = DEFAULTS.copy()
+
+    # Sobrescribir TC con Banxico si está disponible (cache 24h)
+    try:
+        from services.banxico import get_tipo_cambio_fix
+        tc = get_tipo_cambio_fix()
+        if tc:
+            resultado["Tipo de cambio USD"] = tc
+    except Exception:
+        pass  # Si falla, conserva el valor del CSV sin romper nada
+
+    return resultado
 
 
 def guardar_datos_generales(valores: dict) -> None:
