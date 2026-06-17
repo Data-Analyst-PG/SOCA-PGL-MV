@@ -122,7 +122,8 @@ def cargar_datos_generales() -> dict:
     # TC FIX de Banxico (cache 24h)
     try:
         from services.banxico import get_tipo_cambio_fix
-        tc = get_tipo_cambio_fix()
+        token = st.secrets.get("TOKEN_BMX", "")
+        tc = get_tipo_cambio_fix(token) if token else None
         if tc:
             out["Tipo de Cambio USD/MXP"] = tc
     except Exception:
