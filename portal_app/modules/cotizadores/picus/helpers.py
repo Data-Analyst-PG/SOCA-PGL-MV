@@ -112,7 +112,8 @@ def cargar_datos_generales() -> dict:
     # Sobrescribir TC con Banxico si está disponible (cache 24h)
     try:
         from services.banxico import get_tipo_cambio_fix
-        tc = get_tipo_cambio_fix()
+        token = st.secrets.get("TOKEN_BMX", "")
+        tc = get_tipo_cambio_fix(token) if token else None
         if tc:
             resultado["Tipo de cambio USD"] = tc
     except Exception:
