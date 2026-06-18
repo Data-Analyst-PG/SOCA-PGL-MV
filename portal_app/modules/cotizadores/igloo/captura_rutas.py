@@ -18,7 +18,7 @@ import streamlit as st
 from datetime import datetime, timezone
 from streamlit_searchbox import st_searchbox
 
-
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 from services.supabase_client import get_supabase_client, current_user
 from .helpers import (
     DEFAULTS, TIPOS_RUTA,
@@ -31,8 +31,8 @@ from .helpers import (
     now_iso, _datos_generales_path,
     cargar_pool_ubicaciones_igloo, buscar_ubicacion_igloo,
 )
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
+TABLE_RUTAS = "Rutas"
 
 # ─────────────────────────────────────────────
 # MODAL CONFIRMACIÓN
