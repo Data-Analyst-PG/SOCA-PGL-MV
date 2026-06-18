@@ -25,7 +25,7 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
 from .helpers import (
     TIPOS_RUTA,
@@ -33,27 +33,14 @@ from .helpers import (
     safe_number, safe_float,
     calcular_utilidades,
     calcular_costos_indirectos,
-    mostrar_resultados_utilidad,
+    load_rutas_igloo,
     filtrar_rutas_igloo,
     label_ruta_igloo,
 )
 
-
 # ─────────────────────────────────────────────
-# CACHE
+# 
 # ─────────────────────────────────────────────
-@st.cache_data(show_spinner=False, ttl=120)
-def _load_rutas_igloo_cached(table_name: str) -> pd.DataFrame:
-    supabase = get_supabase_client()
-    if supabase is None:
-        return pd.DataFrame()
-    try:
-        resp = supabase.table(table_name).select("*").execute()
-        return pd.DataFrame(resp.data)
-    except Exception as e:
-        st.error(f"Error consultando Supabase: {e}")
-        return pd.DataFrame()
-
 
 def _project_root() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -374,12 +361,12 @@ def render():
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button("🔄 Recargar", key="igloo_cons_reload"):
-            _load_rutas_igloo_cached.clear()
+            load_rutas_igloo.clear()
             st.rerun()
     with c2:
         st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
-    df = _load_rutas_igloo_cached(TABLE_RUTAS)
+    df = load_rutas_igloo(TABLE_RUTAS)
     if df.empty:
         alert("warn", "⚠️ No hay rutas guardadas todavía.")
         return
