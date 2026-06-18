@@ -138,7 +138,7 @@ def render():
     c1, c2 = st.columns(2)
     with c1:
         origen_sel = st_searchbox(
-            _buscar_ubicacion_igloo,
+            buscar_ubicacion_igloo,
             label="📍 Origen",
             placeholder="Escribe para buscar o capturar nueva...",
             key=f"igloo_origen_{fk}",
@@ -146,7 +146,7 @@ def render():
         )
     with c2:
         destino_sel = st_searchbox(
-            _buscar_ubicacion_igloo,
+            buscar_ubicacion_igloo,
             label="📍 Destino",
             placeholder="Escribe para buscar o capturar nueva...",
             key=f"igloo_destino_{fk}",
