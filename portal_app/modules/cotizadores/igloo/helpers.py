@@ -526,6 +526,35 @@ def buscar_ubicacion_igloo(termino: str) -> list[str]:
 
 
 # ─────────────────────────────────────────────
+# Carga de rutas — compartida por consulta, gestión y simulador
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def load_rutas_igloo(table_name: str) -> pd.DataFrame:
+    """
+    Carga todas las rutas de la tabla dada, ordenadas por Fecha desc.
+    Compartida por consulta_ruta, gestion_rutas y simulador.
+    """
+    import pandas as pd
+    from services.supabase_client import get_supabase_client
+    supabase = get_supabase_client()
+    if supabase is None:
+        return pd.DataFrame()
+    try:
+        resp = supabase.table(table_name).select("*").order("Fecha", desc=True).execute()
+        if resp.data:
+            return pd.DataFrame(resp.data)
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
+def now_iso() -> str:
+    """Timestamp UTC actual en formato ISO. Compartido por captura y gestión."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ─────────────────────────────────────────────
 # Filtros y label — compartidos por consulta_ruta,
 # gestion_rutas y simulador para evitar keys duplicadas
 # ─────────────────────────────────────────────
