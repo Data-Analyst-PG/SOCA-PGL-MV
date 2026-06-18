@@ -36,53 +36,10 @@ from ui.components import section_header, alert, divider, mostrar_resultados_rut
 
 
 # ─────────────────────────────────────────────
-# HELPERS
+# Fecha Automatica
 # ─────────────────────────────────────────────
-def _get_profile_name(user_id: str) -> str:
-    if not user_id:
-        return ""
-    try:
-        supabase = get_authed_client()
-        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
-        return (res.data or {}).get("full_name") or ""
-    except Exception:
-        return ""
-
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-@st.cache_data(show_spinner=False, ttl=60)
-def _get_last_id_cached(table_name: str):
-    supabase = get_supabase_client()
-    if supabase is None:
-        return None
-    resp = supabase.table(table_name).select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
-    if resp.data:
-        return resp.data[0].get("ID_Ruta")
-    return None
-
-
-def generar_nuevo_id(table_name: str) -> str:
-    ultimo = _get_last_id_cached(table_name)
-    if ultimo and isinstance(ultimo, str) and len(ultimo) >= 3:
-        try:
-            numero = int(ultimo[2:]) + 1
-        except Exception:
-            numero = 1
-    else:
-        numero = 1
-    return f"IG{numero:06d}"
-
-
-def normalizar_texto(texto):
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = re.sub(r'\s+', ' ', texto)
-    texto = re.sub(r'\s*,\s*', ', ', texto)
-    return texto
 
 
 # ─────────────────────────────────────────────
@@ -157,7 +114,7 @@ def render():
 
     u = current_user() or {}
     user_id        = u.get("id") or u.get("sub") or ""
-    nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
+    nombre_usuario = get_profile_name(user_id) or u.get("email") or "Desconocido"
 
     TABLE_RUTAS = "Rutas"
 
@@ -431,13 +388,7 @@ def render():
             "porcentaje_neta":           util["porcentaje_neta"],
         }
 
-        mostrar_resultados_utilidad(
-            st, ingreso_total, costo_total,
-            util["utilidad_bruta"], util["costos_indirectos"],
-            util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
-            tipo=d["tipo"],
-            tc_usd=tc_usd,
-        )
+        mostrar_resultados_ruta(util)
 
     # ══════════════════════════════════════════════════════════════
     # GUARDAR
@@ -453,7 +404,7 @@ def render():
             nuevo_id = generar_nuevo_id(TABLE_RUTAS)
             existe   = supabase.table(TABLE_RUTAS).select("ID_Ruta").eq("ID_Ruta", nuevo_id).execute()
             if existe.data:
-                _get_last_id_cached.clear()
+                _get_last_id_igloo_cached.clear()
                 alert("error", "⚠️ Conflicto al generar ID. Intenta de nuevo.")
                 return
 
@@ -528,7 +479,7 @@ def render():
 
             try:
                 supabase.table(TABLE_RUTAS).insert(nueva_ruta).execute()
-                _get_last_id_cached.clear()
+                _get_last_id_igloo_cached.clear()
                 # Refrescar pool para incluir las nuevas ubicaciones
                 _cargar_pool_ubicaciones.clear()
                 st.session_state.igloo_ruta_guardada_id = nuevo_id
