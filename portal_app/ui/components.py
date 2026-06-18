@@ -459,7 +459,7 @@ def payment_info(cliente: dict):
     )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 12. CONFIGURACIÓN DE ESTATUS PARA SOLICITUDES (tickets y complementarias)
+# 15. CONFIGURACIÓN DE ESTATUS PARA SOLICITUDES (tickets y complementarias)
 # ─────────────────────────────────────────────────────────────────────────────
 # Catálogo centralizado de colores/íconos por estatus.
 # Úsalo en cualquier módulo que necesite colorear un estatus:
@@ -509,7 +509,7 @@ def status_badge_html(estatus: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 13. TIMELINE DE HISTORIAL
+# 16. TIMELINE DE HISTORIAL
 # ─────────────────────────────────────────────────────────────────────────────
 _ACCION_ICONO = {
     "create":  "🆕",
@@ -563,7 +563,7 @@ def historial_timeline(historial: list):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 14. CARD DE SOLICITUD (tickets y complementarias)
+# 17. CARD DE SOLICITUD (tickets y complementarias)
 # ─────────────────────────────────────────────────────────────────────────────
 def solicitud_card(
     *,
@@ -647,7 +647,7 @@ def solicitud_card(
     return False
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 15. TABLA DE SOLICITUDES CON ESTATUS COLOREADO
+# 18. TABLA DE SOLICITUDES CON ESTATUS COLOREADO
 # ─────────────────────────────────────────────────────────────────────────────
 _TABLA_COL_WIDTHS = {
     "ID": "50px", "Fecha creación": "100px", "Última actualización": "100px",
@@ -722,61 +722,163 @@ def solicitudes_table(df):
     )
     st.markdown(html, unsafe_allow_html=True)
 
+# ═════════════════════════════════════════════════════════════════════════════
+# COMPONENTES DE COTIZADORES
+# Usados por las 4 empresas: Igloo, Picus, Lincoln, Set Logis.
+# Regla: NINGUNA función aquí contiene números de empresa ni defaults hardcodeados.
+# Todos los umbrales y colores viajan dentro del dict `r` producido por
+# calcular_ruta_*() en el helpers/_shared de cada empresa.
+# ═════════════════════════════════════════════════════════════════════════════
+ 
 # ─────────────────────────────────────────────────────────────────────────────
-# 16. SEMÁFOROS DE RUTA (cotizadores owner-operator / camionero)
+# 19. SEMÁFOROS DE RUTA
 # ─────────────────────────────────────────────────────────────────────────────
-def semaforos_ruta(
-    r: dict,
-    *,
-    max_costo_directo: float  = 85.0,   # Set Logis: ≤85%
-    min_ut_bruta:      float  = 15.0,   # Set Logis: ≥15%
-    max_costo_indirecto: float = 9.0,   # Set Logis: ≤9%
-    min_ut_neta:       float  =  6.0,   # Set Logis: ≥6%
-) -> None:
+def semaforos_ruta(r: dict) -> None:
     """
-    Muestra 4 indicadores tipo semáforo (verde/rojo) para los KPIs de una ruta.
-    Los umbrales tienen defaults de Set Logis pero son configurables por empresa.
-
-    Uso Set Logis (defaults):
-        semaforos_ruta(r)
-
-    Uso Lincoln (ajustar umbrales según corresponda):
-        semaforos_ruta(r, max_costo_directo=80.0, min_ut_bruta=20.0,
-                          max_costo_indirecto=10.0, min_ut_neta=10.0)
-
-    El dict `r` debe venir de calcular_ruta_* y contener:
-        Pct_Costo_Directo, Pct_Ut_Bruta, Pct_Costo_Indirecto, Pct_Ut_Neta
+    Muestra 4 indicadores semáforo (verde/rojo) para los KPIs de una ruta.
+ 
+    Los umbrales NO están hardcodeados aquí — vienen dentro del dict `r`
+    que produce calcular_ruta_*() en el helpers/_shared de cada empresa.
+ 
+    Claves requeridas en `r`:
+        Pct_Costo_Directo    (float %)
+        Pct_Ut_Bruta         (float %)
+        Pct_Costo_Indirecto  (float %)
+        Pct_Ut_Neta          (float %)
+        umbral_cd            (float) → max % costo directo aceptable
+        umbral_ub            (float) → min % utilidad bruta aceptable
+        umbral_ci            (float) → max % costo indirecto aceptable
+        umbral_un            (float) → min % utilidad neta aceptable
+ 
+    Ejemplo en helpers/_shared de cada empresa:
+        UMBRALES = dict(umbral_cd=50.0, umbral_ub=50.0, umbral_ci=35.0, umbral_un=15.0)
+        # Se incluyen en el dict que devuelve calcular_utilidades() / calcular_ruta_*()
+ 
+    Llamada desde cualquier módulo:
+        from ui.components import semaforos_ruta
+        semaforos_ruta(r)   # r ya trae los umbrales correctos de su empresa
     """
-    s1, s2, s3, s4 = st.columns(4)
-
-    pct_dir = r.get("Pct_Costo_Directo", 0.0)
-    pct_utb = r.get("Pct_Ut_Bruta", 0.0)
+    pct_dir = r.get("Pct_Costo_Directo",   0.0)
+    pct_utb = r.get("Pct_Ut_Bruta",        0.0)
     pct_ind = r.get("Pct_Costo_Indirecto", 0.0)
-    pct_utn = r.get("Pct_Ut_Neta", 0.0)
-
-    if pct_dir <= max_costo_directo:
-        s1.success(f"C. Directos: {pct_dir:.1f}% (≤{max_costo_directo:.0f}%)")
+    pct_utn = r.get("Pct_Ut_Neta",         0.0)
+ 
+    max_cd = r.get("umbral_cd", 85.0)   # fallback neutral — solo si helpers no lo incluyó
+    min_ub = r.get("umbral_ub", 15.0)
+    max_ci = r.get("umbral_ci",  9.0)
+    min_un = r.get("umbral_un",  6.0)
+ 
+    s1, s2, s3, s4 = st.columns(4)
+ 
+    if pct_dir <= max_cd:
+        s1.success(f"C. Directos: {pct_dir:.1f}% (≤{max_cd:.0f}%)")
     else:
-        s1.error(f"C. Directos: {pct_dir:.1f}% — EXCEDE {max_costo_directo:.0f}%")
-
-    if pct_utb >= min_ut_bruta:
-        s2.success(f"Ut. Bruta: {pct_utb:.1f}% (≥{min_ut_bruta:.0f}%)")
+        s1.error(f"C. Directos: {pct_dir:.1f}% — EXCEDE {max_cd:.0f}%")
+ 
+    if pct_utb >= min_ub:
+        s2.success(f"Ut. Bruta: {pct_utb:.1f}% (≥{min_ub:.0f}%)")
     else:
-        s2.error(f"Ut. Bruta: {pct_utb:.1f}% — DEBAJO {min_ut_bruta:.0f}%")
-
-    if pct_ind <= max_costo_indirecto:
-        s3.success(f"C. Indirecto: {pct_ind:.1f}% (≤{max_costo_indirecto:.0f}%)")
+        s2.error(f"Ut. Bruta: {pct_utb:.1f}% — DEBAJO {min_ub:.0f}%")
+ 
+    if pct_ind <= max_ci:
+        s3.success(f"C. Indirecto: {pct_ind:.1f}% (≤{max_ci:.0f}%)")
     else:
-        s3.error(f"C. Indirecto: {pct_ind:.1f}% — EXCEDE {max_costo_indirecto:.0f}%")
-
-    if pct_utn >= min_ut_neta:
-        s4.success(f"Ut. Neta: {pct_utn:.1f}% (≥{min_ut_neta:.0f}%)")
+        s3.error(f"C. Indirecto: {pct_ind:.1f}% — EXCEDE {max_ci:.0f}%")
+ 
+    if pct_utn >= min_un:
+        s4.success(f"Ut. Neta: {pct_utn:.1f}% (≥{min_un:.0f}%)")
     else:
-        s4.error(f"Ut. Neta: {pct_utn:.1f}% — DEBAJO {min_ut_neta:.0f}%")
-
-
+        s4.error(f"Ut. Neta: {pct_utn:.1f}% — DEBAJO {min_un:.0f}%")
+ 
+ 
 # ─────────────────────────────────────────────────────────────────────────────
-# 17. DESGLOSE DE RUTA POR TRAMO
+# 20. MOSTRAR RESULTADOS DE RUTA (canónica — todas las empresas)
+# ─────────────────────────────────────────────────────────────────────────────
+def mostrar_resultados_ruta(r: dict, titulo: str = "📊 Resultado del Cálculo") -> None:
+    """
+    Muestra las 5 cards KPI + semáforos de una ruta cotizada.
+    Función canónica — igual para las 4 empresas.
+ 
+    El dict `r` debe venir de calcular_ruta_*() / calcular_utilidades() del
+    helpers/_shared de cada empresa e incluir OBLIGATORIAMENTE:
+ 
+        # Valores monetarios
+        ingreso_total        (float)
+        costo_directo        (float)
+        utilidad_bruta       (float)
+        costos_indirectos    (float)
+        utilidad_neta        (float)
+ 
+        # Porcentajes
+        Pct_Costo_Directo    (float %)
+        Pct_Ut_Bruta         (float %)
+        Pct_Costo_Indirecto  (float %)
+        Pct_Ut_Neta          (float %)
+ 
+        # Colores calculados con umbrales de la empresa
+        Color_Directo        (str hex)
+        Color_Indirecto      (str hex)
+        Color_Ut_Neta        (str hex)
+ 
+        # Umbrales de la empresa (para semaforos_ruta)
+        umbral_cd            (float)
+        umbral_ub            (float)
+        umbral_ci            (float)
+        umbral_un            (float)
+ 
+    Uso en cualquier módulo de cualquier empresa:
+        from ui.components import mostrar_resultados_ruta
+        r = calcular_ruta_igloo(...)   # o lincoln, picus, set_logis
+        mostrar_resultados_ruta(r)
+    """
+    section_header("📊", titulo)
+ 
+    moneda = r.get("moneda_display", "MXP")   # helpers puede incluir "USD" o "MXP"
+ 
+    kpi_row([
+        {
+            "icono": "💰",
+            "label": "Ingreso Total",
+            "valor": f"${r.get('ingreso_total', 0):,.2f}",
+            "sub":   moneda,
+            "color": PGL_NAVY,
+        },
+        {
+            "icono": "📉",
+            "label": "Costo Directo",
+            "valor": f"${r.get('costo_directo', 0):,.2f}",
+            "sub":   f"{r.get('Pct_Costo_Directo', 0):.1f}%",
+            "color": r.get("Color_Directo", "#DC2626"),
+        },
+        {
+            "icono": "📈",
+            "label": "Utilidad Bruta",
+            "valor": f"${r.get('utilidad_bruta', 0):,.2f}",
+            "sub":   f"{r.get('Pct_Ut_Bruta', 0):.1f}%",
+            "color": "#059669" if r.get("utilidad_bruta", 0) >= 0 else "#DC2626",
+        },
+        {
+            "icono": "📊",
+            "label": "Costos Indirectos",
+            "valor": f"${r.get('costos_indirectos', 0):,.2f}",
+            "sub":   f"{r.get('Pct_Costo_Indirecto', 0):.1f}%",
+            "color": r.get("Color_Indirecto", "#D97706"),
+        },
+        {
+            "icono": "✅",
+            "label": "Utilidad Neta",
+            "valor": f"${r.get('utilidad_neta', 0):,.2f}",
+            "sub":   f"{r.get('Pct_Ut_Neta', 0):.1f}%",
+            "color": r.get("Color_Ut_Neta", "#DC2626"),
+        },
+    ])
+ 
+    divider()
+    semaforos_ruta(r)
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 21. DESGLOSE DE RUTA POR TRAMO
 # ─────────────────────────────────────────────────────────────────────────────
 def desglose_ruta(
     r: dict,
@@ -785,152 +887,234 @@ def desglose_ruta(
     modalidad: str = "Flat",
     cxm_flete: float = 0.0,
     cxm_fuel:  float = 0.0,
+    moneda_mx:  str   = "USD",
+    tc:         float = 1.0,
 ) -> None:
     """
     Expander con tabs de desglose ingreso/costo por tramo.
     Solo muestra los tramos que tengan datos (importe > 0).
-    Funciona para cualquier cotizador: Set Logis, Lincoln, mexicanas.
-
+    Funciona para los 4 cotizadores: Igloo, Picus, Lincoln, Set Logis.
+ 
     Parámetros:
-        r                     : dict resultado de calcular_ruta_*
-        filas_costo_americana : lista de (label, valor) para los costos directos USA.
-                                Si es None usa los campos estándar de Set Logis
-                                (Pago_Owner_Cargado, Pago_Owner_Vacio, Extras_Costo,
-                                Costo_Indirecto).
-        modalidad             : "Desglosada" | "Flat" — afecta cómo se muestra ingreso USA
+        r                     : dict resultado de calcular_ruta_*()
+        filas_costo_americana : lista de (label, valor) para costos USA.
+                                OBLIGATORIO para americanas (Lincoln/Set Logis).
+                                Igloo/Picus no tienen tramo americano — no lo pasan.
+        modalidad             : "Desglosada" | "Flat" — afecta display ingreso USA
         cxm_flete / cxm_fuel  : solo se usan si modalidad == "Desglosada"
-
-    Uso Set Logis (automático):
-        desglose_ruta(r, modalidad=modalidad, cxm_flete=cxm_flete, cxm_fuel=cxm_fuel)
-
-    Uso Lincoln (filas_costo personalizadas):
-        desglose_ruta(r, filas_costo_americana=[
-            ("Sueldo Base", r["sueldo_base"]),
-            ("Bono Millas", r["bono_millas"]),
-            ("Diesel",      r["diesel_usa"]),
-            ("ISR/IMSS",    r["isr_imss"]),
-        ])
+        moneda_mx             : "MXP" o "USD" — moneda en que están los valores MX del dict
+        tc                    : tipo de cambio MXP→USD (solo se usa si moneda_mx == "MXP")
+ 
+    Empresas americanas (Lincoln y Set Logis):
+        desglose_ruta(
+            r,
+            filas_costo_americana=[
+                ("Sueldo Cargado (1000 SM × $0.48)", r["sueldo_base"]),
+                ("Diesel", r["diesel_usa"]),
+                ("ISR/IMSS", r["isr_imss"]),
+            ],
+            modalidad=modalidad,
+            cxm_flete=cxm_flete,
+            cxm_fuel=cxm_fuel,
+        )
+ 
+    Empresas mexicanas (Igloo y Picus):
+        desglose_ruta(r, moneda_mx="MXP", tc=tc)
+        # El tramo americano no aplica — no se muestra si filas_costo_americana es None
+        # y los valores de Flete_USA / Fuel son 0
     """
-    # ── Valores base ──────────────────────────────────────────────────────────
     def _s(k):
         v = r.get(k, 0.0)
         try:
             return float(v) if v is not None else 0.0
         except Exception:
             return 0.0
-
+ 
+    def _mx(valor_raw: float) -> float:
+        """Convierte valor a USD si viene en MXP."""
+        if moneda_mx == "MXP" and tc and tc > 0:
+            return valor_raw / tc
+        return valor_raw
+ 
     ing_ame   = _s("Flete_USA") + _s("Fuel") + _s("Extras_Ingreso")
     ing_cruce = _s("Ingreso_Cruce")
-    ing_mx    = _s("Ingreso_MX")
+    ing_mx    = _mx(_s("Ingreso_MX"))
     cos_cruce = _s("Costo_Cruce")
-    cos_mx    = _s("Costo_MX")
-
-    # Costos americanos: custom o default Set Logis
+    cos_mx    = _mx(_s("Costo_MX"))
+ 
+    # Costos americanos: SIEMPRE los pasa la empresa — no hay default hardcodeado
     if filas_costo_americana is None:
-        ml  = _s("Miles_Load")
-        sm  = _s("Short_Miles")
-        me  = _s("Miles_Empty")
-        pxc = _s("PxM_Cargado")
-        pxv = _s("PxM_Vacio")
-        filas_costo_americana = [
-            (f"Owner Cargado ({sm:.0f} mi × ${pxc:.4f})", _s("Pago_Owner_Cargado")),
-            (f"Owner Vacío ({me:.0f} mi × ${pxv:.4f})",   _s("Pago_Owner_Vacio")),
-        ]
-        if _s("Pago_Fuel_Owner") > 0:
-            filas_costo_americana.append(("⛽ Fuel al Owner", _s("Pago_Fuel_Owner")))
-        if _s("Extras_Costo") > 0:
-            filas_costo_americana.append(("Extras (no cobrados)", _s("Extras_Costo")))
-        filas_costo_americana.append(("Costo Indirecto", _s("Costo_Indirecto")))
-
+        filas_costo_americana = []
+ 
     cos_ame = sum(v for _, v in filas_costo_americana)
     ut_ame  = ing_ame   - cos_ame
     ut_cruc = ing_cruce - cos_cruce
     ut_mx   = ing_mx    - cos_mx
-
-    # ── Construir tabs dinámicamente ─────────────────────────────────────────
+ 
+    # Construir tabs solo para tramos con datos
     tab_labels = []
     if ing_ame > 0 or cos_ame > 0:
         tab_labels.append("🇺🇸 Ruta Americana")
     if ing_cruce > 0 or cos_cruce > 0:
         tab_labels.append("🛂 Cruce")
     if ing_mx > 0 or cos_mx > 0:
-        tab_labels.append("🇲🇽 Ruta Mexicana")
-
+        tab_labels.append("🇲🇽 Ruta MX")
+ 
     if not tab_labels:
         return
-
+ 
     with st.expander("🔍 Ver Desglose por Tramo", expanded=False):
-        tabs = st.tabs(tab_labels)
-
-        # ── Americana ────────────────────────────────────────────────────────
+        if len(tab_labels) == 1:
+            tabs = [st.container()]
+        else:
+            tabs = st.tabs(tab_labels)
+ 
+        idx = 0
+ 
+        # ── Tramo Americano ───────────────────────────────────────────────────
         if "🇺🇸 Ruta Americana" in tab_labels:
-            with tabs[tab_labels.index("🇺🇸 Ruta Americana")]:
-                ci, cc = st.columns(2)
-                with ci:
+            with tabs[idx]:
+                c1, c2 = st.columns(2)
+                with c1:
                     st.markdown("**Ingresos**")
-                    if modalidad == "Desglosada":
+                    if modalidad == "Desglosada" and cxm_flete > 0:
                         ml = _s("Miles_Load")
-                        st.caption(f"Flete:  **${ml * cxm_flete:,.2f}**")
-                        st.caption(f"Fuel:   **${ml * cxm_fuel:,.2f}**")
+                        st.caption(f"Flete ({ml:.0f} mi × ${cxm_flete:.4f}): **${_s('Flete_USA'):,.2f}**")
+                        if cxm_fuel > 0:
+                            st.caption(f"Fuel  ({ml:.0f} mi × ${cxm_fuel:.4f}): **${_s('Fuel'):,.2f}**")
                     else:
-                        st.caption(f"Tarifa Flat: **${_s('Flete_USA'):,.2f}**")
+                        if _s("Flete_USA") > 0:
+                            st.caption(f"Flete USA: **${_s('Flete_USA'):,.2f}**")
+                        if _s("Fuel") > 0:
+                            st.caption(f"Fuel: **${_s('Fuel'):,.2f}**")
                     if _s("Extras_Ingreso") > 0:
                         st.caption(f"Extras cobrados: **${_s('Extras_Ingreso'):,.2f}**")
                     st.markdown(f"**Total: ${ing_ame:,.2f}**")
-                with cc:
+                with c2:
                     st.markdown("**Costos**")
                     for label, valor in filas_costo_americana:
                         st.caption(f"{label}: **${valor:,.2f}**")
                     st.markdown(f"**Total: ${cos_ame:,.2f}**")
-                st.divider()
-                col_ut = "#16a34a" if ut_ame >= 0 else "#dc2626"
-                pct    = (ut_ame / ing_ame * 100) if ing_ame > 0 else 0.0
-                st.metric(
-                    "Utilidad Bruta Americana",
-                    f"${ut_ame:,.2f}",
-                    f"{pct:.1f}%",
-                    delta_color="normal" if ut_ame >= 0 else "inverse",
+                color_ut = "#059669" if ut_ame >= 0 else "#DC2626"
+                st.markdown(
+                    f'<div style="margin-top:0.5rem;padding:0.5rem 0.75rem;'
+                    f'background:#F9FAFB;border-radius:8px;border-left:3px solid {color_ut};">'
+                    f'Utilidad Americana: <b style="color:{color_ut};">${ut_ame:,.2f}</b>'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
-
-        # ── Cruce ────────────────────────────────────────────────────────────
+            idx += 1
+ 
+        # ── Tramo Cruce ───────────────────────────────────────────────────────
         if "🛂 Cruce" in tab_labels:
-            with tabs[tab_labels.index("🛂 Cruce")]:
-                ci2, cc2 = st.columns(2)
-                with ci2:
+            with tabs[idx]:
+                c1, c2 = st.columns(2)
+                with c1:
                     st.markdown("**Ingresos**")
-                    st.caption(f"Ingreso Cruce: **${ing_cruce:,.2f}**")
+                    tipo_cruce = str(r.get("Tipo_Cruce", ""))
+                    st.caption(f"Ingreso Cruce{' (' + tipo_cruce + ')' if tipo_cruce else ''}: **${ing_cruce:,.2f}**")
                     st.markdown(f"**Total: ${ing_cruce:,.2f}**")
-                with cc2:
+                with c2:
                     st.markdown("**Costos**")
-                    tipo_cruce = r.get("Tipo_Cruce", "")
-                    st.caption(f"Costo Cruce ({tipo_cruce}): **${cos_cruce:,.2f}**")
+                    if cos_cruce > 0:
+                        st.caption(f"Costo Cruce: **${cos_cruce:,.2f}**")
+                    else:
+                        st.caption("Cruce propio — sin costo directo")
                     st.markdown(f"**Total: ${cos_cruce:,.2f}**")
-                st.divider()
-                pct_c = (ut_cruc / ing_cruce * 100) if ing_cruce > 0 else 0.0
-                st.metric(
-                    "Utilidad Bruta Cruce",
-                    f"${ut_cruc:,.2f}",
-                    f"{pct_c:.1f}%",
-                    delta_color="normal" if ut_cruc >= 0 else "inverse",
+                color_ut = "#059669" if ut_cruc >= 0 else "#DC2626"
+                st.markdown(
+                    f'<div style="margin-top:0.5rem;padding:0.5rem 0.75rem;'
+                    f'background:#F9FAFB;border-radius:8px;border-left:3px solid {color_ut};">'
+                    f'Utilidad Cruce: <b style="color:{color_ut};">${ut_cruc:,.2f}</b>'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
-
-        # ── MX ───────────────────────────────────────────────────────────────
-        if "🇲🇽 Ruta Mexicana" in tab_labels:
-            with tabs[tab_labels.index("🇲🇽 Ruta Mexicana")]:
-                ci3, cc3 = st.columns(2)
-                with ci3:
-                    st.markdown("**Ingresos**")
+            idx += 1
+ 
+        # ── Tramo MX ──────────────────────────────────────────────────────────
+        if "🇲🇽 Ruta MX" in tab_labels:
+            with tabs[idx]:
+                sufijo = " (conv. a USD)" if moneda_mx == "MXP" else ""
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**Ingresos{sufijo}**")
                     st.caption(f"Ingreso MX: **${ing_mx:,.2f}**")
                     st.markdown(f"**Total: ${ing_mx:,.2f}**")
-                with cc3:
-                    st.markdown("**Costos**")
-                    st.caption(f"Costo MX: **${cos_mx:,.2f}**")
+                with c2:
+                    st.markdown(f"**Costos{sufijo}**")
+                    if cos_mx > 0:
+                        st.caption(f"Costo MX: **${cos_mx:,.2f}**")
                     st.markdown(f"**Total: ${cos_mx:,.2f}**")
-                st.divider()
-                pct_m = (ut_mx / ing_mx * 100) if ing_mx > 0 else 0.0
-                st.metric(
-                    "Utilidad Bruta MX",
-                    f"${ut_mx:,.2f}",
-                    f"{pct_m:.1f}%",
-                    delta_color="normal" if ut_mx >= 0 else "inverse",
+                color_ut = "#059669" if ut_mx >= 0 else "#DC2626"
+                st.markdown(
+                    f'<div style="margin-top:0.5rem;padding:0.5rem 0.75rem;'
+                    f'background:#F9FAFB;border-radius:8px;border-left:3px solid {color_ut};">'
+                    f'Utilidad MX: <b style="color:{color_ut};">${ut_mx:,.2f}</b>'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 22. RUTA VISUAL DE NODOS (simulador — todas las empresas)
+# ─────────────────────────────────────────────────────────────────────────────
+def ruta_visual_nodos(pasos: list[dict]) -> None:
+    """
+    Renderiza una secuencia visual de ciudades con flechas para el simulador.
+    Funciona para las 4 empresas. El helpers/_shared de cada empresa construye
+    la lista de pasos y llama a esta función.
+ 
+    Cada paso en la lista es un dict:
+        {
+            "icono":    str,   # emoji del nodo (🇲🇽 🇺🇸 🛂 ⬜ 🔁 🏁 📍)
+            "ciudad":   str,   # nombre de la ciudad/estado
+            "etiqueta": str,   # texto secundario (ej. "Origen USA (NB)")
+        }
+        O el string especial "→" para insertar una flecha entre nodos.
+ 
+    Ejemplo de uso en simulador.py de cualquier empresa:
+        from ui.components import ruta_visual_nodos, section_header
+        section_header("🗺️", "Secuencia del Road Trip")
+        pasos = [
+            {"icono": "🇲🇽", "ciudad": "MONTERREY, NL", "etiqueta": "Origen MX"},
+            "→",
+            {"icono": "🛂", "ciudad": "LAREDO, TX",    "etiqueta": "Cruce"},
+            "→",
+            {"icono": "🇺🇸", "ciudad": "DALLAS, TX",   "etiqueta": "Destino USA"},
+        ]
+        ruta_visual_nodos(pasos)
+ 
+    Para Igloo y Picus (solo MX + cruce):
+        pasos = [
+            {"icono": "🇲🇽", "ciudad": origen,  "etiqueta": "Origen"},
+            "→",
+            {"icono": "📍",  "ciudad": destino, "etiqueta": "Destino"},
+        ]
+        ruta_visual_nodos(pasos)
+    """
+    nodos_html = ""
+    flecha_html = '<div style="font-size:1.3rem;padding:0 4px;align-self:center;color:#6B7280;">→</div>'
+ 
+    for paso in pasos:
+        if paso == "→":
+            nodos_html += flecha_html
+        else:
+            icono    = paso.get("icono", "📍")
+            ciudad   = paso.get("ciudad", "")
+            etiqueta = paso.get("etiqueta", "")
+            nodos_html += (
+                f'<div style="text-align:center;min-width:90px;">'
+                f'<div style="font-size:1.4rem;">{icono}</div>'
+                f'<div style="font-weight:700;font-size:0.78rem;color:{PGL_NAVY};">{ciudad}</div>'
+                f'<div style="font-size:0.68rem;color:#6B7280;">{etiqueta}</div>'
+                f'</div>'
+            )
+ 
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;align-items:center;'
+        f'gap:4px;padding:1rem;background:#F9FAFB;'
+        f'border-radius:10px;border:1px solid #E5E7EB;margin-bottom:1rem;">'
+        f'{nodos_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
