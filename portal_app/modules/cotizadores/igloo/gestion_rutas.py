@@ -78,12 +78,12 @@ def render():
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button("🔄 Recargar", key="ig_gest_reload"):
-            load_rutas_igloo_cached.clear()
+            load_rutas_igloo.clear()
             st.rerun()
     with c2:
         st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
-    df = load_rutas_igloo_cached(TABLE_RUTAS)
+    df = load_rutas_igloo(TABLE_RUTAS)
     if df.empty:
         alert("warn", "⚠️ No hay rutas registradas.")
         return
@@ -148,7 +148,7 @@ def render():
                     try:
                         supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", idx_del).execute()
                         alert("success", f"✅ Ruta **{idx_del}** eliminada.")
-                        load_rutas_igloo_cached.clear()
+                        load_rutas_igloo.clear()
                         cargar_pool_ubicaciones_igloo.clear()
                         st.rerun()
                     except Exception as ex:
@@ -609,7 +609,7 @@ def render():
                     supabase.table(TABLE_RUTAS).update(ruta_actualizada).eq("ID_Ruta", d["id_ruta"]).execute()
                     st.session_state.igloo_ruta_editada_id       = d["id_ruta"]
                     st.session_state.igloo_mostrar_modal_edicion = True
-                    load_rutas_igloo_cached.clear()
+                    load_rutas_igloo.clear()
                     cargar_pool_ubicaciones_igloo.clear()
                     st.rerun()
                 except Exception as e:
