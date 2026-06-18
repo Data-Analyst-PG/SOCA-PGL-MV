@@ -125,7 +125,7 @@ def guardar_datos_generales(valores: dict) -> None:
 # Tipos de ruta válidos
 # ─────────────────────────────────────────────
 TIPOS_RUTA = ["IMPORTACION", "EXPORTACION", "VACIO", "DOM MEX"]
-TIPOS_CON_INDIRECTOS = ["IMPORTACION", "EXPORTACION", "DOM MEX", "VACIO"]
+TIPOS_CON_INDIRECTOS = ["IMPORTACION", "EXPORTACION", "DOM MEX"]
 
 
 # ─────────────────────────────────────────────
@@ -421,18 +421,16 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
 
     divider()
 
-    semaforos_ruta(
-        {
-            "Pct_Costo_Directo":   pct_cd,
-            "Pct_Ut_Bruta":        pct_bruta,
-            "Pct_Costo_Indirecto": pct_ind,
-            "Pct_Ut_Neta":         pct_neta,
-        },
-        max_costo_directo=50.0,
-        min_ut_bruta=50.0,
-        max_costo_indirecto=35.0,
-        min_ut_neta=15.0,
-    )
+    semaforos_ruta({
+        "Pct_Costo_Directo":   pct_cd,
+        "Pct_Ut_Bruta":        pct_bruta,
+        "Pct_Costo_Indirecto": pct_ind,
+        "Pct_Ut_Neta":         pct_neta,
+        "umbral_cd": 50.0,
+        "umbral_ub": 50.0,
+        "umbral_ci": 35.0,
+        "umbral_un": 15.0,
+    })
 
 
 # ─────────────────────────────────────────────
