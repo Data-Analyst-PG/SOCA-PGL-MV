@@ -14,14 +14,10 @@ Layout homologado con Lincoln:
 
 from __future__ import annotations
 
-import os
-import re
-from datetime import datetime, timezone
-
 import streamlit as st
 from streamlit_searchbox import st_searchbox
 
-from services.supabase_client import get_supabase_client, get_authed_client, current_user
+from services.supabase_client import get_supabase_client, current_user
 from .helpers import (
     DEFAULTS, TIPOS_RUTA,
     cargar_datos_generales, guardar_datos_generales,
@@ -30,18 +26,10 @@ from .helpers import (
     calcular_costos_fijos, calcular_extras,
     calcular_utilidades,
     generar_nuevo_id, get_profile_name, normalizar_texto,
-    _datos_generales_path,
-    cargar_pool_ubicaciones_igloo,
-    buscar_ubicacion_igloo,
+    now_iso, _datos_generales_path,
+    cargar_pool_ubicaciones_igloo, buscar_ubicacion_igloo,
 )
 from ui.components import section_header, alert, divider, mostrar_resultados_ruta
-
-
-# ─────────────────────────────────────────────
-# Fecha Automatica
-# ─────────────────────────────────────────────
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # ─────────────────────────────────────────────
@@ -430,7 +418,7 @@ def render():
                 "Rendimiento Camion":     float(valores.get("Rendimiento Camion", 2.5)),
                 "Rendimiento Termo":      float(valores.get("Rendimiento Termo", 3.0)),
                 "created_by":             nombre_usuario,
-                "created_at":             _now_iso(),
+                "created_at":             now_iso(),
                 "updated_by":             None,
                 "updated_at":             None,
                 "historial":              [],
