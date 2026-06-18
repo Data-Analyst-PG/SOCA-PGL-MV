@@ -40,6 +40,17 @@ TABLE_RUTAS = "Rutas"
 
 
 # ─────────────────────────────────────────────
+# Función auxiliar excel rutas— solo usada en este módulo
+# ─────────────────────────────────────────────
+def _to_excel_bytes(df: pd.DataFrame) -> bytes:
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        df.to_excel(w, index=False, sheet_name="Rutas Igloo")
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────
 # MODAL CONFIRMACIÓN EDICIÓN
 # ─────────────────────────────────────────────
 @st.dialog("✅ Ruta Actualizada Exitosamente", width="small")
