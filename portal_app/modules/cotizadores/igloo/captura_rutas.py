@@ -440,7 +440,7 @@ def render():
                 supabase.table(TABLE_RUTAS).insert(nueva_ruta).execute()
                 _get_last_id_igloo_cached.clear()
                 # Refrescar pool para incluir las nuevas ubicaciones
-                _cargar_pool_ubicaciones.clear()
+                cargar_pool_ubicaciones_igloo.clear()
                 st.session_state.igloo_ruta_guardada_id = nuevo_id
                 st.session_state.igloo_mostrar_modal    = True
                 st.rerun()
