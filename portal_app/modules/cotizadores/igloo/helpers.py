@@ -11,11 +11,12 @@ Regla de negocio:
 """
 
 import os
-import pandas as pd
+import re as _re
 import numpy as np
+import pandas as pd
 import streamlit as st
 
-
+from ui.components import section_header, kpi_row, semaforos_ruta, divider
 # ─────────────────────────────────────────────
 # Funciones de seguridad numérica
 # ─────────────────────────────────────────────
@@ -263,6 +264,9 @@ def calcular_utilidades(ingreso_total: float, costo_total: float, tipo: str):
         "utilidad_neta":     utilidad_neta,
         "porcentaje_bruta":  pct_bruta,
         "porcentaje_neta":   pct_neta,
+        # ── Campos canónicos (alias + totales) ───────────────────────────────
+        "ingreso_total":  ingreso_total,
+        "costo_directo":  costo_total,   # alias canónico de costo_total
         # ── Campos para semaforos_ruta() de components.py ────────────────────
         "Pct_Costo_Directo":   pct_cd,
         "Pct_Ut_Bruta":        pct_bruta,
@@ -272,6 +276,11 @@ def calcular_utilidades(ingreso_total: float, costo_total: float, tipo: str):
         "Color_Directo":   "#DC2626" if pct_cd    > 50.0 else "#059669",
         "Color_Indirecto": "#D97706" if pct_ind   > 35.0 else "#059669",
         "Color_Ut_Neta":   "#DC2626" if pct_neta  < 15.0 else "#059669",
+        # ── Umbrales Igloo — viajan con el resultado ─────────────────────────
+        "umbral_cd": 50.0,
+        "umbral_ub": 50.0,
+        "umbral_ci": 35.0,
+        "umbral_un": 15.0,
     }
 
 
@@ -322,8 +331,6 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
     tc_usd: tipo de cambio activo. Si > 0, la tarifa sugerida también
             se muestra convertida a USD.
     """
-    import streamlit as st
-
     # ── Tarifa sugerida: costo = 50% del ingreso → ingreso = costo × 2 ──
     tarifa_mxp = costo_total * 2.0
     tarifa_usd = (tarifa_mxp / tc_usd) if tc_usd > 0 else 0.0
@@ -374,7 +381,7 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
                 unsafe_allow_html=True,
             )
 
-    from ui.components import section_header, kpi_row, semaforos_ruta, divider
+
 
     section_header("📊", "Resultado del Cálculo")
 
@@ -426,6 +433,58 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
         max_costo_indirecto=35.0,
         min_ut_neta=15.0,
     )
+
+
+# ─────────────────────────────────────────────
+# Funciones compartidas (antes vivían en los módulos como privadas)
+# ─────────────────────────────────────────────
+
+@st.cache_data(show_spinner=False, ttl=60)
+def _get_last_id_igloo_cached(table_name: str):
+    from services.supabase_client import get_supabase_client
+    supabase = get_supabase_client()
+    if supabase is None:
+        return None
+    resp = supabase.table(table_name).select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
+    if resp.data:
+        return resp.data[0].get("ID_Ruta")
+    return None
+
+
+def generar_nuevo_id(table_name: str) -> str:
+    """Genera el siguiente ID_Ruta (IG000001, IG000002, ...) para la tabla dada."""
+    ultimo = _get_last_id_igloo_cached(table_name)
+    if ultimo and isinstance(ultimo, str) and len(ultimo) >= 3:
+        try:
+            numero = int(ultimo[2:]) + 1
+        except Exception:
+            numero = 1
+    else:
+        numero = 1
+    return f"IG{numero:06d}"
+
+
+def get_profile_name(user_id: str) -> str:
+    """Obtiene el full_name del perfil dado su user_id."""
+    if not user_id:
+        return ""
+    try:
+        from services.supabase_client import get_authed_client
+        supabase = get_authed_client()
+        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
+        return (res.data or {}).get("full_name") or ""
+    except Exception:
+        return ""
+
+
+def normalizar_texto(texto: str) -> str:
+    """Normaliza texto a mayúsculas, sin espacios dobles ni comas mal formateadas."""
+    if not texto:
+        return ""
+    texto = str(texto).upper().strip()
+    texto = _re.sub(r'\s+', ' ', texto)
+    texto = _re.sub(r'\s*,\s*', ', ', texto)
+    return texto
 
 
 # ─────────────────────────────────────────────
