@@ -381,10 +381,6 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
                 unsafe_allow_html=True,
             )
 
-
-
-    section_header("📊", "Resultado del Cálculo")
-
     pct_cd  = (costo_total       / ingreso_total * 100) if ingreso_total else 0
     pct_ind = (costos_indirectos / ingreso_total * 100) if ingreso_total else 0
 
