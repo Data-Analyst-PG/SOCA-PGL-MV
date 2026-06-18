@@ -31,6 +31,8 @@ from .helpers import (
     calcular_utilidades,
     generar_nuevo_id, get_profile_name, normalizar_texto,
     _datos_generales_path,
+    cargar_pool_ubicaciones_igloo,
+    buscar_ubicacion_igloo,
 )
 from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
@@ -40,49 +42,6 @@ from ui.components import section_header, alert, divider, mostrar_resultados_rut
 # ─────────────────────────────────────────────
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-# ─────────────────────────────────────────────
-# POOL DE UBICACIONES (Origen + Destino unidos)
-# ─────────────────────────────────────────────
-@st.cache_data(show_spinner=False, ttl=120)
-def _cargar_pool_ubicaciones() -> list[str]:
-    """
-    Une y deduplica todos los valores de Origen y Destino de la tabla Rutas.
-    Así si una ciudad solo existe como Origen, también aparece al escribir en Destino.
-    """
-    sb = get_supabase_client()
-    if sb is None:
-        return []
-    try:
-        resp = sb.table("Rutas").select("Origen, Destino").execute()
-        ubicaciones: set[str] = set()
-        for row in (resp.data or []):
-            o = (row.get("Origen") or "").strip().upper()
-            d = (row.get("Destino") or "").strip().upper()
-            if o:
-                ubicaciones.add(o)
-            if d:
-                ubicaciones.add(d)
-        return sorted(ubicaciones)
-    except Exception:
-        return []
-
-
-def _buscar_ubicacion(termino: str) -> list[str]:
-    """
-    Filtra el pool por lo que el usuario está escribiendo.
-    Si no hay coincidencias, devuelve el término mismo como opción
-    para que el usuario pueda confirmar una ubicación nueva sin que desaparezca.
-    """
-    if not termino or len(termino) < 2:
-        return []
-    termino_upper = termino.upper()
-    pool = _cargar_pool_ubicaciones()
-    coincidencias = [u for u in pool if termino_upper in u]
-    if not coincidencias:
-        return [termino_upper]
-    return coincidencias
 
 
 # ─────────────────────────────────────────────
@@ -179,7 +138,7 @@ def render():
     c1, c2 = st.columns(2)
     with c1:
         origen_sel = st_searchbox(
-            _buscar_ubicacion,
+            _buscar_ubicacion_igloo,
             label="📍 Origen",
             placeholder="Escribe para buscar o capturar nueva...",
             key=f"igloo_origen_{fk}",
@@ -187,7 +146,7 @@ def render():
         )
     with c2:
         destino_sel = st_searchbox(
-            _buscar_ubicacion,
+            _buscar_ubicacion_igloo,
             label="📍 Destino",
             placeholder="Escribe para buscar o capturar nueva...",
             key=f"igloo_destino_{fk}",
