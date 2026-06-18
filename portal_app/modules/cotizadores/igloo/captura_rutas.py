@@ -22,17 +22,17 @@ import streamlit as st
 from streamlit_searchbox import st_searchbox
 
 from services.supabase_client import get_supabase_client, get_authed_client, current_user
-from ui.components import section_header, alert, divider
-
 from .helpers import (
     DEFAULTS, TIPOS_RUTA,
     cargar_datos_generales, guardar_datos_generales,
     safe_number, safe_float,
     calcular_sueldo_y_bono, calcular_diesel,
     calcular_costos_fijos, calcular_extras,
-    calcular_utilidades, mostrar_resultados_utilidad,
+    calcular_utilidades,
+    generar_nuevo_id, get_profile_name, normalizar_texto,
     _datos_generales_path,
 )
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
 
 # ─────────────────────────────────────────────
