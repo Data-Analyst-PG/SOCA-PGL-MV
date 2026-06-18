@@ -486,14 +486,15 @@ def normalizar_texto(texto: str) -> str:
 
 
 # ─────────────────────────────────────────────
-# POOL DE UBICACIONES (Origen + Destino unidos)
+# Pool de ubicaciones — compartido por captura y gestión
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=120)
-def _cargar_pool_ubicaciones() -> list[str]:
+def cargar_pool_ubicaciones_igloo() -> list[str]:
     """
-    Une y deduplica todos los valores de Origen y Destino de la tabla Rutas.
-    Así si una ciudad solo existe como Origen, también aparece al escribir en Destino.
+    Une y deduplica Origen + Destino de la tabla Rutas.
+    Compartido por captura_rutas y gestion_rutas.
     """
+    from services.supabase_client import get_supabase_client
     sb = get_supabase_client()
     if sb is None:
         return []
@@ -512,16 +513,16 @@ def _cargar_pool_ubicaciones() -> list[str]:
         return []
 
 
-def _buscar_ubicacion(termino: str) -> list[str]:
+def buscar_ubicacion_igloo(termino: str) -> list[str]:
     """
-    Filtra el pool por lo que el usuario está escribiendo.
-    Si no hay coincidencias, devuelve el término mismo como opción
-    para que el usuario pueda confirmar una ubicación nueva sin que desaparezca.
+    Filtra el pool por lo que el usuario escribe.
+    Si no hay coincidencias, devuelve el término como opción
+    para permitir ubicaciones nuevas sin que el campo se limpie.
     """
     if not termino or len(termino) < 2:
         return []
     termino_upper = termino.upper()
-    pool = _cargar_pool_ubicaciones()
+    pool = cargar_pool_ubicaciones_igloo()
     coincidencias = [u for u in pool if termino_upper in u]
     if not coincidencias:
         return [termino_upper]
