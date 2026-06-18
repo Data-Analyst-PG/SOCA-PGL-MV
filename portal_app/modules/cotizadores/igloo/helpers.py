@@ -486,6 +486,49 @@ def normalizar_texto(texto: str) -> str:
 
 
 # ─────────────────────────────────────────────
+# POOL DE UBICACIONES (Origen + Destino unidos)
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def _cargar_pool_ubicaciones() -> list[str]:
+    """
+    Une y deduplica todos los valores de Origen y Destino de la tabla Rutas.
+    Así si una ciudad solo existe como Origen, también aparece al escribir en Destino.
+    """
+    sb = get_supabase_client()
+    if sb is None:
+        return []
+    try:
+        resp = sb.table("Rutas").select("Origen, Destino").execute()
+        ubicaciones: set[str] = set()
+        for row in (resp.data or []):
+            o = (row.get("Origen") or "").strip().upper()
+            d = (row.get("Destino") or "").strip().upper()
+            if o:
+                ubicaciones.add(o)
+            if d:
+                ubicaciones.add(d)
+        return sorted(ubicaciones)
+    except Exception:
+        return []
+
+
+def _buscar_ubicacion(termino: str) -> list[str]:
+    """
+    Filtra el pool por lo que el usuario está escribiendo.
+    Si no hay coincidencias, devuelve el término mismo como opción
+    para que el usuario pueda confirmar una ubicación nueva sin que desaparezca.
+    """
+    if not termino or len(termino) < 2:
+        return []
+    termino_upper = termino.upper()
+    pool = _cargar_pool_ubicaciones()
+    coincidencias = [u for u in pool if termino_upper in u]
+    if not coincidencias:
+        return [termino_upper]
+    return coincidencias
+
+
+# ─────────────────────────────────────────────
 # Filtros y label — compartidos por consulta_ruta,
 # gestion_rutas y simulador para evitar keys duplicadas
 # ─────────────────────────────────────────────
