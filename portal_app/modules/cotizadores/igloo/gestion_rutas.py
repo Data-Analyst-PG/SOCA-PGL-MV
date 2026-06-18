@@ -12,7 +12,6 @@ Diseño homologado con Lincoln y Set Logis:
 
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -20,8 +19,8 @@ import pandas as pd
 import streamlit as st
 from streamlit_searchbox import st_searchbox
 
-from services.supabase_client import get_supabase_client, get_authed_client, current_user
-from ui.components import section_header, alert, divider
+from services.supabase_client import get_supabase_client, current_user
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
 from .helpers import (
     DEFAULTS, TIPOS_RUTA,
@@ -29,7 +28,9 @@ from .helpers import (
     safe_number, safe_float,
     calcular_sueldo_y_bono, calcular_diesel,
     calcular_costos_fijos, calcular_extras,
-    calcular_utilidades, mostrar_resultados_utilidad,
+    calcular_utilidades,
+    get_profile_name, normalizar_texto,
+    cargar_pool_ubicaciones_igloo, buscar_ubicacion_igloo,
     filtrar_rutas_igloo, label_ruta_igloo,
 )
 
@@ -38,93 +39,10 @@ TABLE_RUTAS = "Rutas"
 
 
 # ─────────────────────────────────────────────
-# HELPERS
+# FECHA AUTOMÁTICA
 # ─────────────────────────────────────────────
-def _get_profile_name(user_id: str) -> str:
-    if not user_id:
-        return ""
-    try:
-        supabase = get_authed_client()
-        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
-        return (res.data or {}).get("full_name") or ""
-    except Exception:
-        return ""
-
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-@st.cache_data(show_spinner=False, ttl=120)
-def _load_rutas_igloo_cached(table_name: str) -> pd.DataFrame:
-    supabase = get_supabase_client()
-    if supabase is None:
-        return pd.DataFrame()
-    try:
-        resp = supabase.table(table_name).select("*").order("Fecha", desc=True).execute()
-        if resp.data:
-            return pd.DataFrame(resp.data)
-        return pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-
-def _to_excel_bytes(df: pd.DataFrame) -> bytes:
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df.to_excel(w, index=False, sheet_name="Rutas Igloo")
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def normalizar_texto(texto):
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = re.sub(r'\s+', ' ', texto)
-    texto = re.sub(r'\s*,\s*', ', ', texto)
-    return texto
-
-
-# ─────────────────────────────────────────────
-# POOL DE UBICACIONES — mismo que captura_rutas
-# ─────────────────────────────────────────────
-@st.cache_data(show_spinner=False, ttl=120)
-def _cargar_pool_ubicaciones() -> list[str]:
-    """
-    Une y deduplica todos los valores de Origen y Destino de la tabla Rutas.
-    """
-    sb = get_supabase_client()
-    if sb is None:
-        return []
-    try:
-        resp = sb.table(TABLE_RUTAS).select("Origen, Destino").execute()
-        ubicaciones: set[str] = set()
-        for row in (resp.data or []):
-            o = (row.get("Origen") or "").strip().upper()
-            d = (row.get("Destino") or "").strip().upper()
-            if o:
-                ubicaciones.add(o)
-            if d:
-                ubicaciones.add(d)
-        return sorted(ubicaciones)
-    except Exception:
-        return []
-
-
-def _buscar_ubicacion(termino: str) -> list[str]:
-    """
-    Filtra el pool. Si no hay coincidencias devuelve el término como opción
-    para permitir capturar ubicaciones nuevas sin que el campo se limpie.
-    """
-    if not termino or len(termino) < 2:
-        return []
-    termino_upper = termino.upper()
-    pool = _cargar_pool_ubicaciones()
-    coincidencias = [u for u in pool if termino_upper in u]
-    if not coincidencias:
-        return [termino_upper]
-    return coincidencias
 
 
 # ─────────────────────────────────────────────
@@ -155,7 +73,7 @@ def render():
 
     u = current_user() or {}
     user_id        = u.get("id") or u.get("sub") or ""
-    nombre_usuario = _get_profile_name(user_id) or u.get("email") or "Desconocido"
+    nombre_usuario = get_profile_name(user_id) or u.get("email") or "Desconocido"
 
     st.session_state.setdefault("igloo_revisar_edicion", False)
 
@@ -237,7 +155,7 @@ def render():
                         supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", idx_del).execute()
                         alert("success", f"✅ Ruta **{idx_del}** eliminada.")
                         _load_rutas_igloo_cached.clear()
-                        _cargar_pool_ubicaciones.clear()
+                        cargar_pool_ubicaciones_igloo.clear()
                         st.rerun()
                     except Exception as ex:
                         alert("error", f"❌ Error al eliminar: {ex}")
@@ -357,7 +275,7 @@ def render():
         c1, c2 = st.columns(2)
         with c1:
             origen_sel = st_searchbox(
-                _buscar_ubicacion,
+                buscar_ubicacion_igloo,
                 label="📍 Origen",
                 placeholder=f"Actual: {origen_actual} — escribe para cambiar...",
                 key=f"ig_ed_origen_{idx_sel}",
@@ -365,7 +283,7 @@ def render():
             )
         with c2:
             destino_sel = st_searchbox(
-                _buscar_ubicacion,
+                buscar_ubicacion_igloo,
                 label="📍 Destino",
                 placeholder=f"Actual: {destino_actual} — escribe para cambiar...",
                 key=f"ig_ed_destino_{idx_sel}",
@@ -577,13 +495,7 @@ def render():
             }
 
             divider()
-            mostrar_resultados_utilidad(
-                st, ingreso_total, costo_total,
-                util["utilidad_bruta"], util["costos_indirectos"],
-                util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
-                tipo=d["tipo"],
-                tc_usd=tc_usd,
-            )
+            mostrar_resultados_ruta(util)
 
         # ══════════════════════════════════════════════════════════
         # GUARDAR CAMBIOS
@@ -704,7 +616,7 @@ def render():
                     st.session_state.igloo_ruta_editada_id       = d["id_ruta"]
                     st.session_state.igloo_mostrar_modal_edicion = True
                     _load_rutas_igloo_cached.clear()
-                    _cargar_pool_ubicaciones.clear()
+                    cargar_pool_ubicaciones_igloo.clear()
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al actualizar la ruta: {e}")
