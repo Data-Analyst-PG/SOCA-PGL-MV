@@ -12,7 +12,6 @@ Diseño homologado con Lincoln y Set Logis:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from io import BytesIO
 
 import pandas as pd
@@ -29,20 +28,14 @@ from .helpers import (
     calcular_sueldo_y_bono, calcular_diesel,
     calcular_costos_fijos, calcular_extras,
     calcular_utilidades,
-    get_profile_name, normalizar_texto,
+    get_profile_name, normalizar_texto, now_iso,
+    load_rutas_igloo,
     cargar_pool_ubicaciones_igloo, buscar_ubicacion_igloo,
     filtrar_rutas_igloo, label_ruta_igloo,
 )
 
 
 TABLE_RUTAS = "Rutas"
-
-
-# ─────────────────────────────────────────────
-# FECHA AUTOMÁTICA
-# ─────────────────────────────────────────────
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # ─────────────────────────────────────────────
@@ -84,12 +77,12 @@ def render():
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button("🔄 Recargar", key="ig_gest_reload"):
-            _load_rutas_igloo_cached.clear()
+            load_rutas_igloo_cached.clear()
             st.rerun()
     with c2:
         st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
-    df = _load_rutas_igloo_cached(TABLE_RUTAS)
+    df = load_rutas_igloo_cached(TABLE_RUTAS)
     if df.empty:
         alert("warn", "⚠️ No hay rutas registradas.")
         return
@@ -154,7 +147,7 @@ def render():
                     try:
                         supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", idx_del).execute()
                         alert("success", f"✅ Ruta **{idx_del}** eliminada.")
-                        _load_rutas_igloo_cached.clear()
+                        load_rutas_igloo_cached.clear()
                         cargar_pool_ubicaciones_igloo.clear()
                         st.rerun()
                     except Exception as ex:
@@ -514,7 +507,7 @@ def render():
                     historial_anterior = []
 
                 nueva_entrada = {
-                    "timestamp": _now_iso(),
+                    "timestamp": now_iso(),
                     "usuario":   nombre_usuario,
                     "motivo":    d["motivo"],
                     "cambios_anteriores": {
@@ -615,7 +608,7 @@ def render():
                     supabase.table(TABLE_RUTAS).update(ruta_actualizada).eq("ID_Ruta", d["id_ruta"]).execute()
                     st.session_state.igloo_ruta_editada_id       = d["id_ruta"]
                     st.session_state.igloo_mostrar_modal_edicion = True
-                    _load_rutas_igloo_cached.clear()
+                    load_rutas_igloo_cached.clear()
                     cargar_pool_ubicaciones_igloo.clear()
                     st.rerun()
                 except Exception as e:
