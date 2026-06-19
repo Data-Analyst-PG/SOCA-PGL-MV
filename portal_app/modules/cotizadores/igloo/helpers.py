@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 
-from ui.components import section_header, kpi_row, semaforos_ruta, divider
+from ui.components import banner_tarifa_sugerida, kpi_row, semaforos_ruta, divider
 # ─────────────────────────────────────────────
 # Funciones de seguridad numérica
 # ─────────────────────────────────────────────
@@ -350,55 +350,9 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
     tc_usd: tipo de cambio activo. Si > 0, la tarifa sugerida también
             se muestra convertida a USD.
     """
-    # ── Tarifa sugerida: costo = 50% del ingreso → ingreso = costo × 2 ──
-    tarifa_mxp = costo_total * 2.0
-    tarifa_usd = (tarifa_mxp / tc_usd) if tc_usd > 0 else 0.0
-
-    usd_extra = (
-        f"&nbsp;&nbsp;/&nbsp;&nbsp;USD ${tarifa_usd:,.2f}"
-        if tc_usd > 0 else ""
-    )
-
-    if tarifa_mxp > 0:
-        if ingreso_total == 0:
-            st_module.markdown(
-                f"""
-                <div style='background:#fffbeb; border-left:4px solid #f59e0b;
-                            padding:10px 16px; border-radius:8px; margin-bottom:14px;
-                            font-size:0.9rem; color:#92400e;'>
-                    💡 <b>Tarifa sugerida (50% margen):</b>
-                    &nbsp; MXP ${tarifa_mxp:,.2f}{usd_extra}<br>
-                    <span style='font-size:0.78rem; opacity:0.8;'>
-                        El costo directo debe representar el 50% del ingreso total.
-                        TC utilizado: ${tc_usd:,.2f} MXP/USD
-                    </span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            diff     = ingreso_total - tarifa_mxp
-            diff_pct = (diff / tarifa_mxp * 100) if tarifa_mxp else 0
-            color_diff = "#059669" if diff >= 0 else "#dc2626"
-            signo    = "+" if diff >= 0 else ""
-            icon     = "✅" if diff >= 0 else "⚠️"
-            st_module.markdown(
-                f"""
-                <div style='background:#eff6ff; border-left:4px solid #3b82f6;
-                            padding:10px 16px; border-radius:8px; margin-bottom:14px;
-                            font-size:0.9rem; color:#1e40af;'>
-                    📊 <b>Tarifa sugerida (50% margen):</b>
-                    &nbsp; MXP ${tarifa_mxp:,.2f}{usd_extra}
-                    &nbsp;|&nbsp;
-                    {icon} Tu tarifa está
-                    <span style='color:{color_diff}; font-weight:700;'>
-                        {signo}{diff_pct:.1f}% ({signo}${diff:,.2f} MXP)
-                    </span>
-                    vs la sugerida
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    # ── Tarifa sugerida — centralizada en components.py ──
+    tarifa_usd = (costo_total * 2.0 / tc_usd) if tc_usd > 0 else 0.0
+    banner_tarifa_sugerida(costo_total, ingreso_total, 50.0, "MXP", tarifa_usd)
 
     pct_cd  = (costo_total       / ingreso_total * 100) if ingreso_total else 0
     pct_ind = (costos_indirectos / ingreso_total * 100) if ingreso_total else 0
