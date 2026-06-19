@@ -14,6 +14,7 @@
 #   status_badge(texto, tipo)   → devuelve HTML de un badge
 #   divider()                   → separador visual
 #   welcome_banner(nombre, rol, area)
+#   banner_tarifa_sugerida(tarifa_base, ingreso_total, moneda_base, valor_secundario)    
 # ─────────────────────────────────────────────────────────────────────────────
 import streamlit as st
 from ui.theme import PGL_NAVY, PGL_RED, PGL_NAVY_LT, PGL_MUTED, PGL_BORDER, PGL_WHITE
@@ -1118,3 +1119,70 @@ def ruta_visual_nodos(pasos: list[dict]) -> None:
         f'</div>',
         unsafe_allow_html=True,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 23. BANNER DE TARIFA SUGERIDA (cotizadores — todas las empresas)
+# ─────────────────────────────────────────────────────────────────────────────
+def banner_tarifa_sugerida(
+    tarifa_base: float,
+    ingreso_total: float,
+    moneda_base: str = "MXP",
+    valor_secundario: float = 0.0,
+) -> None:
+    """
+    Muestra una banda informativa con la tarifa sugerida al 50% de margen.
+
+    Parámetros (el helper de cada empresa los calcula antes de llamar):
+        tarifa_base       : costo_total × 2  (en la moneda base de la empresa)
+        ingreso_total     : para comparar vs la tarifa sugerida
+        moneda_base       : "MXP" para Igloo/Picus | "USD" para Lincoln/Set Logis
+        valor_secundario  : equivalente en la otra moneda (0 si no aplica)
+                            Igloo/Picus  → tarifa_base / tc_usd
+                            Lincoln/SL   → tarifa_base * tc_usd
+
+    Comportamiento:
+        - Amarilla : ingreso_total == 0  → solo muestra la tarifa sugerida
+        - Azul     : hay ingreso         → compara ingreso vs tarifa sugerida
+        - El valor secundario aparece como texto complementario si > 0
+    """
+    if tarifa_base <= 0:
+        return
+
+    moneda_alt = "USD" if moneda_base == "MXP" else "MXP"
+    sec_html = (
+        f"&nbsp;/&nbsp;{moneda_alt} ${valor_secundario:,.2f}"
+        if valor_secundario > 0 else ""
+    )
+
+    if ingreso_total == 0:
+        st.markdown(
+            f'<div style="background:#fffbeb;border-left:4px solid #f59e0b;'
+            f'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
+            f'font-size:0.9rem;color:#92400e;">'
+            f'💡 <b>Tarifa sugerida (50% margen):</b>&nbsp;'
+            f'{moneda_base} ${tarifa_base:,.2f}{sec_html}<br>'
+            f'<span style="font-size:0.78rem;opacity:0.8;">'
+            f'El costo directo debe representar el 50% del ingreso total.'
+            f'</span></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        diff     = ingreso_total - tarifa_base
+        diff_pct = (diff / tarifa_base * 100) if tarifa_base else 0
+        signo    = "+" if diff >= 0 else ""
+        color    = "#059669" if diff >= 0 else "#DC2626"
+        icono    = "✅" if diff >= 0 else "⚠️"
+        st.markdown(
+            f'<div style="background:#eff6ff;border-left:4px solid #3b82f6;'
+            f'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
+            f'font-size:0.9rem;color:#1e3a5f;">'
+            f'📊 <b>Tarifa sugerida (50% margen):</b>&nbsp;'
+            f'{moneda_base} ${tarifa_base:,.2f}{sec_html}'
+            f'&nbsp;&nbsp;{icono}&nbsp;'
+            f'<span style="color:{color};font-weight:600;">'
+            f'Tu tarifa está {signo}{diff_pct:.1f}%'
+            f'&nbsp;({moneda_base} {signo}${diff:,.2f}) vs la sugerida'
+            f'</span></div>',
+            unsafe_allow_html=True,
+        )
