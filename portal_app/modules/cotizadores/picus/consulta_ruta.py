@@ -25,7 +25,7 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
 from .helpers import (
     cargar_datos_generales,
@@ -33,56 +33,11 @@ from .helpers import (
     safe_float,
     calcular_diesel,
     calcular_utilidades,
-    mostrar_resultados_utilidad,
+    load_rutas_picus,
+    filtrar_rutas_picus,
+    label_ruta_picus,
 )
 
-
-# ─────────────────────────────────────────────
-# Cache
-# ─────────────────────────────────────────────
-
-@st.cache_data(show_spinner=False, ttl=120)
-def _load_rutas_picus_cached() -> pd.DataFrame:
-    supabase = get_supabase_client()
-    if supabase is None:
-        return pd.DataFrame()
-    try:
-        resp = supabase.table("Rutas_Picus").select("*").order("Fecha", desc=True).execute()
-        return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-
-# ─────────────────────────────────────────────
-# Filtros y label
-# ─────────────────────────────────────────────
-
-def _filtrar_rutas(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    with st.expander("\U0001f50e Filtros de busqueda (opcional)", expanded=False):
-        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-        tipos    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())             if "Tipo"    in df.columns else ["Todos"]
-        clientes = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
-        f_tipo   = fc1.selectbox("Tipo",              tipos,    key=f"{prefix}_ftipo")
-        f_cli    = fc2.selectbox("Cliente",           clientes, key=f"{prefix}_fcli")
-        f_ori    = fc3.text_input("Origen contiene",            key=f"{prefix}_fori")
-        f_dest   = fc4.text_input("Destino contiene",           key=f"{prefix}_fdest")
-        f_id     = fc5.text_input("ID contiene",                key=f"{prefix}_fid")
-
-    r = df.copy()
-    if f_tipo  != "Todos": r = r[r["Tipo"].astype(str) == f_tipo]
-    if f_cli   != "Todos": r = r[r["Cliente"].astype(str) == f_cli]
-    if f_ori:  r = r[r["Origen"].astype(str).str.upper().str.contains(f_ori.upper(),   na=False)]
-    if f_dest: r = r[r["Destino"].astype(str).str.upper().str.contains(f_dest.upper(), na=False)]
-    if f_id:   r = r[r["ID_Ruta"].astype(str).str.upper().str.contains(f_id.upper(),   na=False)]
-    return r
-
-
-def _label_ruta(row) -> str:
-    return (
-        f"{row.get('ID_Ruta','')} | {str(row.get('Fecha',''))[:10]} | "
-        f"{row.get('Tipo','')} | {row.get('Cliente','')} | "
-        f"{row.get('Origen','')} -> {row.get('Destino','')}"
-    )
 
 
 # ─────────────────────────────────────────────
@@ -398,14 +353,14 @@ def render() -> None:
 
     rc1, rc2 = st.columns([1, 4])
     with rc1:
-        if st.button("\U0001f504 Recargar rutas", key="pic_cons_reload"):
-            _load_rutas_picus_cached.clear()
+        if st.button("🔄 Recargar rutas", key="pic_cons_reload"):
+            load_rutas_picus.clear()
             st.rerun()
     with rc2:
         st.caption("Carga cacheada 2 min. Usa Recargar si acabas de guardar algo.")
 
     valores = cargar_datos_generales()
-    df      = _load_rutas_picus_cached()
+    df      = load_rutas_picus()
 
     if df.empty:
         alert("warn", "No hay rutas guardadas todavia.")
@@ -416,13 +371,13 @@ def render() -> None:
     if "ID_Ruta" in df.columns:
         df.set_index("ID_Ruta", inplace=True, drop=False)
 
-    df_filtrado = _filtrar_rutas(df, "pic_cons")
+    df_filtrado = filtrar_rutas_picus(df, "pic_cons")
     if df_filtrado.empty:
         alert("info", "No hay rutas que coincidan con los filtros.")
         return
 
     st.caption(f"Rutas disponibles: **{len(df_filtrado)}**")
-    opciones = df_filtrado.apply(_label_ruta, axis=1).tolist()
+    opciones = [label_ruta_picus(row) for _, row in df_filtrado.iterrows()]
     sel      = st.selectbox("Selecciona la ruta a consultar", opciones, key="pic_cons_sel")
     if not sel:
         return
@@ -488,19 +443,15 @@ def render() -> None:
     util = calcular_utilidades(ingreso_total, costo_total, tipo_ruta)
 
     # ── Resultados ───────────────────────────────────────────────
+    # ── Resultados ───────────────────────────────────────────────
     divider()
-    section_header("\U0001f4ca", "Resultado de la Ruta")
-
     tc_usd = safe_float(valores.get("Tipo de cambio USD", 17.5))
-    mostrar_resultados_utilidad(
-        st,
-        ingreso_total, costo_total,
-        util["utilidad_bruta"], util["costos_indirectos"],
-        util["utilidad_neta"], util["porcentaje_bruta"], util["porcentaje_neta"],
-        tipo=tipo_ruta,
-        tc_usd=tc_usd if str(ruta.get("Moneda", "")) == "USD" else 0.0,
-    )
-
+    tc_val = tc_usd if str(ruta.get("Moneda", "")) == "USD" else 0.0
+    util["_tarifa_base"] = costo_total * 2.0
+    util["_valor_sec"]   = (costo_total * 2.0 / tc_val) if tc_val > 0 else 0.0
+    util["_moneda_base"] = "MXP"
+    mostrar_resultados_ruta(util, titulo="📊 Resultado de la Ruta")
+  
     # ── Utilidad en USD (igual que Igloo) ────────────────────────
     moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
     if moneda_flete == "USD":
