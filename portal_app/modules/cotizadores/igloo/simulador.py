@@ -418,16 +418,16 @@ def render():
             if st.button("📄 Generar PDF Profesional", key="btn_gen_pdf", use_container_width=True):
                 try:
                     pdf_path = generar_pdf_vuelta_redonda(
-                        st.session_state.rutas_seleccionadas,
-                        st.session_state.ingreso_total,
-                        st.session_state.costo_total,
-                        st.session_state.utilidad_bruta,
-                        st.session_state.costos_indirectos,
-                        st.session_state.utilidad_neta,
-                        st.session_state.pct_bruta,
-                        st.session_state.pct_neta,
+                        rutas,
+                        res["ingreso_total"],
+                        res["costo_total"],
+                        res["utilidad_bruta"],
+                        res["costos_indirectos"],
+                        res["utilidad_neta"],
+                        res["porcentaje_bruta"],
+                        res["porcentaje_neta"],
                     )
-                    primer_ruta  = st.session_state.rutas_seleccionadas[0]
+                    primer_ruta = rutas[0]
                     nombre_pdf   = f"Simulacion_VueltaRedonda_{primer_ruta.get('ID_Ruta', 'SinID')}.pdf"
                     with open(pdf_path, "rb") as f:
                         st.download_button(
