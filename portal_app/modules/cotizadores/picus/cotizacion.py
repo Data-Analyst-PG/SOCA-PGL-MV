@@ -1,12 +1,28 @@
-from ui.components import section_header, alert, divider
+"""
+cotizacion.py — Cotizador Picus
+Genera cotizaciones en PDF con plantillas PNG de Picus.
+  - Carga rutas directamente de Supabase (sin cache — datos frescos para el PDF)
+  - Filtros opcionales para seleccionar rutas
+  - Configuración de conceptos por ruta (cobrados vs solo visual)
+  - Sistema de plantillas múltiples según número de páginas
+  - Sin lógica de cálculo de utilidades — este módulo solo genera documentos
+"""
+
+
+from __future__ import annotations
+
 import os
 import re
-from pathlib import Path
 from datetime import date
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
-from fpdf import FPDF # pyright: ignore[reportMissingModuleSource]
+from fpdf import FPDF  # pyright: ignore[reportMissingModuleSource]
+
 from services.supabase_client import get_supabase_client
+from ui.components import section_header, alert, divider
+
 
 # ---------------------------
 # ETIQUETAS VISIBLES
