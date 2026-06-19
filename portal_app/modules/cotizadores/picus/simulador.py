@@ -30,70 +30,16 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
 from .helpers import (
     safe_number,
     calcular_costos_indirectos,
     calcular_utilidades_vuelta_redonda,
-    mostrar_resultados_utilidad,
+    load_rutas_picus,
+    filtrar_rutas_picus,
+    label_ruta_picus,
 )
-
-
-# ─────────────────────────────────────────────
-# Cache
-# ─────────────────────────────────────────────
-
-@st.cache_data(show_spinner=False, ttl=120)
-def _load_rutas_picus_cached() -> pd.DataFrame:
-    supabase = get_supabase_client()
-    if supabase is None:
-        return pd.DataFrame()
-    try:
-        resp = supabase.table("Rutas_Picus").select("*").order("Fecha", desc=True).execute()
-        df = pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
-        if df.empty:
-            return df
-        for col in ["Origen", "Destino", "Cliente", "Tipo"]:
-            if col in df.columns:
-                df[col] = df[col].astype(str).str.strip().str.upper()
-        if "Fecha" in df.columns:
-            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
-        df["Ingreso Total"]    = pd.to_numeric(df.get("Ingreso Total",    0), errors="coerce").fillna(0.0)
-        df["Costo_Total_Ruta"] = pd.to_numeric(df.get("Costo_Total_Ruta", 0), errors="coerce").fillna(0.0)
-        return df
-    except Exception:
-        return pd.DataFrame()
-
-
-# ─────────────────────────────────────────────
-# Filtros y label
-# ─────────────────────────────────────────────
-
-def _filtrar_rutas(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        tipos_disp    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist())             if "Tipo"    in df.columns else ["Todos"]
-        clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
-        f_tipo    = fc1.selectbox("Tipo",              tipos_disp,    key=f"{prefix}_ftipo")
-        f_cliente = fc2.selectbox("Cliente",           clientes_disp, key=f"{prefix}_fcli")
-        f_origen  = fc3.text_input("Origen contiene",                 key=f"{prefix}_fori")
-        f_destino = fc4.text_input("Destino contiene",                key=f"{prefix}_fdest")
-
-    r = df.copy()
-    if f_tipo    != "Todos": r = r[r["Tipo"].astype(str) == f_tipo]
-    if f_cliente != "Todos": r = r[r["Cliente"].astype(str) == f_cliente]
-    if f_origen.strip():  r = r[r["Origen"].astype(str).str.upper().str.contains(f_origen.upper(),  na=False)]
-    if f_destino.strip(): r = r[r["Destino"].astype(str).str.upper().str.contains(f_destino.upper(), na=False)]
-    return r
-
-
-def _label(row) -> str:
-    return (
-        f"{row.get('ID_Ruta','')} | {str(row.get('Fecha',''))[:10]} | "
-        f"{row.get('Tipo','')} | {row.get('Cliente','')} | "
-        f"{row.get('Origen','')} → {row.get('Destino','')}"
-    )
 
 
 # ─────────────────────────────────────────────
@@ -377,12 +323,12 @@ def render() -> None:
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button("🔄 Recargar", key="pic_sim_reload"):
-            _load_rutas_picus_cached.clear()
+            load_rutas_picus.clear()
             st.rerun()
     with c2:
         st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
-    df = _load_rutas_picus_cached()
+    df = load_rutas_picus()
     if df.empty:
         alert("warn", "⚠️ No hay rutas registradas en Supabase.")
         return
@@ -392,14 +338,14 @@ def render() -> None:
     section_header("📌", "Selecciona la Ruta Principal")
     st.caption("Filtra las rutas disponibles y selecciona la ruta de ida.")
 
-    df_principal = _filtrar_rutas(df, "pic_sim_p1")
+    df_principal = filtrar_rutas_picus(df, "pic_sim_p1")
 
     if df_principal.empty:
         alert("warn", "No hay rutas que cumplan los filtros.")
         return
 
     st.write(f"**Selecciona una ruta ({len(df_principal)} disponibles)**")
-    opciones_p1 = [_label(row) for _, row in df_principal.iterrows()]
+    opciones_p1 = [label_ruta_picus(row) for _, row in df_principal.iterrows()]
     sel_p1      = st.selectbox("Ruta Principal", opciones_p1, key="pic_sim_sel_p1")
     idx_p1      = opciones_p1.index(sel_p1)
     ruta_p1_row = df_principal.iloc[idx_p1]
@@ -478,13 +424,7 @@ def render() -> None:
 
         # Utilidades globales
         divider()
-        mostrar_resultados_utilidad(
-            st,
-            res["ingreso_total"],    res["costo_total"],
-            res["utilidad_bruta"],   res["costos_indirectos"],
-            res["utilidad_neta"],    res["porcentaje_bruta"],
-            res["porcentaje_neta"],
-        )
+        mostrar_resultados_ruta(res, titulo="📊 Resultado de la Vuelta Redonda")
 
         # Detalle de rutas por columnas (igual que plataforma anterior de Igloo)
         divider()
