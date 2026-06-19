@@ -449,11 +449,7 @@ def render():
     porcentaje_bruta  = util["porcentaje_bruta"]
     porcentaje_neta   = util["porcentaje_neta"]
 
-    mostrar_resultados_utilidad(
-        st, ingreso_total, costo_total,
-        utilidad_bruta, costos_indirectos, utilidad_neta,
-        porcentaje_bruta, porcentaje_neta, tipo=tipo_ruta,
-    )
+    mostrar_resultados_ruta(util)
 
     # ── Utilidad en USD (UI) ──────────────────────────────────────
     moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
