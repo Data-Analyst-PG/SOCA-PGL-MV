@@ -424,7 +424,7 @@ def render() -> None:
 
         # Utilidades globales
         divider()
-        mostrar_resultados_ruta(res, titulo="📊 Resultado de la Vuelta Redonda")
+        mostrar_resultados_ruta(res)
 
         # Detalle de rutas por columnas (igual que plataforma anterior de Igloo)
         divider()
