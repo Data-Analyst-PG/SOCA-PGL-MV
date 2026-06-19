@@ -47,6 +47,10 @@ def safe_float(x, default=0.0):
 # Datos generales (CSV)
 # ─────────────────────────────────────────────
 DEFAULTS = {
+    "umbral_cd": 50.0,   # % máximo costo directo aceptable — Igloo
+    "umbral_ub": 50.0,   # % mínimo utilidad bruta aceptable
+    "umbral_ci": 35.0,   # % máximo costos indirectos aceptable
+    "umbral_un": 15.0,   # % mínimo utilidad neta aceptable
     "Rendimiento Camion": 2.5,
     "Costo Diesel": 24.0,
     "Rendimiento Termo": 3.0,
@@ -58,6 +62,7 @@ DEFAULTS = {
     "Pago fijo DOM MEX": 200.00,
     "Tipo de cambio USD": 19.5,
     "Tipo de cambio MXP": 1.0,
+    
 }
 
 
@@ -351,8 +356,10 @@ def mostrar_resultados_utilidad(st_module, ingreso_total, costo_total,
             se muestra convertida a USD.
     """
     # ── Tarifa sugerida — centralizada en components.py ──
-    tarifa_usd = (costo_total * 2.0 / tc_usd) if tc_usd > 0 else 0.0
-    banner_tarifa_sugerida(costo_total, ingreso_total, 50.0, "MXP", tarifa_usd)
+    _umbral = DEFAULTS["umbral_cd"]
+    tarifa_sugerida = costo_total / (_umbral / 100)
+    tarifa_usd = (tarifa_sugerida / tc_usd) if tc_usd > 0 else 0.0
+    banner_tarifa_sugerida(costo_total, ingreso_total, _umbral, "MXP", tarifa_usd)
 
     pct_cd  = (costo_total       / ingreso_total * 100) if ingreso_total else 0
     pct_ind = (costos_indirectos / ingreso_total * 100) if ingreso_total else 0
