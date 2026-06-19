@@ -450,7 +450,7 @@ def render() -> None:
     util["_tarifa_base"] = costo_total * 2.0
     util["_valor_sec"]   = (costo_total * 2.0 / tc_val) if tc_val > 0 else 0.0
     util["_moneda_base"] = "MXP"
-    mostrar_resultados_ruta(util, titulo="📊 Resultado de la Ruta")
+    mostrar_resultados_ruta(util)
   
     # ── Utilidad en USD (igual que Igloo) ────────────────────────
     moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
