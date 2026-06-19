@@ -23,42 +23,17 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta
 
 from .helpers import (
     safe_number,
     cargar_datos_generales,
     calcular_costos_indirectos,
     calcular_utilidades_vuelta_redonda,
-    mostrar_resultados_utilidad,
+    load_rutas_igloo,
     filtrar_rutas_igloo,
     label_ruta_igloo,
 )
-
-
-# ─────────────────────────────────────────────
-# CACHE
-# ─────────────────────────────────────────────
-@st.cache_data(show_spinner=False, ttl=120)
-def _load_rutas_igloo_cached(table_name: str) -> pd.DataFrame:
-    supabase = get_supabase_client()
-    if supabase is None:
-        return pd.DataFrame()
-    try:
-        resp = supabase.table(table_name).select("*").execute()
-        df   = pd.DataFrame(resp.data)
-        if df.empty:
-            return df
-        for col in ["Origen", "Destino", "Cliente"]:
-            if col in df.columns:
-                df[col] = df[col].astype(str).str.strip().str.upper()
-        if "Fecha" in df.columns:
-            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
-        df["Ingreso Total"]    = pd.to_numeric(df.get("Ingreso Total",    0), errors="coerce").fillna(0.0)
-        df["Costo_Total_Ruta"] = pd.to_numeric(df.get("Costo_Total_Ruta", 0), errors="coerce").fillna(0.0)
-        return df
-    except Exception:
-        return pd.DataFrame()
 
 
 # ─────────────────────────────────────────────
@@ -229,12 +204,12 @@ def render():
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button("🔄 Recargar", key="igloo_sim_reload"):
-            _load_rutas_igloo_cached.clear()
+            load_rutas_igloo.clear()
             st.rerun()
     with c2:
         st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
-    df = _load_rutas_igloo_cached(TABLE_RUTAS)
+    df = load_rutas_igloo(TABLE_RUTAS)
     if df.empty:
         alert("warn", "⚠️ No hay rutas registradas en Supabase.")
         return
@@ -373,24 +348,18 @@ def render():
     with b2:
         if st.button("🚛 Simular Vuelta Redonda", type="primary", use_container_width=True, key="igloo_sim_btn"):
             res = calcular_utilidades_vuelta_redonda(rutas_seleccionadas)
-            st.session_state.ingreso_total           = res["ingreso_total"]
-            st.session_state.costo_total             = res["costo_total"]
-            st.session_state.utilidad_bruta          = res["utilidad_bruta"]
-            st.session_state.costos_indirectos       = res["costos_indirectos"]
-            st.session_state.utilidad_neta           = res["utilidad_neta"]
-            st.session_state.pct_bruta               = res["porcentaje_bruta"]
-            st.session_state.pct_neta                = res["porcentaje_neta"]
-            st.session_state.rutas_seleccionadas     = rutas_seleccionadas
-            st.session_state.igloo_simulacion_realizada = True
+            st.session_state["igloo_sim_resultado"]      = res
+            st.session_state["igloo_sim_rutas"]          = rutas_seleccionadas
+            st.session_state.igloo_simulacion_realizada  = True
             st.rerun()
 
     # ── Resultados ─────────────────────────────────────────────────
     if st.session_state.igloo_simulacion_realizada:
+        res   = st.session_state.get("igloo_sim_resultado", {})
+        rutas = st.session_state.get("igloo_sim_rutas", [])
         divider()
-
-        # Expander por ruta con detalle completo
         section_header("📊", "Resumen de Vuelta Redonda")
-        for i, r in enumerate(st.session_state.rutas_seleccionadas, 1):
+        for i, r in enumerate(rutas, 1):
             tipo_r   = str(r.get("Tipo", "")).strip().upper()
             ing_r    = safe_number(r.get("Ingreso Total", 0))
             costo_r  = safe_number(r.get("Costo_Total_Ruta", 0))
@@ -409,16 +378,7 @@ def render():
 
         # KPIs globales
         divider()
-        mostrar_resultados_utilidad(
-            st,
-            st.session_state.ingreso_total,
-            st.session_state.costo_total,
-            st.session_state.utilidad_bruta,
-            st.session_state.costos_indirectos,
-            st.session_state.utilidad_neta,
-            st.session_state.pct_bruta,
-            st.session_state.pct_neta,
-        )
+        mostrar_resultados_ruta(res)
 
         # Detalle completo por columnas
         divider()
