@@ -1125,51 +1125,152 @@ def ruta_visual_nodos(pasos: list[dict]) -> None:
 # 23. BANNER DE TARIFA SUGERIDA (cotizadores — todas las empresas)
 # ─────────────────────────────────────────────────────────────────────────────
 def banner_tarifa_sugerida(
-    tarifa_base: float,
-    ingreso_total: float,
-    moneda_base: str = "MXP",
+    costo_directo:    float,
+    ingreso_total:    float,
+    umbral_cd:        float,
+    moneda_base:      str   = "MXP",
     valor_secundario: float = 0.0,
+    modalidad:        str   = "",
+    miles_load:       float = 0.0,
 ) -> None:
     """
-    Muestra una banda informativa con la tarifa sugerida al 50% de margen.
-
-    Parámetros (el helper de cada empresa los calcula antes de llamar):
-        tarifa_base       : costo_total × 2  (en la moneda base de la empresa)
-        ingreso_total     : para comparar vs la tarifa sugerida
-        moneda_base       : "MXP" para Igloo/Picus | "USD" para Lincoln/Set Logis
-        valor_secundario  : equivalente en la otra moneda (0 si no aplica)
-                            Igloo/Picus  → tarifa_base / tc_usd
-                            Lincoln/SL   → tarifa_base * tc_usd
-
-    Comportamiento:
-        - Amarilla : ingreso_total == 0  → solo muestra la tarifa sugerida
-        - Azul     : hay ingreso         → compara ingreso vs tarifa sugerida
-        - El valor secundario aparece como texto complementario si > 0
+    Muestra una banda con la tarifa sugerida basada en el umbral de costo directo.
+ 
+    Parámetros — el helpers/_shared de cada empresa los calcula y pasa:
+        costo_directo    : costo directo total de la ruta
+        ingreso_total    : ingreso actual capturado (0 si aún no se calculó)
+        umbral_cd        : % máximo de costo directo aceptable (viene del dict r)
+                           Igloo/Picus: 50.0  |  Lincoln/Set Logis: el suyo
+        moneda_base      : "MXP" → bloque mexicano | "USD" → bloque americano
+        valor_secundario : equivalente en la otra moneda (0 si no aplica)
+                           MXP → tarifa_sugerida / tc   |  USD → tarifa_sugerida * tc
+        modalidad        : solo americanas — "Flat" | "Desglosada" | "" (D2D o sin millas)
+        miles_load       : solo americanas — millas de carga para calcular $/milla
+ 
+    ── BLOQUE MEXICANO (moneda_base == "MXP") ───────────────────────────────
+        No se toca. Lógica original de Igloo/Picus:
+        tarifa_sugerida = costo_directo × 2  (umbral 50% fijo)
+ 
+    ── BLOQUE AMERICANO (moneda_base == "USD") ──────────────────────────────
+        tarifa_sugerida = costo_directo / (umbral_cd / 100)
+ 
+        Si modalidad == "Flat" o miles_load == 0:
+            → muestra monto flat sugerido en USD
+        Si modalidad == "Desglosada" y miles_load > 0:
+            → muestra $/milla sugerida + advertencia de que incluye fuel
+        Si modalidad == "" (D2D o rutas combinadas):
+            → muestra monto flat sugerido + nota referencial
+        Siempre muestra diferencia vs ingreso actual y advertencia general.
+ 
+    Comportamiento visual:
+        - Amarillo : ingreso_total == 0 → solo muestra la tarifa sugerida
+        - Azul     : hay ingreso        → compara ingreso vs tarifa sugerida
     """
-    if tarifa_base <= 0:
+    if costo_directo <= 0:
         return
-
-    moneda_alt = "USD" if moneda_base == "MXP" else "MXP"
+ 
+    # ── BLOQUE MEXICANO ───────────────────────────────────────────────────────
+    if moneda_base == "MXP":
+        pct_frac_mx = (umbral_cd / 100.0) if umbral_cd else 0.50
+        tarifa_base = costo_directo / pct_frac_mx if pct_frac_mx else 0.0
+        moneda_alt  = "USD"
+        sec_html    = (
+            f"&nbsp;/&nbsp;{moneda_alt} ${valor_secundario:,.2f}"
+            if valor_secundario > 0 else ""
+        )
+        if ingreso_total == 0:
+            st.markdown(
+                f'<div style="background:#fffbeb;border-left:4px solid #f59e0b;'
+                f'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
+                f'font-size:0.9rem;color:#92400e;">'
+                f'💡 <b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b>&nbsp;'
+                f'MXP ${tarifa_base:,.2f}{sec_html}<br>'
+                f'<span style="font-size:0.78rem;opacity:0.8;">'
+                f'El costo directo debe representar el {umbral_cd:.0f}% del ingreso total.'
+                f'</span></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            diff     = ingreso_total - tarifa_base
+            diff_pct = (diff / tarifa_base * 100) if tarifa_base else 0
+            signo    = "+" if diff >= 0 else ""
+            color    = "#059669" if diff >= 0 else "#DC2626"
+            icono    = "✅" if diff >= 0 else "⚠️"
+            st.markdown(
+                f'<div style="background:#eff6ff;border-left:4px solid #3b82f6;'
+                f'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
+                f'font-size:0.9rem;color:#1e3a5f;">'
+                f'📊 <b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b>&nbsp;'
+                f'MXP ${tarifa_base:,.2f}{sec_html}'
+                f'&nbsp;&nbsp;{icono}&nbsp;'
+                f'<span style="color:{color};font-weight:600;">'
+                f'Tu tarifa está {signo}{diff_pct:.1f}%'
+                f'&nbsp;(MXP {signo}${diff:,.2f}) vs la sugerida'
+                f'</span></div>',
+                unsafe_allow_html=True,
+            )
+        return
+ 
+    # ── BLOQUE AMERICANO — nuevo ──────────────────────────────────────────────
+    # tarifa_sugerida = costo_directo / (umbral_cd / 100)
+    # Ejemplo: costo $500, umbral 85% → sugerida = 500 / 0.85 = $588.24
+    pct_frac     = (umbral_cd / 100.0) if umbral_cd else 0.85
+    tarifa_usd   = costo_directo / pct_frac if pct_frac else 0.0
+ 
+    # Valor por milla (solo si modalidad desglosada/por milla y hay millas)
+    xmilla       = (tarifa_usd / miles_load) if miles_load > 0 else 0.0
+ 
+    # Texto secundario — equivalente en MXP si se pasó el TC
     sec_html = (
-        f"&nbsp;/&nbsp;{moneda_alt} ${valor_secundario:,.2f}"
+        f"&nbsp;/&nbsp;MXP ${valor_secundario:,.2f}"
         if valor_secundario > 0 else ""
     )
-
+ 
+    # Línea de modalidad: qué mostrar como tarifa de referencia
+    if modalidad == "Desglosada" and xmilla > 0:
+        tarifa_ref_html = (
+            f'<b>USD ${tarifa_usd:,.2f}</b> flat'
+            f'&nbsp;·&nbsp;'
+            f'<b>${xmilla:,.4f}/mi</b>'
+            f'&nbsp;<span style="font-size:0.78rem;opacity:0.8;">'
+            f'(flete+fuel incluidos en $/mi)</span>'
+        )
+        nota_modal = (
+            f'<br><span style="font-size:0.76rem;opacity:0.75;">'
+            f'⚠️ En modo Desglosado el $/mi ya contempla flete y fuel juntos — '
+            f'no es necesario dividirlos para la referencia.</span>'
+        )
+    elif modalidad == "Flat" or miles_load == 0:
+        tarifa_ref_html = f'<b>USD ${tarifa_usd:,.2f}</b> flat'
+        nota_modal      = ""
+    else:
+        # D2D u otras rutas combinadas — solo flat referencial
+        tarifa_ref_html = f'<b>USD ${tarifa_usd:,.2f}</b> flat referencial'
+        nota_modal      = (
+            f'<br><span style="font-size:0.76rem;opacity:0.75;">'
+            f'ℹ️ Tarifa referencial general — no incluye ajuste por vacíos o cruces.</span>'
+        )
+ 
+    advertencia = (
+        f'<br><span style="font-size:0.76rem;opacity:0.75;">'
+        f'⚠️ Referencia basada en costo directo al {umbral_cd:.0f}%. '
+        f'No incluye ajuste por vacíos o cruces independientes.</span>'
+    )
+ 
     if ingreso_total == 0:
         st.markdown(
             f'<div style="background:#fffbeb;border-left:4px solid #f59e0b;'
             f'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
             f'font-size:0.9rem;color:#92400e;">'
-            f'💡 <b>Tarifa sugerida (50% margen):</b>&nbsp;'
-            f'{moneda_base} ${tarifa_base:,.2f}{sec_html}<br>'
-            f'<span style="font-size:0.78rem;opacity:0.8;">'
-            f'El costo directo debe representar el 50% del ingreso total.'
-            f'</span></div>',
+            f'💡 <b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b>&nbsp;'
+            f'{tarifa_ref_html}{sec_html}'
+            f'{nota_modal}{advertencia}'
+            f'</div>',
             unsafe_allow_html=True,
         )
     else:
-        diff     = ingreso_total - tarifa_base
-        diff_pct = (diff / tarifa_base * 100) if tarifa_base else 0
+        diff     = ingreso_total - tarifa_usd
+        diff_pct = (diff / tarifa_usd * 100) if tarifa_usd else 0
         signo    = "+" if diff >= 0 else ""
         color    = "#059669" if diff >= 0 else "#DC2626"
         icono    = "✅" if diff >= 0 else "⚠️"
@@ -1177,12 +1278,14 @@ def banner_tarifa_sugerida(
             f'<div style="background:#eff6ff;border-left:4px solid #3b82f6;'
             f'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
             f'font-size:0.9rem;color:#1e3a5f;">'
-            f'📊 <b>Tarifa sugerida (50% margen):</b>&nbsp;'
-            f'{moneda_base} ${tarifa_base:,.2f}{sec_html}'
+            f'📊 <b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b>&nbsp;'
+            f'{tarifa_ref_html}{sec_html}'
             f'&nbsp;&nbsp;{icono}&nbsp;'
             f'<span style="color:{color};font-weight:600;">'
             f'Tu tarifa está {signo}{diff_pct:.1f}%'
-            f'&nbsp;({moneda_base} {signo}${diff:,.2f}) vs la sugerida'
-            f'</span></div>',
+            f'&nbsp;(USD {signo}${diff:,.2f}) vs la sugerida'
+            f'</span>'
+            f'{nota_modal}{advertencia}'
+            f'</div>',
             unsafe_allow_html=True,
         )
