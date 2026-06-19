@@ -305,7 +305,11 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list):
     pct_bruta     = (utilidad_bruta / ingreso_total * 100) if ingreso_total else 0
     pct_neta      = (utilidad_neta  / ingreso_total * 100) if ingreso_total else 0
 
+    pct_cd  = (costo_total / ingreso_total * 100) if ingreso_total else 0
+    pct_ind = (costos_ind  / ingreso_total * 100) if ingreso_total else 0
+
     return {
+        # ── Campos originales — compatibilidad ───────────────────────────────
         "ingreso_total":     ingreso_total,
         "costo_total":       costo_total,
         "utilidad_bruta":    utilidad_bruta,
@@ -313,6 +317,20 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list):
         "utilidad_neta":     utilidad_neta,
         "porcentaje_bruta":  pct_bruta,
         "porcentaje_neta":   pct_neta,
+        # ── Campos canónicos para mostrar_resultados_ruta() ──────────────────
+        "costo_directo":       costo_total,
+        "Pct_Costo_Directo":   pct_cd,
+        "Pct_Ut_Bruta":        pct_bruta,
+        "Pct_Costo_Indirecto": pct_ind,
+        "Pct_Ut_Neta":         pct_neta,
+        "Color_Directo":   "#DC2626" if pct_cd   > 50.0 else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind  > 35.0 else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta < 15.0 else "#059669",
+        # ── Umbrales Igloo ────────────────────────────────────────────────────
+        "umbral_cd": 50.0,
+        "umbral_ub": 50.0,
+        "umbral_ci": 35.0,
+        "umbral_un": 15.0,
     }
 
 
