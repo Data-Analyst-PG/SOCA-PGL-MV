@@ -1,13 +1,14 @@
-from ui.components import section_header, alert, divider
 import os
 import re
-from pathlib import Path
 from datetime import date
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
-from fpdf import FPDF # pyright: ignore[reportMissingModuleSource]
-from services.supabase_client import get_supabase_client
+from fpdf import FPDF
 
+from services.supabase_client import get_supabase_client
+from ui.components import section_header, alert, divider
 # ---------------------------
 # ETIQUETAS VISIBLES
 # ---------------------------
@@ -197,7 +198,8 @@ def render():
 
     ids_seleccionados = st.multiselect(
         "🛣️ Elige las rutas que deseas incluir:",
-        options=opciones.tolist()
+        options=opciones.tolist(),
+        key="ig_cot_rutas_sel",
     )
 
     # ---------------------------
