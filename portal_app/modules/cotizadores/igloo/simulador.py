@@ -23,7 +23,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
 from .helpers import (
     safe_number,
@@ -358,7 +358,6 @@ def render():
         res   = st.session_state.get("igloo_sim_resultado", {})
         rutas = st.session_state.get("igloo_sim_rutas", [])
         divider()
-        section_header("📊", "Resumen de Vuelta Redonda")
         for i, r in enumerate(rutas, 1):
             tipo_r   = str(r.get("Tipo", "")).strip().upper()
             ing_r    = safe_number(r.get("Ingreso Total", 0))
@@ -378,6 +377,9 @@ def render():
 
         # KPIs globales
         divider()
+        _umbral     = res["umbral_cd"]
+        _tarifa_sug = res["costo_directo"] / (_umbral / 100)
+        banner_tarifa_sugerida(res["costo_directo"], res["ingreso_total"], _umbral, "MXP", 0.0)
         mostrar_resultados_ruta(res)
 
         # Detalle completo por columnas
