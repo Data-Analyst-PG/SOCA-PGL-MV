@@ -347,7 +347,7 @@ def render() -> None:
         util["_tarifa_base"] = calc["costo_total"] * 2.0
         util["_valor_sec"]   = (calc["costo_total"] * 2.0 / tc_val) if tc_val > 0 else 0.0
         util["_moneda_base"] = "MXP"
-        mostrar_resultados_ruta(util, titulo="📊 Resultado de la Ruta")
+        mostrar_resultados_ruta(util)
 
         # ── Guardar Ruta ──────────────────────────────────────────
         if st.button("💾 Guardar Ruta", key="pic_save_route", type="primary"):
