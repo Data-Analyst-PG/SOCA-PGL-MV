@@ -65,6 +65,10 @@ DEFAULTS: dict = {
     "Bono Modo Team":      650.0,
     "Tipo de cambio USD":   17.5,
     "Tipo de cambio MXP":    1.0,
+    "umbral_cd": 50.0,
+    "umbral_ub": 50.0,
+    "umbral_ci": 35.0,
+    "umbral_un": 15.0,
 }
 
 TIPOS_RUTA = ["IMPORTACION", "EXPORTACION", "VACIO"]
