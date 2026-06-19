@@ -308,7 +308,10 @@ def calcular_utilidades(ingreso_total: float, costo_total: float, tipo: str) -> 
     pct_ind   = (costos_ind     / ingreso_total * 100) if ingreso_total else 0.0
 
     return {
-        # Originales — sin cambio
+        # Campos canónicos
+        "ingreso_total":     ingreso_total,
+        "costo_directo":     costo_total,    # alias canónico
+        # Originales — compatibilidad
         "utilidad_bruta":    utilidad_bruta,
         "costos_indirectos": costos_ind,
         "utilidad_neta":     utilidad_neta,
@@ -323,6 +326,11 @@ def calcular_utilidades(ingreso_total: float, costo_total: float, tipo: str) -> 
         "Color_Directo":   "#DC2626" if pct_cd   > 50.0 else "#059669",
         "Color_Indirecto": "#D97706" if pct_ind  > 35.0 else "#059669",
         "Color_Ut_Neta":   "#DC2626" if pct_neta < 15.0 else "#059669",
+        # Umbrales Picus — viajan con el resultado
+        "umbral_cd": 50.0,
+        "umbral_ub": 50.0,
+        "umbral_ci": 35.0,
+        "umbral_un": 15.0,
     }
 
 
@@ -343,101 +351,34 @@ def mostrar_resultados_utilidad(
     tc_usd:           float = 0.0,
 ) -> None:
     """
-    Muestra las métricas de utilidad con kpi_row + semaforos_ruta.
-    Mantiene la misma firma que la función legacy de Igloo para facilitar
-    la migración de captura_rutas y gestion_rutas.
-
-    tc_usd: si > 0, la tarifa sugerida también se muestra en USD.
+    LEGACY — mantener firma intacta mientras los módulos migran a mostrar_resultados_ruta().
+    Sin HTML inline — delega todo el rendering a ui/components.py.
+    tc_usd: tipo de cambio activo; si > 0 muestra equivalente USD en la tarifa sugerida.
     """
-    import streamlit as st
-    from ui.components import kpi_row, semaforos_ruta, divider
+    from ui.components import (
+        banner_tarifa_sugerida, divider, kpi_row, mostrar_resultados_ruta, semaforos_ruta,
+    )
 
     util = calcular_utilidades(ingreso_total, costo_total, tipo)
 
-    # ── Tarifa sugerida (costo = 50% ingreso → ingreso = costo × 2) ──
-    tarifa_mxp = costo_total * 2.0
-    tarifa_usd = (tarifa_mxp / tc_usd) if tc_usd > 0 else 0.0
-    usd_extra  = f"&nbsp;/&nbsp;USD ${tarifa_usd:,.2f}" if tc_usd > 0 else ""
-
-    if tarifa_mxp > 0:
-        if ingreso_total == 0:
-            st.markdown(
-                '<div style="background:#fffbeb;border-left:4px solid #f59e0b;'
-                'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
-                'font-size:0.9rem;color:#92400e;">'
-                f'💡 <b>Tarifa sugerida (50% margen):</b>&nbsp;MXP ${tarifa_mxp:,.2f}{usd_extra}<br>'
-                '<span style="font-size:0.78rem;opacity:0.8;">'
-                'El costo directo debe representar el 50% del ingreso total.'
-                '</span></div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            diff     = ingreso_total - tarifa_mxp
-            diff_pct = (diff / tarifa_mxp * 100) if tarifa_mxp else 0
-            signo    = "+" if diff >= 0 else ""
-            color    = "#059669" if diff >= 0 else "#DC2626"
-            icono    = "✅" if diff >= 0 else "⚠️"
-            st.markdown(
-                '<div style="background:#eff6ff;border-left:4px solid #3b82f6;'
-                'padding:10px 16px;border-radius:8px;margin-bottom:14px;'
-                'font-size:0.9rem;color:#1e3a5f;">'
-                f'📊 <b>Tarifa sugerida (50% margen):</b>&nbsp;MXP ${tarifa_mxp:,.2f}{usd_extra}'
-                f'&nbsp;&nbsp;{icono}&nbsp;'
-                f'<span style="color:{color};font-weight:600;">'
-                f'Tu tarifa está {signo}{diff_pct:.1f}% (${signo}{diff:,.2f} MXP) vs la sugerida'
-                '</span></div>',
-                unsafe_allow_html=True,
-            )
+    # ── Tarifa sugerida ──
+    tarifa_base  = costo_total * 2.0
+    valor_sec    = (tarifa_base / tc_usd) if tc_usd > 0 else 0.0
+    banner_tarifa_sugerida(tarifa_base, ingreso_total, "MXP", valor_sec)
 
     divider()
 
     # ── KPIs principales ──
     kpi_row([
-        {
-            "icono": "💰",
-            "label": "Ingreso Total",
-            "valor": f"${ingreso_total:,.2f}",
-            "sub":   "MXP",
-            "color": "#1B2266",
-        },
-        {
-            "icono": "🔧",
-            "label": "Costo Directo",
-            "valor": f"${costo_total:,.2f}",
-            "sub":   f"{util['Pct_Costo_Directo']:.1f}% del ingreso",
-            "color": util["Color_Directo"],
-        },
-        {
-            "icono": "📊",
-            "label": "Utilidad Bruta",
-            "valor": f"${utilidad_bruta:,.2f}",
-            "sub":   f"{pct_bruta:.1f}%",
-            "color": "#059669" if pct_bruta >= 50 else "#DC2626",
-        },
-        {
-            "icono": "🏢",
-            "label": "Costos Indirectos",
-            "valor": f"${costos_indirectos:,.2f}",
-            "sub":   f"{util['Pct_Costo_Indirecto']:.1f}% del ingreso",
-            "color": util["Color_Indirecto"],
-        },
-        {
-            "icono": "✅",
-            "label": "Utilidad Neta",
-            "valor": f"${utilidad_neta:,.2f}",
-            "sub":   f"{pct_neta:.1f}%",
-            "color": util["Color_Ut_Neta"],
-        },
+        {"icono": "💰", "label": "Ingreso Total",      "valor": f"${ingreso_total:,.2f}",    "sub": "MXP",                                    "color": "#1B2266"},
+        {"icono": "🔧", "label": "Costo Directo",      "valor": f"${costo_total:,.2f}",      "sub": f"{util['Pct_Costo_Directo']:.1f}% del ingreso", "color": util["Color_Directo"]},
+        {"icono": "📊", "label": "Utilidad Bruta",     "valor": f"${utilidad_bruta:,.2f}",   "sub": f"{pct_bruta:.1f}%",                      "color": "#059669" if pct_bruta >= 50 else "#DC2626"},
+        {"icono": "🏢", "label": "Costos Indirectos",  "valor": f"${costos_indirectos:,.2f}","sub": f"{util['Pct_Costo_Indirecto']:.1f}% del ingreso","color": util["Color_Indirecto"]},
+        {"icono": "✅", "label": "Utilidad Neta",      "valor": f"${utilidad_neta:,.2f}",    "sub": f"{pct_neta:.1f}%",                       "color": util["Color_Ut_Neta"]},
     ])
 
-    # ── Semáforos ──
-    semaforos_ruta(
-        util,
-        max_costo_directo=50.0,
-        min_ut_bruta=50.0,
-        max_costo_indirecto=35.0,
-        min_ut_neta=15.0,
-    )
+    # ── Semáforos — firma canónica, umbrales viajan en util ──
+    semaforos_ruta(util)
 
 # ─────────────────────────────────────────────
 # Utilidades Vuelta Redonda (simulador)
@@ -469,8 +410,10 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
     pct_ind   = (costos_ind     / ingreso_total * 100) if ingreso_total else 0.0
 
     return {
+        # Campos canónicos
         "ingreso_total":     ingreso_total,
-        "costo_total":       costo_total,
+        "costo_directo":     costo_total,    # alias canónico
+        "costo_total":       costo_total,    # compatibilidad legacy
         "utilidad_bruta":    utilidad_bruta,
         "costos_indirectos": costos_ind,
         "utilidad_neta":     utilidad_neta,
@@ -483,4 +426,9 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
         "Color_Directo":   "#DC2626" if pct_cd   > 50.0 else "#059669",
         "Color_Indirecto": "#D97706" if pct_ind  > 35.0 else "#059669",
         "Color_Ut_Neta":   "#DC2626" if pct_neta < 15.0 else "#059669",
+        # Umbrales Picus — viajan con el resultado
+        "umbral_cd": 50.0,
+        "umbral_ub": 50.0,
+        "umbral_ci": 35.0,
+        "umbral_un": 15.0,
     }
