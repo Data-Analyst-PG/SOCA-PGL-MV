@@ -447,7 +447,7 @@ def render() -> None:
                 util["_tarifa_base"] = calc["costo_total"] * 2.0
                 util["_valor_sec"]   = (calc["costo_total"] * 2.0 / tc_val) if tc_val > 0 else 0.0
                 util["_moneda_base"] = "MXP"
-                mostrar_resultados_ruta(util, titulo="📊 Resultado con los Cambios")
+                mostrar_resultados_ruta(util)
 
                 if st.button("💾 Guardar Cambios", key=f"pic_confirm_edit_{k}", type="primary"):
                     historial_actual = ruta.get("historial") or []
