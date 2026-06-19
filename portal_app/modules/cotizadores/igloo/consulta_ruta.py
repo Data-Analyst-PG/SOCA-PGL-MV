@@ -25,7 +25,7 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
 from .helpers import (
     TIPOS_RUTA,
@@ -449,6 +449,11 @@ def render():
     porcentaje_bruta  = util["porcentaje_bruta"]
     porcentaje_neta   = util["porcentaje_neta"]
 
+    tc_usd      = safe_number(ruta.get("Tipo de cambio", 0)) or safe_number(valores.get("Tipo de cambio USD", 19.5))
+    _umbral     = util["umbral_cd"]
+    _tarifa_sug = util["costo_directo"] / (_umbral / 100)
+    _tarifa_usd = (_tarifa_sug / tc_usd) if tc_usd > 0 else 0.0
+    banner_tarifa_sugerida(util["costo_directo"], ingreso_total, _umbral, "MXP", _tarifa_usd)
     mostrar_resultados_ruta(util)
 
     # ── Utilidad en USD (UI) ──────────────────────────────────────
