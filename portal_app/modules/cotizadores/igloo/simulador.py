@@ -386,7 +386,7 @@ def render():
 
         tipos_orden = ["IMPORTACION", "VACIO", "EXPORTACION", "DOM MEX"]
         rutas_con_tipo = [r for t in tipos_orden
-                          for r in st.session_state.rutas_seleccionadas
+                          for r in rutas
                           if r.get("Tipo") == t]
 
         if rutas_con_tipo:
