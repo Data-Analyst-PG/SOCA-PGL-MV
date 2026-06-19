@@ -432,3 +432,178 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
         "umbral_ci": 35.0,
         "umbral_un": 15.0,
     }
+
+
+# ─────────────────────────────────────────────
+# Funciones compartidas — usadas en 2+ módulos
+# (antes vivían como privadas en captura/gestión)
+# ─────────────────────────────────────────────
+
+import re as _re
+
+
+def get_profile_name(user_id: str) -> str:
+    """Obtiene el full_name del perfil dado su user_id."""
+    if not user_id:
+        return ""
+    try:
+        from services.supabase_client import get_authed_client
+        supabase = get_authed_client()
+        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
+        return (res.data or {}).get("full_name") or ""
+    except Exception:
+        return ""
+
+
+def normalizar_texto(texto: str) -> str:
+    """Normaliza texto a mayúsculas, sin espacios dobles ni comas mal formateadas."""
+    if not texto:
+        return ""
+    texto = str(texto).upper().strip()
+    texto = _re.sub(r'\s+', ' ', texto)
+    texto = _re.sub(r'\s*,\s*', ', ', texto)
+    return texto
+
+
+def now_iso() -> str:
+    """Timestamp UTC actual en formato ISO. Compartido por captura y gestión."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+@st.cache_data(show_spinner=False, ttl=60)
+def _get_last_id_picus_cached() -> str | None:
+    from services.supabase_client import get_supabase_client
+    supabase = get_supabase_client()
+    if supabase is None:
+        return None
+    resp = supabase.table("Rutas_Picus").select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
+    if resp.data:
+        return resp.data[0].get("ID_Ruta")
+    return None
+
+
+def generar_nuevo_id() -> str:
+    """Genera el siguiente ID_Ruta (PIC000001, PIC000002, ...) para Rutas_Picus."""
+    ultimo = _get_last_id_picus_cached()
+    if ultimo and isinstance(ultimo, str) and len(ultimo) >= 4:
+        try:
+            numero = int(str(ultimo)[3:]) + 1
+        except Exception:
+            numero = 1
+    else:
+        numero = 1
+    return f"PIC{numero:06d}"
+
+
+# ─────────────────────────────────────────────
+# Pool de ubicaciones — compartido por captura y gestión
+# ─────────────────────────────────────────────
+
+@st.cache_data(show_spinner=False, ttl=120)
+def cargar_pool_ubicaciones_picus() -> list[str]:
+    """
+    Une y deduplica Origen + Destino de Rutas_Picus.
+    Compartido por captura_rutas y gestion_rutas.
+    """
+    from services.supabase_client import get_supabase_client
+    sb = get_supabase_client()
+    if sb is None:
+        return []
+    try:
+        resp = sb.table("Rutas_Picus").select("Origen, Destino").execute()
+        ubicaciones: set[str] = set()
+        for row in (resp.data or []):
+            o = (row.get("Origen") or "").strip().upper()
+            d = (row.get("Destino") or "").strip().upper()
+            if o:
+                ubicaciones.add(o)
+            if d:
+                ubicaciones.add(d)
+        return sorted(ubicaciones)
+    except Exception:
+        return []
+
+
+def buscar_ubicacion_picus(termino: str) -> list[str]:
+    """
+    Filtra el pool por lo que el usuario escribe.
+    Si no hay coincidencias, devuelve el término como opción
+    para permitir ubicaciones nuevas sin que el campo se limpie.
+    """
+    if not termino or len(termino) < 2:
+        return []
+    termino_upper = termino.upper()
+    pool = cargar_pool_ubicaciones_picus()
+    coincidencias = [u for u in pool if termino_upper in u]
+    if not coincidencias:
+        return [termino_upper]
+    return coincidencias
+
+
+# ─────────────────────────────────────────────
+# Carga de rutas — compartida por consulta, gestión y simulador
+# ─────────────────────────────────────────────
+
+@st.cache_data(show_spinner=False, ttl=120)
+def load_rutas_picus() -> pd.DataFrame:
+    """
+    Carga todas las rutas de Rutas_Picus, ordenadas por Fecha desc.
+    Compartida por consulta_ruta, gestion_rutas y simulador.
+    """
+    from services.supabase_client import get_supabase_client
+    supabase = get_supabase_client()
+    if supabase is None:
+        return pd.DataFrame()
+    try:
+        resp = supabase.table("Rutas_Picus").select("*").order("Fecha", desc=True).execute()
+        return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
+# ─────────────────────────────────────────────
+# Filtros y label — compartidos por consulta_ruta,
+# gestion_rutas y simulador para evitar keys duplicadas
+# ─────────────────────────────────────────────
+
+def filtrar_rutas_picus(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """
+    Muestra un expander con filtros opcionales y devuelve el DataFrame filtrado.
+    Usar con un prefix único por módulo:
+      - consulta_ruta → "pic_cons"
+      - gestion ver   → "pic_ver"
+      - gestion del   → "pic_del"
+      - gestion edit  → "pic_ed"
+      - simulador     → "pic_sim"
+    """
+    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
+        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+        tipos_disp    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
+        clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
+        filtro_tipo    = fc1.selectbox("Tipo",              tipos_disp,    key=f"{prefix}_ftipo")
+        filtro_cliente = fc2.selectbox("Cliente",           clientes_disp, key=f"{prefix}_fcli")
+        filtro_origen  = fc3.text_input("Origen contiene",                 key=f"{prefix}_forig")
+        filtro_destino = fc4.text_input("Destino contiene",                key=f"{prefix}_fdest")
+        filtro_id      = fc5.text_input("ID Ruta", placeholder="PIC000001", key=f"{prefix}_fid")
+
+    out = df.copy()
+    if filtro_tipo    != "Todos": out = out[out["Tipo"].astype(str) == filtro_tipo]
+    if filtro_cliente != "Todos": out = out[out["Cliente"].astype(str) == filtro_cliente]
+    if filtro_origen.strip():     out = out[out["Origen"].astype(str).str.upper().str.contains(filtro_origen.strip().upper(), na=False)]
+    if filtro_destino.strip():    out = out[out["Destino"].astype(str).str.upper().str.contains(filtro_destino.strip().upper(), na=False)]
+    if filtro_id.strip():         out = out[out["ID_Ruta"].astype(str).str.upper().str.contains(filtro_id.strip().upper(), na=False)]
+    return out
+
+
+def label_ruta_picus(row) -> str:
+    """
+    Formatea una fila de ruta para selectboxes.
+    Ejemplo: 'PIC000001 | IMPORTACION | CLIENTE | MTY → CDM'
+    """
+    return (
+        f"{row.get('ID_Ruta','?')} | "
+        f"{row.get('Tipo','?')} | "
+        f"{row.get('Cliente','?')} | "
+        f"{row.get('Origen','?')} → {row.get('Destino','?')}"
+    )
