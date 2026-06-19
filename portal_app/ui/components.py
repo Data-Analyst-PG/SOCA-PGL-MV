@@ -795,7 +795,7 @@ def semaforos_ruta(r: dict) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # 20. MOSTRAR RESULTADOS DE RUTA (canónica — todas las empresas)
 # ─────────────────────────────────────────────────────────────────────────────
-def mostrar_resultados_ruta(r: dict, titulo: str = "📊 Resultado del Cálculo") -> None:
+def mostrar_resultados_ruta(r: dict, titulo: str = "Resultado del Cálculo") -> None:
     """
     Muestra las 5 cards KPI + semáforos de una ruta cotizada.
     Función canónica — igual para las 4 empresas.
