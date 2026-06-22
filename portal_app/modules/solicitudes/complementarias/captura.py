@@ -342,9 +342,9 @@ def render():
         if not tipo_motivo_sel:
             errores.append("Debes seleccionar al menos un tipo de motivo.")
 
-    if errores:
-        for e in errores: st.error(e)
-        st.stop()
+        if errores:
+            for e in errores: st.error(e)
+            st.stop()
 
     numero_trafico_clean = numero_trafico.strip().upper()
 
