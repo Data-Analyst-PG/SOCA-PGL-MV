@@ -27,6 +27,7 @@ COLS_TABLA = [
     ("sucursal",            "Sucursal"),
     ("numero_trafico",      "Tráfico"),
     ("tipo_complementaria", "Tipo"),
+    ("tipo_motivo",         "Tipo de motivo"),
     ("estatus",             "Estatus"),
     ("auditor",             "Auditor"),
     ("fecha_resuelto",      "Fecha resolución"),
@@ -42,7 +43,7 @@ def _mis_complementarias(user_email: str, limite: int = 200) -> list:
             sb.table("solicitudes_complementarias")
             .select(
                 "folio,fecha_captura,empresa,sucursal,plataforma,solicitante,correo,"
-                "numero_trafico,tipo_complementaria,motivo_solicitud,estatus,"
+                "numero_trafico,tipo_complementaria,tipo_motivo,motivo_solicitud,estatus,"
                 "fecha_ultima_modificacion,fecha_resuelto,auditor,"
                 "comentarios_auditor,historial"
             )
@@ -83,9 +84,13 @@ def _modal_detalle(comp: dict):
     col5.markdown(f"**Fecha resolución:** {fecha_res}")
 
     motivo = comp.get("motivo_solicitud","")
-    if motivo:
+    tipo_mot = comp.get("tipo_motivo","")
+    if tipo_mot or motivo:
         st.markdown("---")
-        st.markdown(f"**Motivo:** {motivo}")
+    if tipo_mot:
+        st.markdown(f"**Tipo de motivo:** {tipo_mot}")
+    if motivo:
+        st.markdown(f"**Descripción:** {motivo}")
 
     com_aud = comp.get("comentarios_auditor","")
     if com_aud:
