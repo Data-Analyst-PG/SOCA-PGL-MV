@@ -171,7 +171,7 @@ def render():
     page_banner("📋", "Gestión de Complementarias",
                    "Revisa y actualiza solicitudes de complementarias")
 
-    perfil = st.session_state.get("profile") or {}
+    perfil = st.session_state.get("user_profile") or {}
     from services.supabase_client import current_user
     u      = current_user() or {}
     gestor = perfil.get("full_name") or u.get("email", "Auditor")
