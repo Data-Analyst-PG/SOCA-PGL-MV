@@ -27,8 +27,6 @@ from .shared import get_complementarias, update_complementaria, now_iso_utc
 ESTATUSES        = ["Pendiente", "En revisión", "Resuelto", "Cancelado"]
 ESTATUSES_ACTIVOS = {"Pendiente", "En revisión"}
 
-AUDITORES = ["Sin asignar", "Abel", "Sasha", "Adrian", "Heidi"]
-
 # Columnas para la tabla / Excel
 COLS_TABLA = [
     ("folio",                  "Folio"),
@@ -110,8 +108,9 @@ def _modal_edicion(comp: dict, gestor: str):
         nuevo_est  = st.selectbox("Nuevo estatus", ESTATUSES, index=idx_est, key=f"gc_comp_est_{folio}")
     with col_b:
         aud_actual = comp.get("auditor") or "Sin asignar"
-        idx_aud    = AUDITORES.index(aud_actual) if aud_actual in AUDITORES else 0
-        nuevo_aud  = st.selectbox("Auditor", AUDITORES, index=idx_aud, key=f"gc_comp_aud_{folio}")
+        nuevo_aud  = gestor
+        st.text_input("Auditor", value=gestor, disabled=True,
+                      help="Se asigna automáticamente al usuario que gestiona la solicitud.")
 
     comentario = st.text_area(
         "Comentario del auditor",
