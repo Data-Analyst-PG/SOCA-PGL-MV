@@ -195,7 +195,16 @@ def render():
     if plataforma and es_plataforma_logismex(plataforma):
         alert("warn", "Plataforma Logismex — Se habilitarán campos fiscales adicionales.")
 
-    csol1, csol2 = st.columns(2)
+    TIPOS_MOTIVO = [
+        "Concepto Incorrecto",
+        "Costo no capturado",
+        "Monto Incorrecto",
+        "Moneda Incorrecta",
+        "Proveedor Incorrecto",
+        "Otro",
+    ]
+
+    csol1, csol2, csol3 = st.columns(3)
     with csol1:
         solicitante = st.text_input(
             "Solicitante*", value=nombre_usuario, disabled=bool(nombre_usuario),
@@ -206,8 +215,19 @@ def render():
     with csol2:
         correo = st.text_input("Correo*", value=correo_usuario, disabled=True,
                                help="Detectado automáticamente desde tu cuenta.")
+    with csol3:
+        tipo_motivo_sel = st.multiselect(
+            "Tipo de motivo*",
+            options=TIPOS_MOTIVO,
+            placeholder="Selecciona uno o más",
+            help="Puedes seleccionar varios. Se guardarán en orden alfabético.",
+        )
+        tipo_motivo = ", ".join(sorted(tipo_motivo_sel)) if tipo_motivo_sel else ""
 
-    motivo_solicitud = st.text_area("Motivo de la solicitud")
+    motivo_solicitud = st.text_area(
+        "Motivo de la solicitud*",
+        placeholder="Ejemplo: se capturó un proveedor incorrecto",
+    )
 
     c1, c2 = st.columns(2)
     with c1:
@@ -319,6 +339,8 @@ def render():
                 errores.append(f"Debes seleccionar 'Tasa Retención' ({label}).")
             if not block.get("retencion_isr"):
                 errores.append(f"Debes seleccionar 'Retención ISR' ({label}).")
+        if not tipo_motivo_sel:
+            errores.append("Debes seleccionar al menos un tipo de motivo.")
 
     if errores:
         for e in errores: st.error(e)
@@ -447,6 +469,7 @@ def render():
         "fecha_resuelto": None, "fecha_ultima_modificacion": None,
         "auditor": None, "comentarios_auditor": None,
         "historial": historial_inicial,
+        "tipo_motivo": tipo_motivo,
     }
 
     try:
