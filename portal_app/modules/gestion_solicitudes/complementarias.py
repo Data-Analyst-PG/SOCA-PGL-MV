@@ -40,6 +40,7 @@ COLS_TABLA = [
     ("correo",                 "Correo"),
     ("numero_trafico",         "Tráfico"),
     ("tipo_complementaria",    "Tipo"),
+    ("tipo_motivo",            "Tipo de motivo"),
     ("estatus",                "Estatus"),
     ("auditor",                "Auditor"),
     ("fecha_resuelto",         "Fecha resolución"),
