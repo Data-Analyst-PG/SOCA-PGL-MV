@@ -19,7 +19,9 @@ def get_complementarias(limit: int = 500) -> list:
             .execute()
         )
         return res.data or []
-    except Exception:
+    except Exception as e:
+        import streamlit as st
+        st.error(f"[get_complementarias] Error: {e}")
         return []
 
 
