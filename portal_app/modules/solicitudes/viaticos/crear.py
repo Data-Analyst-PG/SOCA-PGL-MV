@@ -7,7 +7,7 @@ from io import BytesIO
 import base64
 
 from PIL import Image
-import resend
+import resend # type: ignore
 
 from services.supabase_client import (
     get_supabase_client,
