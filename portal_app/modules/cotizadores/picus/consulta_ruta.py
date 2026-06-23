@@ -25,7 +25,7 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
 from .helpers import (
     cargar_datos_generales,
@@ -443,14 +443,14 @@ def render() -> None:
     util = calcular_utilidades(ingreso_total, costo_total, tipo_ruta)
 
     # ── Resultados ───────────────────────────────────────────────
-    # ── Resultados ───────────────────────────────────────────────
     divider()
-    tc_usd = safe_float(valores.get("Tipo de cambio USD", 17.5))
-    tc_val = tc_usd if str(ruta.get("Moneda", "")) == "USD" else 0.0
-    util["_tarifa_base"] = costo_total * 2.0
-    util["_valor_sec"]   = (costo_total * 2.0 / tc_val) if tc_val > 0 else 0.0
-    util["_moneda_base"] = "MXP"
-    mostrar_resultados_ruta(util)
+    tc_usd      = safe_float(valores.get("Tipo de cambio USD", 17.5))
+    tc_val      = tc_usd if str(ruta.get("Moneda", "")) == "USD" else 0.0
+    _umbral     = util["umbral_cd"]
+    _tarifa_sug = util["costo_directo"] / (_umbral / 100)
+    _tarifa_usd = (_tarifa_sug / tc_val) if tc_val > 0 else 0.0
+    banner_tarifa_sugerida(util["costo_directo"], ingreso_total, _umbral, "MXP", _tarifa_usd)
+    mostrar_resultados_ruta(util, titulo="Resultado de la Ruta")
   
     # ── Utilidad en USD (igual que Igloo) ────────────────────────
     moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
