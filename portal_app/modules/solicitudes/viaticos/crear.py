@@ -20,7 +20,6 @@ from ui.components import (
     divider,
 )
 
-
 def render():
 
     page_banner(
