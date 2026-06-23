@@ -1,1 +1,1 @@
-from . import consultar, crear
+from . import crear
