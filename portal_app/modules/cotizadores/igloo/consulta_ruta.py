@@ -27,7 +27,7 @@ from reportlab.platypus import (
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
-from .helpers import (
+from ._helpers import (
     TIPOS_RUTA,
     cargar_datos_generales,
     safe_number, safe_float,
