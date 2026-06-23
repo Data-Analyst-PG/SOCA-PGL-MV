@@ -30,7 +30,7 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
 from .helpers import (
     safe_number,
@@ -424,7 +424,10 @@ def render() -> None:
 
         # Utilidades globales
         divider()
-        mostrar_resultados_ruta(res)
+        _umbral     = res["umbral_cd"]
+        _tarifa_sug = res["costo_directo"] / (_umbral / 100)
+        banner_tarifa_sugerida(res["costo_directo"], res["ingreso_total"], _umbral, "MXP", 0.0)
+        mostrar_resultados_ruta(res, titulo="Resultado de la Vuelta Redonda")
 
         # Detalle de rutas por columnas (igual que plataforma anterior de Igloo)
         divider()
