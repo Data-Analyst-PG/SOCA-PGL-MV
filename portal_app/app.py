@@ -63,7 +63,7 @@ def construir_navegacion() -> dict:
     if _tiene("tickets:create", "tickets:read"):
         sol_pages.append(st.Page("pages/pg_tickets.py", title="🎫 Tickets", url_path="tickets"))
     if _tiene("viaticos:create", "viaticos:read"):
-        sol_pages.append(st.Page("pages/pg_viaticos.py", title:"💼 Viáticos", url_path="viaticos"))
+        sol_pages.append(st.Page("pages/pg_viaticos.py", title="💼 Viáticos", url_path="viaticos"))
     if sol_pages:
         secciones["Solicitudes"] = sol_pages
 
