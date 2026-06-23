@@ -13,3 +13,8 @@ beautifulsoup4
 lxml
 pdfplumber
 streamlit-searchbox
+streamlit-autorefresh
+pydeck
+gspread
+google-auth
+resend
