@@ -22,7 +22,7 @@ from ui.components import (
 
 def render():
 
-    page_banner(
+    section_header(
         "💳",
         "Solicitud de Viáticos y Reembolsos",
         ""
