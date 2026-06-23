@@ -21,7 +21,7 @@ from datetime import datetime
 from streamlit_searchbox import st_searchbox
 
 from services.supabase_client import get_supabase_client, current_user
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta
+from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
 from .helpers import (
     DEFAULTS,
@@ -443,11 +443,12 @@ def render() -> None:
                     calc["costo_total"],
                     d.get("tipo", ""),
                 )
-                tc_val = tc_usd if d.get("moneda_ingreso") == "USD" else 0.0
-                util["_tarifa_base"] = calc["costo_total"] * 2.0
-                util["_valor_sec"]   = (calc["costo_total"] * 2.0 / tc_val) if tc_val > 0 else 0.0
-                util["_moneda_base"] = "MXP"
-                mostrar_resultados_ruta(util)
+                tc_val      = tc_usd if d.get("moneda_ingreso") == "USD" else 0.0
+                _umbral     = util["umbral_cd"]
+                _tarifa_sug = util["costo_directo"] / (_umbral / 100)
+                _tarifa_usd = (_tarifa_sug / tc_val) if tc_val > 0 else 0.0
+                banner_tarifa_sugerida(util["costo_directo"], calc["ingreso_total"], _umbral, "MXP", _tarifa_usd)
+                mostrar_resultados_ruta(util, titulo="Resultado con los Cambios")
 
                 if st.button("💾 Guardar Cambios", key=f"pic_confirm_edit_{k}", type="primary"):
                     historial_actual = ruta.get("historial") or []

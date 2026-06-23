@@ -366,9 +366,10 @@ def mostrar_resultados_utilidad(
     util = calcular_utilidades(ingreso_total, costo_total, tipo)
 
     # ── Tarifa sugerida ──
-    tarifa_base  = costo_total * 2.0
-    valor_sec    = (tarifa_base / tc_usd) if tc_usd > 0 else 0.0
-    banner_tarifa_sugerida(tarifa_base, ingreso_total, "MXP", valor_sec)
+    umbral_cd   = util["umbral_cd"]
+    tarifa_base = costo_total / (umbral_cd / 100)
+    valor_sec   = (tarifa_base / tc_usd) if tc_usd > 0 else 0.0
+    banner_tarifa_sugerida(costo_total, ingreso_total, umbral_cd, "MXP", valor_sec)
 
     divider()
 
