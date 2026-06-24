@@ -92,6 +92,25 @@ def render():
             != "Operacion/Solicitud sin Folio"
         ]
 
+        # =================================
+        # EXTRAER MONEDA DESDE CONCEPTOS
+        # =================================
+
+        for s in solicitudes:
+
+            conceptos = s.get("conceptos", []) or []
+
+            monedas = sorted(
+                list(
+                    {
+                        item.get("Tipo Cambio", "MXP")
+                        for item in conceptos
+                    }
+                )
+            )
+
+            s["tipo_cambio"] = ", ".join(monedas)
+
     except Exception as e:
 
         alert(
@@ -160,18 +179,24 @@ def render():
 
         df_solicitudes = pd.DataFrame(solicitudes)
 
-        columnas = [
-            "folio_solicitud",
-            "empresa_brinda_servicio",
-            "motivo_viaje",
-            "fecha_inicio",
-            "fecha_fin",
-            "total_estimado",
-            "estatus"
-        ]
+        df_solicitudes = df_solicitudes.rename(
+            columns={
+                "tipo_cambio": "Moneda",
+                "total_estimado": "Total a Aprobar"
+            }
+        )
 
         columnas_existentes = [
-            c for c in columnas
+            c for c in [
+                "folio_solicitud",
+                "empresa_brinda_servicio",
+                "motivo_viaje",
+                "Moneda",
+                "fecha_inicio",
+                "fecha_fin",
+                "Total a Aprobar",
+                "estatus"
+            ]
             if c in df_solicitudes.columns
         ]
 
@@ -226,35 +251,63 @@ def render():
     # KPI COMPROBACIONES
     # =====================================================
 
-    total_comprobado = sum(
-        float(
-            x.get(
+    mxp_comprobado = 0
+    usd_comprobado = 0
+
+    mxp_anticipos = 0
+    usd_anticipos = 0
+
+    mxp_diferencia = 0
+    usd_diferencia = 0
+
+    for comp in comprobaciones:
+
+        conceptos = comp.get(
+            "conceptos",
+            []
+        ) or []
+
+        moneda_principal = "MXP"
+
+        if conceptos:
+
+            moneda_principal = conceptos[0].get(
+                "Moneda",
+                "MXP"
+            )
+
+        total_comprobado = float(
+            comp.get(
                 "total_comprobado",
                 0
             ) or 0
         )
-        for x in comprobaciones
-    )
 
-    total_anticipos = sum(
-        float(
-            x.get(
+        anticipo = float(
+            comp.get(
                 "anticipo_viaje",
                 0
             ) or 0
         )
-        for x in comprobaciones
-    )
 
-    total_diferencia = sum(
-        float(
-            x.get(
+        diferencia = float(
+            comp.get(
                 "diferencia_cargo_favor",
                 0
             ) or 0
         )
-        for x in comprobaciones
-    )
+
+        if moneda_principal == "USD":
+
+            usd_comprobado += total_comprobado
+            usd_anticipos += anticipo
+            usd_diferencia += diferencia
+
+        else:
+
+            mxp_comprobado += total_comprobado
+            mxp_anticipos += anticipo
+            mxp_diferencia += diferencia
 
     kpi_row([
         {
@@ -265,20 +318,24 @@ def render():
         },
         {
             "icono": "💰",
-            "label": "Total Comprobado",
-            "valor": f"${total_comprobado:,.0f}",
+            "label": "Comprobado MXP",
+            "valor": f"${mxp_comprobado:,.0f}",
             "color": "#059669"
         },
         {
-            "icono": "🏦",
-            "label": "Anticipos",
-            "valor": f"${total_anticipos:,.0f}",
-            "color": "#1D4ED8"
+            "icono": "💵",
+            "label": "Comprobado USD",
+            "valor": f"${usd_comprobado:,.0f}",
+            "color": "#2563EB"
         },
         {
             "icono": "📊",
-            "label": "Diferencia",
-            "valor": f"${total_diferencia:,.0f}",
+            "label": "Dif. MXP / USD",
+            "valor": (
+                f"${mxp_diferencia:,.0f}"
+                f" | "
+                f"${usd_diferencia:,.0f}"
+            ),
             "color": "#D97706"
         }
     ])
