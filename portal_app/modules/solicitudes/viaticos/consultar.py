@@ -81,6 +81,17 @@ def render():
             else []
         )
 
+        # Excluir solicitudes generadas automáticamente
+        solicitudes = [
+
+            s
+
+            for s in solicitudes
+
+            if s.get("motivo_viaje")
+            != "Operacion/Solicitud sin Folio"
+        ]
+
     except Exception as e:
 
         alert(
