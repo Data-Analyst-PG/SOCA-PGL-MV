@@ -75,9 +75,13 @@ DEFAULTS: dict[str, float] = {
     "ISR/IMSS":                  462.66,
     "Bono por milla cargada":      0.01,   # sobre Short Miles
     # Costo indirecto (solo %)
-    "% Costo Indirecto":           0.42,
+    "% Costo Indirecto":           0.35,
+    # Umbrales semáforo Lincoln
+    "umbral_cd": 50.0,
+    "umbral_ub": 50.0,
+    "umbral_ci": 35.0,
+    "umbral_un": 15.0,
 }
-
 # ─────────────────────────────────────────────
 # CONFIG POR TIPO DE RUTA
 # Orden visual de secciones en el formulario:
@@ -217,8 +221,9 @@ def normalizar(texto: str) -> str:
     return texto
 
 
-def a_usd(mxp: float, tc: float) -> float:
-    return mxp / tc if tc else 0.0
+def now_iso() -> str:
+    """Timestamp UTC en ISO 8601 — compartido por captura y gestión."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def get_profile_name(user_id: str) -> str:
@@ -451,4 +456,16 @@ def calcular_ruta_lincoln(
         "Miles_Load":       miles_load,
         "Short_Miles":      short_miles,
         "Miles_Empty":      miles_empty,
+        # ── Alias canónico (mostrar_resultados_ruta lo espera) ──────────────
+        "costos_indirectos":   costos_ind,
+        "moneda_display":      "USD",
+        # ── Colores para kpi_row() — umbrales Lincoln ───────────────────────
+        "Color_Directo":   "#DC2626" if pct_cd       > 50.0 else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind_real > 35.0 else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta     < 15.0 else "#059669",
+        # ── Umbrales Lincoln — viajan con el resultado ───────────────────────
+        "umbral_cd": 50.0,
+        "umbral_ub": 50.0,
+        "umbral_ci": 35.0,
+        "umbral_un": 15.0,
     }
