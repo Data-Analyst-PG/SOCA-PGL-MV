@@ -15,3 +15,9 @@ from ui.components import (
     solicitudes_table,
     status_badge_html,
 )
+
+def render():
+
+    st.title("Consulta Viáticos")
+
+    st.write("Página en construcción")
