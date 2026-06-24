@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-
+from supabase import create_client
 from datetime import datetime, date, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -13,6 +13,7 @@ from services.supabase_client import (
     get_supabase_client,
     current_user,
 )
+
 
 from ui.components import (
     page_banner,
@@ -30,6 +31,11 @@ def render():
     )
 
     supabase = get_supabase_client()
+
+    supabase_mtn = create_client(
+        st.secrets["MTN_SUPABASE_URL"],
+        st.secrets["MTN_SUPABASE_SERVICE_KEY"]
+    )
 
     if supabase is None:
         alert(
@@ -1178,7 +1184,7 @@ def render():
                 # GENERAR FOLIO
                 # =================================
                 existing = (
-                    supabase
+                    supabase_mtn
                     .table("solicitud_viaje")
                     .select("id")
                     .order("id", desc=True)
@@ -1210,7 +1216,7 @@ def render():
                 # GUARDAR
                 # =================================
 
-                supabase.table("solicitud_viaje").insert({
+                supabase_mtn.table("solicitud_viaje").insert({
 
                     "folio_solicitud": folio_solicitud,
 
@@ -1351,7 +1357,7 @@ def render():
     # =================================
 
     solicitudes_data = (
-        supabase
+        supabase_mtn
         .table("solicitud_viaje")
         .select("*")
         .order("folio_solicitud")
@@ -1365,7 +1371,7 @@ def render():
     # =================================
 
     comprobaciones_data = (
-        supabase
+        supabase_mtn
         .table("comprobacion_viaje")
         .select("folio_solicitud")
         .execute()
@@ -2956,7 +2962,7 @@ def render():
                     # =================================
 
                     existing = (
-                        supabase
+                        supabase_mtn
                         .table("comprobacion_viaje")
                         .select("id")
                         .order("id", desc=True)
@@ -2986,7 +2992,7 @@ def render():
                         # =============================
 
                         existing_sf = (
-                            supabase
+                            supabase_mtn
                             .table("solicitud_viaje")
                             .select("id")
                             .order("id", desc=True)
@@ -3023,7 +3029,7 @@ def render():
                         # INSERT SOLICITUD_VIAJE
                         # =============================
 
-                        supabase.table(
+                        supabase_mtn.table(
                             "solicitud_viaje"
                         ).insert({
 
@@ -3220,7 +3226,7 @@ def render():
                     # INSERT COMPROBACION
                     # =================================
 
-                    supabase.table(
+                    supabase_mtn.table(
                         "comprobacion_viaje"
                     ).insert({
 
