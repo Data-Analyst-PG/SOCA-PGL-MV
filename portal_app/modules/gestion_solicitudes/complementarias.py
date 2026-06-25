@@ -81,16 +81,15 @@ def _modal_edicion(comp: dict, gestor: str):
         f"**Folio {int(folio):04d}** — {tipo}&nbsp;&nbsp;{badge}",
         unsafe_allow_html=True,
     )
-    st.caption(
-        f"Solicitante: {comp.get('solicitante','')}  |  "
-        f"Tráfico: {comp.get('numero_trafico','—')}  |  "
-        f"Capturada: {str(comp.get('fecha_captura',''))[:10]}"
-    )
-
     col1, col2, col3 = st.columns(3)
-    col1.markdown(f"**Empresa:** {comp.get('empresa','')}")
-    col2.markdown(f"**Sucursal:** {comp.get('sucursal','')}")
-    col3.markdown(f"**Plataforma:** {comp.get('plataforma','')}")
+    col1.markdown(f"**👤 Solicitante:** {comp.get('solicitante','')}")
+    col2.markdown(f"**🚛 Tráfico:** {comp.get('numero_trafico','—')}")
+    col3.markdown(f"**📅 Capturada:** {str(comp.get('fecha_captura',''))[:10]}")
+    st.caption(
+        f"🏢 {comp.get('empresa','')}  |  "
+        f"📍 {comp.get('sucursal','')}  |  "
+        f"💻 {comp.get('plataforma','')}"
+    )
 
     st.divider()
 
@@ -100,8 +99,7 @@ def _modal_edicion(comp: dict, gestor: str):
     if tipo_motivo:
         st.markdown(f"**Tipo de motivo:** {tipo_motivo}")
     if motivo:
-        with st.expander("📄 Ver motivo de solicitud"):
-            st.write(motivo)
+        st.markdown(f"**Motivo de la solicitud:** {motivo}")
 
     # ── Detalle del concepto ──────────────────────────────────────────────────
     if not es_desconclusion:
