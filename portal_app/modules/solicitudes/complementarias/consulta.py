@@ -35,7 +35,7 @@ COLS_TABLA = [
 
 
 # ── Query ─────────────────────────────────────────────────────────────────────
-_ADMIN_PREVIEW_EMAILS = {"data_analyst@palosgarza.com"}
+_ADMIN_PREVIEW_EMAILS = {"data.analyst@palosgarza.com"}
 
 @st.cache_data(ttl=30, show_spinner=False)
 def _mis_complementarias(user_email: str, limite: int = 200) -> list:
