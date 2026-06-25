@@ -226,6 +226,114 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ─────────────────────────────────────────────
+# CARGA DE RUTAS — compartida por consulta, gestión y simulador
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def load_rutas_lincoln(table: str) -> pd.DataFrame:
+    """
+    Carga todas las rutas ordenadas por Fecha desc.
+    Compartida por consulta_ruta, gestion_rutas y simulador.
+    """
+    sb = get_supabase_client()
+    if sb is None:
+        return pd.DataFrame()
+    try:
+        resp = sb.table(table).select("*").order("Fecha", desc=True).execute()
+        df = pd.DataFrame(resp.data or [])
+        if not df.empty and "Fecha" in df.columns:
+            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+# ─────────────────────────────────────────────
+# POOL DE UBICACIONES — compartido por captura y gestión
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def cargar_pool_ubicaciones_lincoln() -> list[str]:
+    """
+    Une y deduplica ubicaciones USA (Origen + Destino) y MX
+    (Origen_MX + Destino_MX) de la tabla Rutas_Lincoln.
+    Compartido por captura_rutas y gestion_rutas.
+    """
+    sb = get_supabase_client()
+    if sb is None:
+        return []
+    try:
+        resp = sb.table(TABLE_RUTAS).select(
+            "Origen, Destino, Origen_MX, Destino_MX"
+        ).execute()
+        ubicaciones: set[str] = set()
+        for row in (resp.data or []):
+            for col in ("Origen", "Destino", "Origen_MX", "Destino_MX"):
+                v = (row.get(col) or "").strip().upper()
+                if v:
+                    ubicaciones.add(v)
+        return sorted(ubicaciones)
+    except Exception:
+        return []
+
+
+def buscar_ubicacion_lincoln(termino: str) -> list[str]:
+    """
+    Filtra el pool por lo que escribe el usuario.
+    Si no hay coincidencias, devuelve el término como opción
+    para permitir ubicaciones nuevas sin que el campo se limpie.
+    """
+    if not termino or len(termino) < 2:
+        return []
+    termino_upper = termino.upper()
+    pool = cargar_pool_ubicaciones_lincoln()
+    coincidencias = [u for u in pool if termino_upper in u]
+    if not coincidencias:
+        return [termino_upper]
+    return coincidencias
+
+
+# ─────────────────────────────────────────────
+# LABEL Y FILTROS — compartidos por consulta, gestión y simulador
+# ─────────────────────────────────────────────
+def label_ruta_lincoln(row) -> str:
+    """Etiqueta de selectbox para una ruta Lincoln."""
+    pct = safe(row.get("Pct_Utilidad_Bruta", 0))
+    return (
+        f"{row.get('ID_Ruta', '')} | {row.get('Fecha', '')} | "
+        f"{row.get('Tipo', '')} | {row.get('Cliente', '—')} | "
+        f"{row.get('Origen', '')} → {row.get('Destino', '')} | "
+        f"{pct:.1f}% Ut.B"
+    )
+
+
+def filtrar_rutas_lincoln(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """
+    Filtros de búsqueda reutilizables para consulta, gestión y simulador.
+    Compartida por los 3 módulos — usa prefix para evitar DuplicateElementKey.
+    """
+    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
+        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+        tipos    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
+        clientes = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
+        f_tipo = fc1.selectbox("Tipo",            tipos,    key=f"{prefix}_ftipo")
+        f_cli  = fc2.selectbox("Cliente",          clientes, key=f"{prefix}_fcli")
+        f_id   = fc3.text_input("ID Ruta",         key=f"{prefix}_fid",  placeholder="LN000001").strip().upper()
+        f_orig = fc4.text_input("Origen contiene",  key=f"{prefix}_forig").strip().upper()
+        f_dest = fc5.text_input("Destino contiene", key=f"{prefix}_fdest").strip().upper()
+
+    out = df.copy()
+    if f_tipo != "Todos":
+        out = out[out["Tipo"] == f_tipo]
+    if f_cli != "Todos":
+        out = out[out["Cliente"].astype(str) == f_cli]
+    if f_id:
+        out = out[out["ID_Ruta"].astype(str).str.upper().str.contains(f_id, na=False)]
+    if f_orig:
+        out = out[out["Origen"].astype(str).str.upper().str.contains(f_orig, na=False)]
+    if f_dest:
+        out = out[out["Destino"].astype(str).str.upper().str.contains(f_dest, na=False)]
+    return out
+
 def get_profile_name(user_id: str) -> str:
     if not user_id:
         return ""
