@@ -20,7 +20,7 @@ from fpdf import FPDF
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
-from ._shared import TABLE_RUTAS, cargar_datos_generales, safe
+from ._shared import TABLE_RUTAS, cargar_datos_generales, safe, load_rutas_lincoln
 
 
 # ─────────────────────────────────────────────
@@ -146,24 +146,6 @@ class PDF(FPDF):
 
 
 # ─────────────────────────────────────────────
-# CACHE RUTAS
-# ─────────────────────────────────────────────
-@st.cache_data(show_spinner=False, ttl=120)
-def _cargar_rutas(table: str) -> pd.DataFrame:
-    sb = get_supabase_client()
-    if sb is None:
-        return pd.DataFrame()
-    try:
-        resp = sb.table(table).select("*").execute()
-        df   = pd.DataFrame(resp.data or [])
-        if not df.empty and "Fecha" in df.columns:
-            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
-        return df
-    except Exception:
-        return pd.DataFrame()
-
-
-# ─────────────────────────────────────────────
 # RENDER
 # ─────────────────────────────────────────────
 def render() -> None:
@@ -175,10 +157,10 @@ def render() -> None:
     c_r, _ = st.columns([1, 5])
     with c_r:
         if st.button("🔄 Recargar rutas", key="ln_cot_reload"):
-            _cargar_rutas.clear()
+            load_rutas_lincoln.clear()
             st.rerun()
 
-    df = _cargar_rutas(TABLE_RUTAS)
+    df = load_rutas_lincoln(TABLE_RUTAS)
     if df.empty:
         alert("warn", "No hay rutas guardadas. Captura rutas primero.")
         return
