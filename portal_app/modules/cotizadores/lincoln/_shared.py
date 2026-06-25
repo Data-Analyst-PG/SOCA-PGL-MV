@@ -213,6 +213,11 @@ def limpiar_fila_json(fila: dict) -> dict:
 # ─────────────────────────────────────────────
 # HELPERS DE TEXTO Y CONVERSIÓN
 # ─────────────────────────────────────────────
+def a_usd(mxp: float, tc: float) -> float:
+    """Convierte MXP a USD. Si tc es 0 devuelve 0."""
+    return mxp / tc if tc else 0.0
+
+
 def normalizar(texto: str) -> str:
     if not texto:
         return ""
