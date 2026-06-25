@@ -74,9 +74,11 @@ def _modal_edicion(comp: dict, gestor: str):
     folio = comp.get("folio")
     est   = comp.get("estatus", "Pendiente")
     badge = status_badge_html(est)
+    tipo  = comp.get("tipo_complementaria", "")
+    es_desconclusion = tipo == "Desconclusión"
 
     st.markdown(
-        f"**Folio {int(folio):04d}** — {comp.get('tipo_complementaria','')}&nbsp;&nbsp;{badge}",
+        f"**Folio {int(folio):04d}** — {tipo}&nbsp;&nbsp;{badge}",
         unsafe_allow_html=True,
     )
     st.caption(
@@ -90,10 +92,74 @@ def _modal_edicion(comp: dict, gestor: str):
     col2.markdown(f"**Sucursal:** {comp.get('sucursal','')}")
     col3.markdown(f"**Plataforma:** {comp.get('plataforma','')}")
 
+    st.divider()
+
+    # ── Motivo ────────────────────────────────────────────────────────────────
     motivo = comp.get("motivo_solicitud", "")
+    tipo_motivo = comp.get("tipo_motivo", "")
+    if tipo_motivo:
+        st.markdown(f"**Tipo de motivo:** {tipo_motivo}")
     if motivo:
-        with st.expander("Ver motivo de solicitud"):
+        with st.expander("📄 Ver motivo de solicitud"):
             st.write(motivo)
+
+    # ── Detalle del concepto ──────────────────────────────────────────────────
+    if not es_desconclusion:
+        st.divider()
+        st.markdown("**📦 Detalle de la solicitud:**")
+
+        def _fila(label, valor):
+            if valor not in [None, "", "N/A", "Sin datos"]:
+                st.markdown(f"- **{label}:** {valor}")
+
+        if tipo == "Modificación":
+            ca, cn = st.columns(2)
+            with ca:
+                st.markdown("**📝 Datos actuales**")
+                _fila("Tipo concepto",  comp.get("tipo_concepto_actual"))
+                _fila("Concepto",       comp.get("concepto_actual"))
+                _fila("Proveedor",      comp.get("proveedor_actual"))
+                _fila("Moneda",         comp.get("moneda_actual"))
+                imp_a = comp.get("importe_actual")
+                if imp_a is not None:
+                    st.markdown(f"- **Importe:** ${float(imp_a):,.2f}")
+                _fila("Tasa IVA",       comp.get("tasa_iva_actual"))
+                _fila("Tasa Retención", comp.get("tasa_retencion_actual"))
+                _fila("Retención ISR",  comp.get("retencion_isr_actual"))
+                tot_a = comp.get("total_actual")
+                if tot_a is not None:
+                    st.markdown(f"- **Total calculado:** ${float(tot_a):,.2f}")
+            with cn:
+                st.markdown("**✅ Datos correctos**")
+                _fila("Tipo concepto",  comp.get("tipo_concepto_nuevo"))
+                _fila("Concepto",       comp.get("concepto_nuevo"))
+                _fila("Proveedor",      comp.get("proveedor_nuevo"))
+                _fila("Moneda",         comp.get("moneda_nuevo"))
+                imp_n = comp.get("importe_nuevo")
+                if imp_n is not None:
+                    st.markdown(f"- **Importe:** ${float(imp_n):,.2f}")
+                _fila("Tasa IVA",       comp.get("tasa_iva_nuevo"))
+                _fila("Tasa Retención", comp.get("tasa_retencion_nuevo"))
+                _fila("Retención ISR",  comp.get("retencion_isr_nuevo"))
+                tot_n = comp.get("total_nuevo")
+                if tot_n is not None:
+                    st.markdown(f"- **Total calculado:** ${float(tot_n):,.2f}")
+        else:
+            # Agregar Concepto — solo lado nuevo
+            st.markdown("**✅ Concepto a agregar**")
+            _fila("Tipo concepto",  comp.get("tipo_concepto_nuevo"))
+            _fila("Concepto",       comp.get("concepto_nuevo"))
+            _fila("Proveedor",      comp.get("proveedor_nuevo"))
+            _fila("Moneda",         comp.get("moneda_nuevo"))
+            imp_n = comp.get("importe_nuevo")
+            if imp_n is not None:
+                st.markdown(f"- **Importe:** ${float(imp_n):,.2f}")
+            _fila("Tasa IVA",       comp.get("tasa_iva_nuevo"))
+            _fila("Tasa Retención", comp.get("tasa_retencion_nuevo"))
+            _fila("Retención ISR",  comp.get("retencion_isr_nuevo"))
+            tot_n = comp.get("total_nuevo")
+            if tot_n is not None:
+                st.markdown(f"- **Total calculado:** ${float(tot_n):,.2f}")
 
     st.divider()
     st.markdown("**📋 Historial:**")
