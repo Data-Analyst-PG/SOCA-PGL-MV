@@ -283,6 +283,7 @@ def render():
         @st.dialog("✅ Solicitud registrada correctamente")
         def _dlg_success():
             st.success(f"Solicitud **#{payload['folio']}** registrada correctamente.")
+            st.warning("⚠️ **Recuerda adjuntar la factura correspondiente** en el correo de notificación.")
             st.markdown(f"👉 **Enviar notificación:** [Abrir correo]({payload['mailto']})")
             st.caption("O copia este mensaje manualmente:")
             st.code(payload["mensaje_manual"], language="text")
