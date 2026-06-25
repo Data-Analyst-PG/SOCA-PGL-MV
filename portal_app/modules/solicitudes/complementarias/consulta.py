@@ -35,23 +35,21 @@ COLS_TABLA = [
 
 
 # ── Query ─────────────────────────────────────────────────────────────────────
+_ADMIN_PREVIEW_EMAILS = {"data_analyst@palosgarza.com"}
+
 @st.cache_data(ttl=30, show_spinner=False)
 def _mis_complementarias(user_email: str, limite: int = 200) -> list:
     try:
-        sb = get_supabase_client()
-        res = (
-            sb.table("solicitudes_complementarias")
-            .select(
-                "folio,fecha_captura,empresa,sucursal,plataforma,solicitante,correo,"
-                "numero_trafico,tipo_complementaria,tipo_motivo,motivo_solicitud,estatus,"
-                "fecha_ultima_modificacion,fecha_resuelto,auditor,"
-                "comentarios_auditor,historial"
-            )
-            .ilike("correo", user_email)
-            .order("folio", desc=True)
-            .limit(limite)
-            .execute()
+        sb  = get_supabase_client()
+        q   = sb.table("solicitudes_complementarias").select(
+            "folio,fecha_captura,empresa,sucursal,plataforma,solicitante,correo,"
+            "numero_trafico,tipo_complementaria,tipo_motivo,motivo_solicitud,estatus,"
+            "fecha_ultima_modificacion,fecha_resuelto,auditor,"
+            "comentarios_auditor,historial"
         )
+        if user_email not in _ADMIN_PREVIEW_EMAILS:
+            q = q.ilike("correo", user_email)
+        res = q.order("folio", desc=True).limit(limite).execute()
         return res.data or []
     except Exception:
         return []
