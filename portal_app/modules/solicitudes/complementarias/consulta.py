@@ -60,45 +60,80 @@ def _mis_complementarias(user_email: str, limite: int = 200) -> list:
 # ── Modal de detalle (solo lectura) ──────────────────────────────────────────
 @st.dialog("Detalle de complementaria", width="large")
 def _modal_detalle(comp: dict):
+    import urllib.parse
+    from datetime import datetime
+
     folio = comp.get("folio", "")
     est   = comp.get("estatus", "Pendiente")
+    tipo  = comp.get("tipo_complementaria", "")
     badge = status_badge_html(est)
 
     st.markdown(
-        f"**Folio {int(folio):04d}** — {comp.get('tipo_complementaria','')}&nbsp;&nbsp;{badge}",
+        f"**Folio {int(folio):04d}** — {tipo}&nbsp;&nbsp;{badge}",
         unsafe_allow_html=True,
     )
+    col1, col2, col3 = st.columns(3)
+    col1.markdown(f"**👤 Solicitante:** {comp.get('solicitante','')}")
+    col2.markdown(f"**🚛 Tráfico:** {comp.get('numero_trafico','—')}")
+    col3.markdown(f"**📅 Capturada:** {str(comp.get('fecha_captura',''))[:10]}")
     st.caption(
-        f"Capturada: {str(comp.get('fecha_captura',''))[:10]}  |  "
-        f"Tráfico: {comp.get('numero_trafico','—')}"
+        f"🏢 {comp.get('empresa','')}  |  "
+        f"📍 {comp.get('sucursal','')}  |  "
+        f"💻 {comp.get('plataforma','')}"
     )
 
-    col1, col2, col3 = st.columns(3)
-    col1.markdown(f"**Empresa:** {comp.get('empresa','')}")
-    col2.markdown(f"**Sucursal:** {comp.get('sucursal','')}")
-    col3.markdown(f"**Plataforma:** {comp.get('plataforma','')}")
+    st.divider()
+
+    tipo_mot = comp.get("tipo_motivo","")
+    motivo   = comp.get("motivo_solicitud","")
+    if tipo_mot:
+        st.markdown(f"**Tipo de motivo:** {tipo_mot}")
+    if motivo:
+        st.markdown(f"**Motivo de la solicitud:** {motivo}")
 
     col4, col5 = st.columns(2)
     col4.markdown(f"**Auditor:** {comp.get('auditor') or 'Sin asignar'}")
     fecha_res = str(comp.get("fecha_resuelto",""))[:10] if comp.get("fecha_resuelto") else "Pendiente"
     col5.markdown(f"**Fecha resolución:** {fecha_res}")
 
-    motivo = comp.get("motivo_solicitud","")
-    tipo_mot = comp.get("tipo_motivo","")
-    if tipo_mot or motivo:
-        st.markdown("---")
-    if tipo_mot:
-        st.markdown(f"**Tipo de motivo:** {tipo_mot}")
-    if motivo:
-        st.markdown(f"**Descripción:** {motivo}")
-
     com_aud = comp.get("comentarios_auditor","")
     if com_aud:
-        st.markdown(f"**Comentarios del auditor:** {com_aud}")
+        st.info(f"💬 **Comentario del auditor:** {com_aud}")
 
-    st.markdown("---")
+    st.divider()
     st.markdown("**📋 Historial:**")
     historial_timeline(comp.get("historial") or [])
+
+    # ── Reenviar correo ───────────────────────────────────────────────────────
+    st.divider()
+    folio_fmt    = f"{int(folio):04d}"
+    empresa      = comp.get("empresa","")
+    trafico      = comp.get("numero_trafico","")
+    solicitante  = comp.get("solicitante","")
+    correo_sol   = comp.get("correo","")
+    plataforma   = comp.get("plataforma","")
+    sucursal     = comp.get("sucursal","")
+
+    destinatarios = (
+        ["julieta.reyna@palosgarza.com", "e-invoicing@palosgarza.com"]
+        if tipo == "Desconclusión"
+        else ["auditoria.operaciones@palosgarza.com"]
+    )
+    subject = f"Complementaria #{folio_fmt} | {empresa} | Tráfico {trafico}"
+    body = (
+        f"Fecha: {datetime.now().strftime('%d/%m/%Y')}\n"
+        f"Folio: #{folio_fmt}\nTráfico: {trafico}\n"
+        f"Solicitó: {solicitante}\nCorreo: {correo_sol}\n"
+        f"Empresa: {empresa}\nSucursal: {sucursal or 'N/A'}\n"
+        f"Plataforma: {plataforma}\nTipo: {tipo}\n"
+        f"\nMi folio de complementaria es el '#{folio_fmt}', favor de atender mi solicitud."
+    )
+    mailto = "mailto:{}?subject={}&body={}".format(
+        urllib.parse.quote(",".join(destinatarios)),
+        urllib.parse.quote(subject),
+        urllib.parse.quote(body),
+    )
+    st.markdown(f"📧 ¿No enviaste el correo? [**Reenviar notificación**]({mailto})")
 
 
 # ── Render principal ──────────────────────────────────────────────────────────
