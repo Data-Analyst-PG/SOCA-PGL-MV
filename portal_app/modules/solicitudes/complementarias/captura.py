@@ -307,8 +307,8 @@ def render():
         errores.append("El campo 'Número de tráfico' es obligatorio.")
     else:
         numero_trafico_clean = numero_trafico.strip().upper()
-        if not re.match(r"^[A-Z]{3}[0-9]{5}/[0-9]{2}$", numero_trafico_clean):
-            errores.append("El número de tráfico debe tener formato AAA00000/00 (ej. SEP03873/25).")
+        if not re.match(r"^[A-Z]{3,4}[0-9]{5,6}/[0-9]{2}$", numero_trafico_clean):
+    errores.append("El número de tráfico debe tener formato AAA00000/00 (ej. SEP12345/26 o LMSF12345/26).")
 
     if empresa and SUCURSALES_POR_EMPRESA.get(empresa, []):
         if not sucursal or not str(sucursal).strip():
