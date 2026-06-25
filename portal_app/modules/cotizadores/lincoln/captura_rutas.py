@@ -15,14 +15,15 @@ Diferencias Lincoln:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import streamlit as st
+from streamlit_searchbox import st_searchbox
 
 from services.supabase_client import get_supabase_client, current_user
 from ui.components import (
-    section_header, alert, divider, kpi_row,
-    semaforos_ruta, desglose_ruta,
+    section_header, alert, divider,
+    mostrar_resultados_ruta, banner_tarifa_sugerida, desglose_ruta,
 )
 from ._shared import (
     TABLE_RUTAS,
@@ -39,11 +40,9 @@ from ._shared import (
     a_usd,
     get_profile_name,
     generar_id_ruta,
+    now_iso,
+    buscar_ubicacion_lincoln,
 )
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # ─────────────────────────────────────────────
@@ -141,8 +140,24 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
     st.markdown("### 🇺🇸 Ruta Americana")
 
     ru1, ru2 = st.columns(2)
-    origen_usa  = ru1.text_input("📍 Origen",  placeholder="CIUDAD, ESTADO", key="ln_ori_usa")
-    destino_usa = ru2.text_input("📍 Destino", placeholder="CIUDAD, ESTADO", key="ln_dest_usa")
+    with ru1:
+        origen_sel = st_searchbox(
+            buscar_ubicacion_lincoln,
+            label="📍 Origen USA",
+            placeholder="CIUDAD, ESTADO...",
+            key=f"ln_ori_usa",
+            clear_on_submit=False,
+        )
+    with ru2:
+        destino_sel = st_searchbox(
+            buscar_ubicacion_lincoln,
+            label="📍 Destino USA",
+            placeholder="CIUDAD, ESTADO...",
+            key=f"ln_dest_usa",
+            clear_on_submit=False,
+        )
+    origen_usa  = str(origen_sel  or "").strip()
+    destino_usa = str(destino_sel or "").strip()
 
     m1, m2, m3 = st.columns(3)
     miles_load  = m1.number_input(
@@ -296,18 +311,16 @@ def _seccion_extras() -> tuple:
 # MOSTRAR RESULTADOS
 # ─────────────────────────────────────────────
 def _mostrar_resultados(r: dict, fd: dict) -> None:
+    tc_usd      = r.get("tc", 18.50)
+    _umbral     = r["umbral_cd"]
+    _tarifa_sug = r["costo_directo"] / (_umbral / 100)
+    _tarifa_mxp = _tarifa_sug * tc_usd
     divider()
-    section_header("📊", "Resultado del Cálculo")
-
-    kpi_row([
-        dict(icono="💰", label="Ingreso Total",     valor=f"${r['ingreso_total']:,.2f}",      color="#1B2266"),
-        dict(icono="💸", label="Costo Directo",     valor=f"${r['costo_directo_total']:,.2f}", color="#DC2626"),
-        dict(icono="📈", label="Utilidad Bruta",    valor=f"${r['utilidad_bruta']:,.2f}",     sub=f"{r['pct_bruta']:.1f}%",  color="#059669"),
-        dict(icono="📉", label="Costos Indirectos", valor=f"${r['costos_ind']:,.2f}",          color="#D97706"),
-        dict(icono="✅", label="Utilidad Neta",     valor=f"${r['utilidad_neta']:,.2f}",       sub=f"{r['pct_neta']:.1f}%",  color="#059669" if r['utilidad_neta'] >= 0 else "#DC2626"),
-    ])
-
-    semaforos_ruta(r)
+    banner_tarifa_sugerida(
+        r["costo_directo"], r["ingreso_total"],
+        _umbral, "USD", _tarifa_mxp,
+    )
+    mostrar_resultados_ruta(r)
 
     tipo_ruta   = fd.get("tipo_ruta", "NB")
     es_empty    = (tipo_ruta == "Empty")
@@ -350,7 +363,7 @@ def _guardar_ruta(r: dict, fd: dict, id_ruta: str, user_id: str, nombre_usuario:
         alert("error", "No se pudo conectar a Supabase.")
         return
 
-    now = _now_iso()
+    now = now_iso()
     fila = {
         "ID_Ruta":              id_ruta,
         "Fecha":                fd["fecha"],
