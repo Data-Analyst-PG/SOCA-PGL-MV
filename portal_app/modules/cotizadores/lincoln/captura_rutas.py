@@ -11,6 +11,7 @@ Diferencias Lincoln:
       D2DNB → Info General → Parte MX → Cruce → Ruta Americana → Extras
       D2DSB → Info General → Ruta Americana → Cruce → Parte MX → Extras
       Empty → Info General → Ruta Americana → Extras
+  - Sin st.form — usa st.button + ln_form_key para reset (compatible con st_searchbox)
 """
 
 from __future__ import annotations
@@ -98,10 +99,10 @@ def _panel_datos_generales(valores: dict) -> dict:
 
         st.markdown("**Costo Indirecto y Tipo de Cambio**")
         i1, i2 = st.columns(2)
-        pct_raw = float(valores.get("% Costo Indirecto", 0.42))
+        pct_raw = float(valores.get("% Costo Indirecto", 0.35))
         pct_display = pct_raw if pct_raw <= 1.0 else pct_raw / 100
         valores["% Costo Indirecto"] = i1.number_input(
-            "% Costo Indirecto (ej. 0.42)", value=pct_display,
+            "% Costo Indirecto (ej. 0.35)", value=pct_display,
             step=0.01, format="%.2f", key="ln_pct_ind")
         valores["Tipo de Cambio USD/MXP"] = i2.number_input(
             "Tipo de Cambio USD/MXP", value=float(valores.get("Tipo de Cambio USD/MXP", 18.50)),
@@ -117,15 +118,15 @@ def _panel_datos_generales(valores: dict) -> dict:
 # ─────────────────────────────────────────────
 # SECCIONES DEL FORMULARIO
 # ─────────────────────────────────────────────
-def _seccion_info_general(es_empty: bool, tipo_ruta: str) -> tuple:
+def _seccion_info_general(es_empty: bool, tipo_ruta: str, fk: int) -> tuple:
     """Devuelve: fecha, tipo_ruta, cliente, modo_viaje"""
     st.markdown("### 📋 Información General")
     g1, g2, g3, g4 = st.columns(4)
-    fecha      = g1.date_input("📅 Fecha", value=datetime.today(), key="ln_fecha")
+    fecha      = g1.date_input("📅 Fecha", value=datetime.today(), key=f"ln_fecha_{fk}")
     tipo       = g2.selectbox("🚛 Tipo de Ruta", TIPOS_RUTA,
-                               index=TIPOS_RUTA.index(tipo_ruta), key="ln_tipo")
-    cliente    = g3.text_input("🏢 Cliente", placeholder="NOMBRE DEL CLIENTE", key="ln_cliente")
-    modo_viaje = g4.selectbox("👥 Modo", ["Sencillo", "Team"], key="ln_modo")
+                               index=TIPOS_RUTA.index(tipo_ruta), key=f"ln_tipo_{fk}")
+    cliente    = g3.text_input("🏢 Cliente", placeholder="NOMBRE DEL CLIENTE", key=f"ln_cliente_{fk}")
+    modo_viaje = g4.selectbox("👥 Modo", ["Sencillo", "Team"], key=f"ln_modo_{fk}")
 
     config = obtener_config_tipo_ruta(tipo)
     dir_label = "Subida" if tipo in {"NB", "D2DNB", "Empty"} else "Bajada"
@@ -134,7 +135,7 @@ def _seccion_info_general(es_empty: bool, tipo_ruta: str) -> tuple:
     return fecha, tipo, cliente, modo_viaje
 
 
-def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
+def _seccion_ruta_americana(es_empty: bool, valores: dict, fk: int) -> tuple:
     """Devuelve: origen_usa, destino_usa, miles_load, short_miles, miles_empty,
                  modalidad, moneda_flete, cxm_flete, cxm_fuel, tarifa_flat"""
     st.markdown("### 🇺🇸 Ruta Americana")
@@ -144,16 +145,16 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
         origen_sel = st_searchbox(
             buscar_ubicacion_lincoln,
             label="📍 Origen USA",
-            placeholder="CIUDAD, ESTADO...",
-            key=f"ln_ori_usa",
+            placeholder="Escribe para buscar o capturar nueva...",
+            key=f"ln_ori_usa_{fk}",
             clear_on_submit=False,
         )
     with ru2:
         destino_sel = st_searchbox(
             buscar_ubicacion_lincoln,
             label="📍 Destino USA",
-            placeholder="CIUDAD, ESTADO...",
-            key=f"ln_dest_usa",
+            placeholder="Escribe para buscar o capturar nueva...",
+            key=f"ln_dest_usa_{fk}",
             clear_on_submit=False,
         )
     origen_usa  = str(origen_sel  or "").strip()
@@ -161,20 +162,17 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
 
     m1, m2, m3 = st.columns(3)
     miles_load  = m1.number_input(
-        "🛣️ Miles Load",
-        min_value=0.0, step=10.0, key="ln_ml",
+        "🛣️ Miles Load", min_value=0.0, step=10.0, key=f"ln_ml_{fk}",
         help="Millas que se cotizan al cliente (base del ingreso)",
         disabled=es_empty,
     )
     short_miles = m2.number_input(
-        "🔀 Short Miles",
-        min_value=0.0, step=1.0, key="ln_sm",
+        "🔀 Short Miles", min_value=0.0, step=1.0, key=f"ln_sm_{fk}",
         help="Millas reales recorridas cargado (base del pago al operador y bono)",
         disabled=es_empty,
     )
     miles_empty = m3.number_input(
-        "⚪ Miles Empty",
-        min_value=0.0, step=10.0, key="ln_me",
+        "⚪ Miles Empty", min_value=0.0, step=10.0, key=f"ln_me_{fk}",
         help="Millas en vacío (pago operador vacío + diesel)",
     )
 
@@ -183,26 +181,26 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
     mod1, mod2 = st.columns([1, 3])
     modalidad = mod1.radio(
         "Modalidad", ["Desglosada", "Flat"],
-        horizontal=False, key="ln_modalidad",
+        horizontal=False, key=f"ln_modalidad_{fk}",
         disabled=es_empty,
     )
 
-    cxm_flete   = 0.0
-    cxm_fuel    = 0.0
-    tarifa_flat = 0.0
+    cxm_flete    = 0.0
+    cxm_fuel     = 0.0
+    tarifa_flat  = 0.0
     moneda_flete = "USD"
 
     if es_empty:
         mod2.info("ℹ️ **Empty:** sin tarifa al cliente. Solo costos de reposicionamiento.")
     elif modalidad == "Desglosada":
         td1, td2, td3 = mod2.columns(3)
-        moneda_flete = td1.selectbox("💱 Moneda", ["USD", "MXP"], key="ln_mon_flete")
+        moneda_flete = td1.selectbox("💱 Moneda", ["USD", "MXP"], key=f"ln_mon_flete_{fk}")
         cxm_flete    = td2.number_input(
-            "CXM Flete ($/mi)", min_value=0.0, step=0.001, format="%.4f", key="ln_cxm_flete",
+            "CXM Flete ($/mi)", min_value=0.0, step=0.001, format="%.4f", key=f"ln_cxm_flete_{fk}",
             value=float(valores.get("CXM Operador USA", 0.48)),
         )
         cxm_fuel     = td3.number_input(
-            "Fuel Surcharge ($/mi)", min_value=0.0, step=0.001, format="%.4f", key="ln_cxm_fuel",
+            "Fuel Surcharge ($/mi)", min_value=0.0, step=0.001, format="%.4f", key=f"ln_cxm_fuel_{fk}",
             value=float(valores.get("Fuel Surcharge ($/mi)", 0.61)),
         )
         if miles_load > 0:
@@ -215,16 +213,16 @@ def _seccion_ruta_americana(es_empty: bool, valores: dict) -> tuple:
             )
     else:
         tf1, tf2 = mod2.columns(2)
-        moneda_flete = tf1.selectbox("💱 Moneda", ["USD", "MXP"], key="ln_mon_flete_flat")
+        moneda_flete = tf1.selectbox("💱 Moneda", ["USD", "MXP"], key=f"ln_mon_flete_flat_{fk}")
         tarifa_flat  = tf2.number_input(
-            "Tarifa Total (Flat)", min_value=0.0, step=50.0, key="ln_tarifa_flat"
+            "Tarifa Total (Flat)", min_value=0.0, step=50.0, key=f"ln_tarifa_flat_{fk}"
         )
 
     return (origen_usa, destino_usa, miles_load, short_miles, miles_empty,
             modalidad, moneda_flete, cxm_flete, cxm_fuel, tarifa_flat)
 
 
-def _seccion_cruce(tipo_ruta: str, config: dict) -> tuple:
+def _seccion_cruce(tipo_ruta: str, config: dict, fk: int) -> tuple:
     """Devuelve: aplica_cruce, tipo_cruce, tipo_carga, moneda_cruce, ingreso_cruce, costo_cruce_terc"""
     st.markdown("### 🛂 Cruce Fronterizo")
 
@@ -239,50 +237,67 @@ def _seccion_cruce(tipo_ruta: str, config: dict) -> tuple:
     aplica_cruce = st.checkbox(
         "¿Incluye cruce?",
         value=forzado,
-        key="ln_aplica_cruce",
+        key=f"ln_aplica_cruce_{fk}",
     )
 
     if aplica_cruce:
         cx1, cx2, cx3 = st.columns(3)
-        tipo_cruce = cx1.selectbox("Tipo de Cruce", ["Propio", "Tercero"], key="ln_tipo_cruce")
-        tipo_carga = cx2.selectbox("Carga del cruce", ["Cargado", "Vacío"], key="ln_tipo_carga")
-        moneda_cruce = cx3.selectbox("💱 Moneda Ingreso", ["USD", "MXP"], key="ln_moneda_cruce")
+        tipo_cruce   = cx1.selectbox("Tipo de Cruce", ["Propio", "Tercero"], key=f"ln_tipo_cruce_{fk}")
+        tipo_carga   = cx2.selectbox("Carga del cruce", ["Cargado", "Vacío"], key=f"ln_tipo_carga_{fk}")
+        moneda_cruce = cx3.selectbox("💱 Moneda Ingreso", ["USD", "MXP"], key=f"ln_moneda_cruce_{fk}")
 
         ing_col, costo_col = st.columns(2)
         ingreso_cruce = ing_col.number_input(
-            "Ingreso Cruce", min_value=0.0, step=5.0, format="%.2f", key="ln_ing_cruce"
+            "Ingreso Cruce", min_value=0.0, step=5.0, format="%.2f", key=f"ln_ing_cruce_{fk}"
         )
         if tipo_cruce == "Tercero":
             costo_cruce_terc = costo_col.number_input(
                 "Costo Cruce Tercero", min_value=0.0, step=5.0, format="%.2f",
-                key="ln_costo_cruce_terc"
+                key=f"ln_costo_cruce_terc_{fk}"
             )
 
     return aplica_cruce, tipo_cruce, tipo_carga, moneda_cruce, ingreso_cruce, costo_cruce_terc
 
 
-def _seccion_tramo_mx() -> tuple:
+def _seccion_tramo_mx(fk: int) -> tuple:
     """Devuelve: linea_mx, origen_mx, destino_mx, moneda_mx, ingreso_mx, costo_mx"""
     st.markdown("### 🇲🇽 Parte Mexicana")
 
     mx1, mx2 = st.columns(2)
-    linea_mx   = mx1.selectbox("Línea MX", ["Propia", "Tercero"], key="ln_linea_mx")
-    origen_mx  = mx1.text_input("📍 Origen MX",  placeholder="CIUDAD, ESTADO", key="ln_ori_mx")
-    destino_mx = mx1.text_input("📍 Destino MX", placeholder="CIUDAD, ESTADO", key="ln_dest_mx")
-    moneda_mx  = mx2.selectbox("💱 Moneda MX", ["MXP", "USD"], key="ln_moneda_mx")
+    linea_mx = mx1.selectbox("Línea MX", ["Propia", "Tercero"], key=f"ln_linea_mx_{fk}")
+
+    with mx1:
+        origen_mx_sel = st_searchbox(
+            buscar_ubicacion_lincoln,
+            label="📍 Origen MX",
+            placeholder="Escribe para buscar o capturar nueva...",
+            key=f"ln_ori_mx_{fk}",
+            clear_on_submit=False,
+        )
+        destino_mx_sel = st_searchbox(
+            buscar_ubicacion_lincoln,
+            label="📍 Destino MX",
+            placeholder="Escribe para buscar o capturar nueva...",
+            key=f"ln_dest_mx_{fk}",
+            clear_on_submit=False,
+        )
+    origen_mx  = str(origen_mx_sel  or "").strip()
+    destino_mx = str(destino_mx_sel or "").strip()
+
+    moneda_mx  = mx2.selectbox("💱 Moneda MX", ["MXP", "USD"], key=f"ln_moneda_mx_{fk}")
     ingreso_mx = mx2.number_input(
-        "Ingreso Flete MX", min_value=0.0, step=100.0, format="%.2f", key="ln_ing_mx"
+        "Ingreso Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"ln_ing_mx_{fk}"
     )
     costo_mx = 0.0
     if linea_mx == "Tercero":
         costo_mx = mx2.number_input(
-            "Costo Flete MX", min_value=0.0, step=100.0, format="%.2f", key="ln_costo_mx"
+            "Costo Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"ln_costo_mx_{fk}"
         )
 
     return linea_mx, origen_mx, destino_mx, moneda_mx, ingreso_mx, costo_mx
 
 
-def _seccion_extras() -> tuple:
+def _seccion_extras(fk: int) -> tuple:
     """Devuelve: otros_cargos {nombre: monto}, otros_cargos_cobrados {nombre: bool}"""
     st.markdown("### ➕ Extras / Otros Conceptos")
     st.caption(
@@ -290,16 +305,16 @@ def _seccion_extras() -> tuple:
         "Marca **'cobrado'** si también se le cobró al cliente (suma al ingreso)."
     )
 
-    otros_cargos         = {}
+    otros_cargos          = {}
     otros_cargos_cobrados = {}
 
     cols3 = st.columns(3)
     for i, extra in enumerate(EXTRAS_USA):
         with cols3[i % 3]:
             monto   = st.number_input(
-                extra, min_value=0.0, step=10.0, format="%.2f", key=f"ln_extra_{extra}"
+                extra, min_value=0.0, step=10.0, format="%.2f", key=f"ln_extra_{extra}_{fk}"
             )
-            cobrado = st.checkbox("cobra", key=f"ln_cobra_{extra}")
+            cobrado = st.checkbox("cobra", key=f"ln_cobra_{extra}_{fk}")
             if monto > 0:
                 otros_cargos[extra]          = monto
                 otros_cargos_cobrados[extra] = cobrado
@@ -372,7 +387,6 @@ def _guardar_ruta(r: dict, fd: dict, id_ruta: str, user_id: str, nombre_usuario:
         "Modo_Viaje":           fd["modo_viaje"],
         "Origen":               fd["origen_usa"],
         "Destino":              fd["destino_usa"],
-        # Millas — nombres nuevos (columnas agregadas en migración)
         "Miles_Load":           fd["miles_load"],
         "Short_Miles":          fd["short_miles"],
         "Miles_Empty":          fd["miles_empty"],
@@ -422,15 +436,15 @@ def _guardar_ruta(r: dict, fd: dict, id_ruta: str, user_id: str, nombre_usuario:
 
     try:
         supabase.table(TABLE_RUTAS).insert(limpiar_fila_json(fila)).execute()
-        # Limpiar cache si existe
+        # Refrescar cache de rutas y pool de ubicaciones
         try:
-            from . import consulta_ruta as _cr
-            _cr._cargar_rutas.clear()
+            from ._shared import load_rutas_lincoln, cargar_pool_ubicaciones_lincoln
+            load_rutas_lincoln.clear()
+            cargar_pool_ubicaciones_lincoln.clear()
         except Exception:
             pass
-        # Activar modal de éxito y limpiar estado del formulario
-        st.session_state["ln_ruta_guardada_id"]  = id_ruta
-        st.session_state["ln_mostrar_modal"]     = True
+        st.session_state["ln_ruta_guardada_id"] = id_ruta
+        st.session_state["ln_mostrar_modal"]    = True
         st.session_state.pop("ln_resultado", None)
         st.session_state.pop("ln_form_data", None)
         st.rerun()
@@ -449,7 +463,6 @@ def _modal_guardado(id_ruta: str) -> None:
     if st.button("✅ Aceptar", type="primary", use_container_width=True, key="ln_modal_ok"):
         st.session_state.pop("ln_ruta_guardada_id", None)
         st.session_state.pop("ln_mostrar_modal", None)
-        # Incrementar sufijo de form para forzar que todos los widgets queden vacíos
         st.session_state["ln_form_key"] = st.session_state.get("ln_form_key", 0) + 1
         st.rerun()
 
@@ -469,10 +482,9 @@ def render() -> None:
 
     st.session_state.setdefault("ln_resultado", None)
     st.session_state.setdefault("ln_form_data", {})
-    # Sufijo de sesión: cambia al limpiar el formulario, forzando recreación de widgets
     st.session_state.setdefault("ln_form_key", 0)
 
-    # Mostrar modal de éxito si acaba de guardar
+    # Mostrar modal si acaba de guardar
     if st.session_state.get("ln_mostrar_modal") and st.session_state.get("ln_ruta_guardada_id"):
         _modal_guardado(st.session_state["ln_ruta_guardada_id"])
 
@@ -481,75 +493,72 @@ def render() -> None:
     divider()
     section_header("🛣️", "Nueva Ruta")
 
-    # Leer tipo_ruta ANTES del form para saber el orden de secciones
-    # Usamos session_state para persistir entre reruns del selectbox
-    tipo_ruta_actual = st.session_state.get("ln_tipo", TIPOS_RUTA[0])
+    _k = st.session_state.get("ln_form_key", 0)
+
+    # Leer tipo_ruta del session_state para saber el orden de secciones antes de renderizar
+    tipo_ruta_actual = st.session_state.get(f"ln_tipo_{_k}", TIPOS_RUTA[0])
     config           = obtener_config_tipo_ruta(tipo_ruta_actual)
     orden            = config.get("orden", ["americana"])
     es_empty         = (tipo_ruta_actual == "Empty")
 
-    _k = st.session_state.get("ln_form_key", 0)
-    with st.form(f"ln_captura_ruta_{_k}", clear_on_submit=False):
+    # ── Info General siempre primera ─────────────────────────────────────
+    fecha, tipo_ruta, cliente, modo_viaje = _seccion_info_general(
+        es_empty, tipo_ruta_actual, _k
+    )
+    config   = obtener_config_tipo_ruta(tipo_ruta)
+    orden    = config.get("orden", ["americana"])
+    es_empty = (tipo_ruta == "Empty")
 
-        # ── Info General siempre primera ──────────────────────────────────────
-        fecha, tipo_ruta, cliente, modo_viaje = _seccion_info_general(
-            es_empty, tipo_ruta_actual
-        )
-        config   = obtener_config_tipo_ruta(tipo_ruta)
-        orden    = config.get("orden", ["americana"])
-        es_empty = (tipo_ruta == "Empty")
+    # Valores por defecto de secciones opcionales
+    origen_usa = destino_usa = ""
+    miles_load = short_miles = miles_empty = 0.0
+    modalidad    = "Desglosada"
+    moneda_flete = "USD"
+    cxm_flete = cxm_fuel = tarifa_flat = 0.0
+    aplica_cruce = False
+    tipo_cruce   = "Propio"
+    tipo_carga   = "Cargado"
+    moneda_cruce = "USD"
+    ingreso_cruce = costo_cruce_terc = 0.0
+    linea_mx   = "Propia"
+    origen_mx  = destino_mx = ""
+    moneda_mx  = "MXP"
+    ingreso_mx = costo_mx = 0.0
 
-        # Valores por defecto de secciones opcionales
-        origen_usa = destino_usa = ""
-        miles_load = short_miles = miles_empty = 0.0
-        modalidad = "Desglosada"
-        moneda_flete = "USD"
-        cxm_flete = cxm_fuel = tarifa_flat = 0.0
-        aplica_cruce = False
-        tipo_cruce = "Propio"
-        tipo_carga = "Cargado"
-        moneda_cruce = "USD"
-        ingreso_cruce = costo_cruce_terc = 0.0
-        linea_mx = "Propia"
-        origen_mx = destino_mx = ""
-        moneda_mx = "MXP"
-        ingreso_mx = costo_mx = 0.0
-
-        # ── Secciones en orden según tipo de ruta ─────────────────────────────
-        for seccion in orden:
-
-            divider()
-
-            if seccion == "americana":
-                (origen_usa, destino_usa, miles_load, short_miles, miles_empty,
-                 modalidad, moneda_flete, cxm_flete, cxm_fuel, tarifa_flat) = \
-                    _seccion_ruta_americana(es_empty, valores)
-
-            elif seccion == "cruce":
-                if not es_empty and config.get("cruce") in ("opcional", True):
-                    (aplica_cruce, tipo_cruce, tipo_carga,
-                     moneda_cruce, ingreso_cruce, costo_cruce_terc) = \
-                        _seccion_cruce(tipo_ruta, config)
-
-            elif seccion == "mx":
-                if config.get("parte_mx") and not es_empty:
-                    (linea_mx, origen_mx, destino_mx,
-                     moneda_mx, ingreso_mx, costo_mx) = _seccion_tramo_mx()
-
-        # ── Extras siempre al final ───────────────────────────────────────────
+    # ── Secciones en orden según tipo de ruta ────────────────────────────
+    for seccion in orden:
         divider()
-        otros_cargos, otros_cargos_cobrados = _seccion_extras()
 
-        divider()
-        submitted = st.form_submit_button(
-            "🔍 Calcular Ruta", type="primary", use_container_width=True
-        )
+        if seccion == "americana":
+            (origen_usa, destino_usa, miles_load, short_miles, miles_empty,
+             modalidad, moneda_flete, cxm_flete, cxm_fuel, tarifa_flat) = \
+                _seccion_ruta_americana(es_empty, valores, _k)
 
-    # ── Post-form: calcular ───────────────────────────────────────────────────
+        elif seccion == "cruce":
+            if not es_empty and config.get("cruce") in ("opcional", True):
+                (aplica_cruce, tipo_cruce, tipo_carga,
+                 moneda_cruce, ingreso_cruce, costo_cruce_terc) = \
+                    _seccion_cruce(tipo_ruta, config, _k)
+
+        elif seccion == "mx":
+            if config.get("parte_mx") and not es_empty:
+                (linea_mx, origen_mx, destino_mx,
+                 moneda_mx, ingreso_mx, costo_mx) = _seccion_tramo_mx(_k)
+
+    # ── Extras siempre al final ───────────────────────────────────────────
+    divider()
+    otros_cargos, otros_cargos_cobrados = _seccion_extras(_k)
+
+    divider()
+    submitted = st.button(
+        "🔍 Calcular Ruta", type="primary", use_container_width=True,
+        key=f"ln_calcular_{_k}",
+    )
+
+    # ── Calcular ─────────────────────────────────────────────────────────
     if submitted:
         tc = float(valores.get("Tipo de Cambio USD/MXP", 18.5))
 
-        # Ingreso por milla en USD
         if es_empty or tarifa_flat > 0:
             ing_x_milla_usd = 0.0
             fuel_sc_usd     = 0.0
@@ -565,7 +574,6 @@ def render() -> None:
         if aplica_cruce and not es_empty:
             ing_cruce_usd = ingreso_cruce if moneda_cruce == "USD" else a_usd(ingreso_cruce, tc)
 
-        # Tramo MX → siempre en MXP para el cálculo
         if config.get("parte_mx") and not es_empty:
             ing_mx_mxp   = ingreso_mx * tc if moneda_mx == "USD" else ingreso_mx
             costo_mx_mxp = costo_mx   * tc if moneda_mx == "USD" else costo_mx
@@ -631,7 +639,7 @@ def render() -> None:
             "otros_cargos_cobrados": otros_cargos_cobrados,
         }
 
-    # ── Mostrar resultado + botón guardar (fuera del form) ────────────────────
+    # ── Mostrar resultado + botón guardar ─────────────────────────────────
     r  = st.session_state.get("ln_resultado")
     fd = st.session_state.get("ln_form_data", {})
 
