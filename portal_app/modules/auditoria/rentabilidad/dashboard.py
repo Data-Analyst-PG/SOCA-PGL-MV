@@ -1,6 +1,6 @@
-from __future__ import annotations
 import streamlit as st
-from ui.components import page_banner
+from ui.components import section_header, alert
+
 
 def render():
     section_header("📊", "Dashboard",
