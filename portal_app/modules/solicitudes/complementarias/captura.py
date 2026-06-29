@@ -21,15 +21,39 @@ from .shared import (
 
 
 def subir_factura_storage(supabase, archivo, folio: str) -> str | None:
-    """Sube el archivo al bucket complementarias-evidencias y retorna el path."""
+    """Sube el archivo al bucket. Las imágenes se comprimen antes de subir."""
     try:
+        from PIL import Image
         extension = archivo.name.rsplit(".", 1)[-1].lower()
         path = f"facturas/{folio}.{extension}"
-        file_bytes = archivo.read()
         content_type = (
             "application/pdf" if extension == "pdf"
             else f"image/{extension}"
         )
+
+        if extension == "pdf":
+            file_bytes = archivo.read()
+        else:
+            # Comprimir imagen
+            img = Image.open(archivo)
+            img = img.convert("RGB")  # asegura compatibilidad JPG
+
+            # Redimensionar si es mayor a 1200px de ancho
+            max_width = 1200
+            if img.width > max_width:
+                ratio = max_width / img.width
+                new_size = (max_width, int(img.height * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+
+            buffer = BytesIO()
+            img.save(buffer, format="JPEG", quality=70, optimize=True)
+            file_bytes = buffer.getvalue()
+
+            # Siempre guardar como .jpg cuando es imagen
+            extension = "jpg"
+            path = f"facturas/{folio}.{extension}"
+            content_type = "image/jpeg"
+
         supabase.storage.from_("complementarias-evidencias").upload(
             path=path,
             file=file_bytes,
