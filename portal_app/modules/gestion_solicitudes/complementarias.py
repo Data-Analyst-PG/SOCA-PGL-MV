@@ -68,6 +68,18 @@ def _to_excel(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+
+def _get_factura_url(factura_path: str) -> str | None:
+    """Genera la URL pública del archivo en Supabase Storage."""
+    try:
+        from services.supabase_client import get_supabase
+        supabase = get_supabase()
+        res = supabase.storage.from_("complementarias-evidencias").get_public_url(factura_path)
+        return res
+    except Exception:
+        return None
+
+
 # ── Modal de edición ──────────────────────────────────────────────────────────
 @st.dialog("Actualizar complementaria", width="large")
 def _modal_edicion(comp: dict, gestor: str):
@@ -159,6 +171,17 @@ def _modal_edicion(comp: dict, gestor: str):
             if tot_n is not None:
                 st.markdown(f"- **Total calculado:** ${float(tot_n):,.2f}")
 
+    # ── Factura adjunta ───────────────────────────────────────────────────────
+    factura_path = comp.get("factura_path")
+    if factura_path:
+        st.divider()
+        st.markdown("**📎 Factura adjunta:**")
+        url = _get_factura_url(factura_path)
+        if url:
+            st.link_button("📄 Ver factura", url, use_container_width=False)
+        else:
+            st.caption("No se pudo generar el enlace de la factura.")
+    
     st.divider()
     st.markdown("**📋 Historial:**")
     historial_timeline(comp.get("historial") or [])
