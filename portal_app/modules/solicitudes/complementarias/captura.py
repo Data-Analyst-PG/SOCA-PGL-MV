@@ -4,6 +4,8 @@
 # Lógica de negocio intacta (catálogos, validaciones, Logismex, historial)
 # ─────────────────────────────────────────────────────────────────────────────
 from datetime import datetime
+from io import BytesIO
+import base64
 import streamlit as st
 import urllib.parse
 import re
@@ -17,6 +19,27 @@ from .shared import (
     es_plataforma_logismex, calcular_totales_logismex, build_historial_entry,
 )
 
+
+def subir_factura_storage(supabase, archivo, folio: str) -> str | None:
+    """Sube el archivo al bucket complementarias-evidencias y retorna el path."""
+    try:
+        extension = archivo.name.rsplit(".", 1)[-1].lower()
+        path = f"facturas/{folio}.{extension}"
+        file_bytes = archivo.read()
+        content_type = (
+            "application/pdf" if extension == "pdf"
+            else f"image/{extension}"
+        )
+        supabase.storage.from_("complementarias-evidencias").upload(
+            path=path,
+            file=file_bytes,
+            file_options={"content-type": content_type, "upsert": "true"},
+        )
+        return path
+    except Exception as e:
+        st.warning(f"No se pudo subir la factura: {e}")
+        return None
+        
 
 def build_mailto(to_emails: list, subject: str, body: str) -> str:
     return "mailto:{}?subject={}&body={}".format(
@@ -274,6 +297,24 @@ def render():
 
     st.divider()
 
+    # ── Factura adjunta ───────────────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown("##### 📎 Factura o evidencia *(opcional)*")
+        factura_file = st.file_uploader(
+            "Sube la factura en PDF o imagen",
+            type=["pdf", "png", "jpg", "jpeg"],
+            key="comp_factura_upload",
+            help="El archivo se guardará vinculado a esta solicitud. Máximo recomendado: 5 MB.",
+        )
+        if factura_file:
+            size_mb = len(factura_file.getvalue()) / (1024 * 1024)
+            if size_mb > 5:
+                alert("warn", f"El archivo pesa {size_mb:.1f} MB. Se recomienda subir archivos menores a 5 MB.")
+            else:
+                st.success(f"✅ Archivo listo: {factura_file.name} ({size_mb:.2f} MB)")
+
+    st.divider()
+
     if "comp_confirm_ok"       not in st.session_state: st.session_state.comp_confirm_ok = False
     if "comp_success_payload"  not in st.session_state: st.session_state.comp_success_payload = None
 
@@ -484,6 +525,19 @@ def render():
         st.stop()
 
     folio_formateado = f"{folio_num:04d}"
+
+    # ── Subir factura si se adjuntó ───────────────────────────────────────────
+    factura_file = st.session_state.get("comp_factura_upload")
+    factura_path = None
+    if factura_file:
+        factura_path = subir_factura_storage(supabase, factura_file, folio_formateado)
+        if factura_path:
+            try:
+                supabase.table("solicitudes_complementarias").update(
+                    {"factura_path": factura_path}
+                ).eq("folio", folio_num).execute()
+            except Exception as e:
+                st.warning(f"Solicitud guardada, pero no se pudo vincular la factura: {e}")
 
     # ── Mailto ────────────────────────────────────────────────────────────────
     destinatarios = (
