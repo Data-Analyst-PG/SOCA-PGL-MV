@@ -45,7 +45,7 @@ def _mis_complementarias(user_email: str, limite: int = 200) -> list:
             "folio,fecha_captura,empresa,sucursal,plataforma,solicitante,correo,"
             "numero_trafico,tipo_complementaria,tipo_motivo,motivo_solicitud,estatus,"
             "fecha_ultima_modificacion,fecha_resuelto,auditor,"
-            "comentarios_auditor,historial"
+            "comentarios_auditor,historial,factura_path"
         )
         if user_email not in _ADMIN_PREVIEW_EMAILS:
             q = q.ilike("correo", user_email)
@@ -101,6 +101,67 @@ def _modal_detalle(comp: dict):
     st.divider()
     st.markdown("**📋 Historial:**")
     historial_timeline(comp.get("historial") or [])
+
+    # ── Factura adjunta ───────────────────────────────────────────────────────
+    st.divider()
+    factura_path = comp.get("factura_path")
+    folio_fmt_fc = f"{int(folio):04d}"
+
+    if factura_path:
+        st.markdown("**📎 Factura adjunta:**")
+        try:
+            sb_fc  = get_supabase_client()
+            url_fc = sb_fc.storage.from_("complementarias-evidencias").get_public_url(factura_path)
+            st.link_button("📄 Ver factura", url_fc)
+        except Exception:
+            st.caption("No se pudo generar el enlace de la factura.")
+    else:
+        st.markdown("**📎 Adjuntar factura:**")
+        factura_up = st.file_uploader(
+            "Sube la factura en PDF o imagen",
+            type=["pdf", "png", "jpg", "jpeg"],
+            key=f"ccomp_factura_up_{folio}",
+            help="Máximo recomendado: 5 MB.",
+        )
+        if factura_up:
+            from PIL import Image
+            size_mb = len(factura_up.getvalue()) / (1024 * 1024)
+            if size_mb > 5:
+                st.warning(f"El archivo pesa {size_mb:.1f} MB. Se recomienda menos de 5 MB.")
+            else:
+                st.success(f"✅ {factura_up.name} ({size_mb:.2f} MB)")
+                if st.button("💾 Guardar factura", key=f"ccomp_factura_save_{folio}"):
+                    try:
+                        sb_up   = get_supabase_client()
+                        ext     = factura_up.name.rsplit(".", 1)[-1].lower()
+                        if ext == "pdf":
+                            file_bytes   = factura_up.read()
+                            content_type = "application/pdf"
+                            path_dest    = f"facturas/{folio_fmt_fc}.pdf"
+                        else:
+                            img = Image.open(factura_up).convert("RGB")
+                            if img.width > 1200:
+                                ratio    = 1200 / img.width
+                                img      = img.resize((1200, int(img.height * ratio)), Image.LANCZOS)
+                            buf_img = BytesIO()
+                            img.save(buf_img, format="JPEG", quality=70, optimize=True)
+                            file_bytes   = buf_img.getvalue()
+                            content_type = "image/jpeg"
+                            path_dest    = f"facturas/{folio_fmt_fc}.jpg"
+
+                        sb_up.storage.from_("complementarias-evidencias").upload(
+                            path=path_dest,
+                            file=file_bytes,
+                            file_options={"content-type": content_type, "upsert": "true"},
+                        )
+                        sb_up.table("solicitudes_complementarias").update(
+                            {"factura_path": path_dest}
+                        ).eq("folio", int(folio)).execute()
+                        st.success("✅ Factura guardada correctamente.")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar la factura: {e}")
 
     # ── Reenviar correo ───────────────────────────────────────────────────────
     st.divider()
