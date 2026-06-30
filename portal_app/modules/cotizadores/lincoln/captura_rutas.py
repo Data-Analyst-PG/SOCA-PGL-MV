@@ -282,16 +282,18 @@ def _seccion_extras(fk: int) -> tuple:
 # MOSTRAR RESULTADOS
 # ─────────────────────────────────────────────
 def _mostrar_resultados(r: dict, fd: dict) -> None:
-    tc_usd      = r.get("tc", 18.50)
-    _umbral     = r["umbral_cd"]
-    _tarifa_sug = r["costo_directo"] / (_umbral / 100)
-    _tarifa_mxp = _tarifa_sug * tc_usd
+    tc_usd       = r.get("tc", 18.50)
+    _umbral      = r["umbral_cd"]
+    _costo_ame   = r.get("costo_directo_americana", r["costo_directo"])
+    _tarifa_sug  = _costo_ame / (_umbral / 100)
+    _tarifa_mxp  = _tarifa_sug * tc_usd
     divider()
     banner_tarifa_sugerida(
-        r["costo_directo"], r["ingreso_total"],
+        _costo_ame, r["ingreso_total"],
         _umbral, "USD", _tarifa_mxp,
         modalidad=fd.get("modalidad", "Flat"),
         miles_load=fd.get("miles_load", 0.0),
+        fuel_capturado=r.get("ingreso_fuel_usa", 0.0),
     )
     mostrar_resultados_ruta(r)
 
