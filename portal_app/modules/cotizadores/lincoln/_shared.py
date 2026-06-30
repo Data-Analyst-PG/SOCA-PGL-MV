@@ -503,6 +503,11 @@ def calcular_ruta_lincoln(
     costo_directo        = sueldo_usa + diesel_usa + costo_cruce + costo_mx_usd + otros_cargos_costo + isr_imss
     costo_directo_total  = costo_directo  # alias — se mantiene por compatibilidad con filas guardadas
 
+    # Costo directo SOLO de la parte americana — para el banner de tarifa sugerida
+    # en rutas D2D (no debe incluir cruce ni tramo MX, que ya tienen su propio
+    # ingreso/costo fijo y no necesitan sugerencia de tarifa)
+    costo_directo_americana = sueldo_usa + diesel_usa + isr_imss + otros_cargos_costo
+
     utilidad_bruta = ingreso_total - costo_directo
     pct_bruta      = (utilidad_bruta / ingreso_total * 100) if ingreso_total > 0 else 0.0
 
@@ -532,6 +537,7 @@ def calcular_ruta_lincoln(
         "isr_imss":             isr_imss,
         "costo_directo":        costo_directo,
         "costo_directo_total":  costo_directo_total,
+        "costo_directo_americana": costo_directo_americana,
         # Utilidades
         "utilidad_bruta":       utilidad_bruta,
         "pct_bruta":            pct_bruta,
