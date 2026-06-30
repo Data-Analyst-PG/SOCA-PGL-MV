@@ -163,7 +163,8 @@ def _sugerir_candidatas(df: pd.DataFrame, ruta_p: pd.Series) -> list[dict]:
 # ─────────────────────────────────────────────
 # RESUMEN VR
 # ─────────────────────────────────────────────
-def _resumen_vr(rutas: list[pd.Series]) -> dict:
+def _resumen_vr(rutas: list[pd.Series], valores: dict | None = None) -> dict:
+    valores = valores or {}
     ing = sum(safe(r.get("Ingreso_Total",       0)) for r in rutas)
     cd  = sum(safe(r.get("Costo_Directo_Total", 0)) for r in rutas)
     ub  = sum(safe(r.get("Utilidad_Bruta",      0)) for r in rutas)
@@ -201,10 +202,10 @@ def _resumen_vr(rutas: list[pd.Series]) -> dict:
         "Color_Indirecto": "#D97706" if (ci / ing * 100 if ing else 0) > 35.0 else "#059669",
         "Color_Ut_Neta":   "#DC2626" if (un / ing * 100 if ing else 0) < 15.0 else "#059669",
         "moneda_display":  "USD",
-        "umbral_cd": 50.0,
-        "umbral_ub": 50.0,
-        "umbral_ci": 35.0,
-        "umbral_un": 15.0,
+        "umbral_cd": safe(valores.get("umbral_cd", 50.0)),
+        "umbral_ub": safe(valores.get("umbral_ub", 50.0)),
+        "umbral_ci": safe(valores.get("umbral_ci", 35.0)),
+        "umbral_un": safe(valores.get("umbral_un", 15.0)),
     }
 
 
@@ -595,17 +596,28 @@ def render() -> None:
 
         divider()
         section_header("📊", "Resumen de Vuelta Redonda")
-        res = _resumen_vr(rutas_series)
+        res = _resumen_vr(rutas_series, valores)
 
-        # Banner tarifa sugerida (valor secundario 0.0 — TC mixto en vuelta redonda)
-        tc_usd      = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
-        _umbral     = res["umbral_cd"]
-        _tarifa_sug = res["costo_directo"] / (_umbral / 100)
-        _tarifa_mxp = _tarifa_sug * tc_usd
+        # Banner — usa costo_directo_americana (sum de tramos americanos)
+        # y fuel_capturado (sum de fuel de todos los tramos)
+        tc_usd         = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
+        _umbral        = res["umbral_cd"]
+        _costo_ame_vr  = sum(
+            safe(pd.Series(r).get("Costo_Directo", 0))
+            - safe(pd.Series(r).get("Costo_Cruce",  0))
+            - safe(pd.Series(r).get("Costo_MX_USD", 0))
+            for r in datos["rutas"]
+        )
+        _fuel_vr       = sum(safe(pd.Series(r).get("Ingreso_Fuel_USA", 0)) for r in datos["rutas"])
+        _tarifa_sug    = _costo_ame_vr / (_umbral / 100) if _umbral else 0.0
+        _tarifa_mxp    = _tarifa_sug * tc_usd
         divider()
         banner_tarifa_sugerida(
-            res["costo_directo"], res["ingreso_total"],
+            _costo_ame_vr, res["ingreso_total"],
             _umbral, "USD", _tarifa_mxp,
+            modalidad="",
+            miles_load=0.0,
+            fuel_capturado=_fuel_vr,
         )
         mostrar_resultados_ruta(res)
 
