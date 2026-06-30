@@ -148,6 +148,7 @@ def _mostrar_detalles(r: dict, ruta: pd.Series) -> None:
         modalidad=modalidad,
         cxm_flete=safe(ruta.get("CXM_Flete", 0)),
         cxm_fuel=safe(ruta.get("CXM_Fuel", 0)),
+        umbral_cd=r["umbral_cd"],
     )
 
     if ruta.get("Capturado_Por"):
