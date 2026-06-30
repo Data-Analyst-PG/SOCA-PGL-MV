@@ -51,6 +51,8 @@ from ._shared import (
 # ─────────────────────────────────────────────
 def _panel_datos_generales(valores: dict) -> dict:
     with st.expander("⚙️ Configuración de Parámetros", expanded=False):
+        tc_banxico = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
+        st.caption(f"💱 Banxico FIX del día: **${tc_banxico:,.4f} MXP/USD** — se actualiza automáticamente cada 24h.")
 
         st.markdown("**Operador Sencillo (USD/milla)**")
         c1, c2 = st.columns(2)
