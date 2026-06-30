@@ -1008,11 +1008,20 @@ def desglose_ruta(
                     unsafe_allow_html=True,
                 )
                 if umbral_cd:
-                    st.caption(
-                        f"📊 Costo Directo tramo: **${cos_ame:,.2f}** ({pct_ame:.1f}%) "
-                        f"· Tarifa sugerida tramo ({umbral_cd:.0f}% C.D.): **${tarifa_sug_ame:,.2f}**"
+                    pct_ut_ame = (ut_ame / ing_ame * 100) if ing_ame else 0.0
+                    color_ut_caption = "#059669" if ut_ame >= 0 else "#DC2626"
+                    st.markdown(
+                        f'<div style="margin-top:0.4rem;padding:0.4rem 0.75rem;'
+                        f'background:#f0f4ff;border-radius:6px;font-size:0.82rem;">'
+                        f'📊 <b>Costo Directo:</b> ${cos_ame:,.2f} ({pct_ame:.1f}%)'
+                        f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+                        f'<b style="color:{color_ut_caption}">Utilidad: ${ut_ame:,.2f} ({pct_ut_ame:.1f}%)</b>'
+                        f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+                        f'<b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b> ${tarifa_sug_ame:,.2f}'
+                        f'</div>',
+                        unsafe_allow_html=True,
                     )
-            idx
+            idx += 1
  
         # ── Tramo Cruce ───────────────────────────────────────────────────────
         if "🛂 Cruce" in tab_labels:
@@ -1040,7 +1049,19 @@ def desglose_ruta(
                     unsafe_allow_html=True,
                 )
                 if ing_cruce or cos_cruce:
-                    st.caption(f"📊 Costo Directo tramo: **${cos_cruce:,.2f}** ({pct_cruc:.1f}%) · Tarifa: ingreso fijo capturado")
+                    pct_ut_cruc = (ut_cruc / ing_cruce * 100) if ing_cruce else 0.0
+                    color_cruc = "#059669" if ut_cruc >= 0 else "#DC2626"
+                    st.markdown(
+                        f'<div style="margin-top:0.4rem;padding:0.4rem 0.75rem;'
+                        f'background:#f0f4ff;border-radius:6px;font-size:0.82rem;">'
+                        f'📊 <b>Costo Directo:</b> ${cos_cruce:,.2f} ({pct_cruc:.1f}%)'
+                        f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+                        f'<b style="color:{color_cruc}">Utilidad: ${ut_cruc:,.2f} ({pct_ut_cruc:.1f}%)</b>'
+                        f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+                        f'<b>Tarifa:</b> ingreso fijo capturado'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
             idx += 1
  
         # ── Tramo MX ──────────────────────────────────────────────────────────
@@ -1067,7 +1088,19 @@ def desglose_ruta(
                     unsafe_allow_html=True,
                 )
                 if ing_mx or cos_mx:
-                    st.caption(f"📊 Costo Directo tramo: **${cos_mx:,.2f}** ({pct_mx_t:.1f}%) · Tarifa: ingreso fijo capturado")
+                    pct_ut_mx = (ut_mx / ing_mx * 100) if ing_mx else 0.0
+                    color_mx  = "#059669" if ut_mx >= 0 else "#DC2626"
+                    st.markdown(
+                        f'<div style="margin-top:0.4rem;padding:0.4rem 0.75rem;'
+                        f'background:#f0f4ff;border-radius:6px;font-size:0.82rem;">'
+                        f'📊 <b>Costo Directo:</b> ${cos_mx:,.2f} ({pct_mx_t:.1f}%)'
+                        f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+                        f'<b style="color:{color_mx}">Utilidad: ${ut_mx:,.2f} ({pct_ut_mx:.1f}%)</b>'
+                        f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+                        f'<b>Tarifa:</b> ingreso fijo capturado'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
  
  
 # ─────────────────────────────────────────────────────────────────────────────
