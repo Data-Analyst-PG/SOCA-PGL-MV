@@ -104,6 +104,8 @@ def _mostrar_kpis(r: dict, es_simulacion: bool = False) -> None:
     banner_tarifa_sugerida(
         r["costo_directo"], r["ingreso_total"],
         _umbral, "USD", _tarifa_mxp,
+        modalidad=str(r.get("modalidad") or "Flat"),
+        miles_load=safe(r.get("miles_load", 0.0)),
     )
     mostrar_resultados_ruta(r)
 
