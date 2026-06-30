@@ -472,8 +472,9 @@ def calcular_ruta_lincoln(
     diesel_usa = ((short_miles + miles_empty) / mpg) * diesel_precio if mpg else 0.0
 
     # ── ISR / IMSS ────────────────────────────────────────────────
+    # isr_imss_cfg está en MXP — se convierte a USD con el TC
     # Team = 2 operadores → ISR/IMSS × 2; Empty = 0
-    isr_imss = 0.0 if es_empty else isr_imss_cfg * factor
+    isr_imss = 0.0 if es_empty else a_usd(isr_imss_cfg, tc) * factor
 
     # ── Cruce ─────────────────────────────────────────────────────
     if aplica_cruce and not es_empty:
@@ -499,16 +500,16 @@ def calcular_ruta_lincoln(
         + otros_cargos_ingreso
     )
 
-    costo_directo       = sueldo_usa + diesel_usa + costo_cruce + costo_mx_usd + otros_cargos_costo
-    costo_directo_total = costo_directo + isr_imss
+    costo_directo        = sueldo_usa + diesel_usa + costo_cruce + costo_mx_usd + otros_cargos_costo + isr_imss
+    costo_directo_total  = costo_directo  # alias — se mantiene por compatibilidad con filas guardadas
 
-    utilidad_bruta = ingreso_total - costo_directo_total
+    utilidad_bruta = ingreso_total - costo_directo
     pct_bruta      = (utilidad_bruta / ingreso_total * 100) if ingreso_total > 0 else 0.0
 
     costos_ind    = ingreso_total * pct_ind
     utilidad_neta = utilidad_bruta - costos_ind
     pct_neta      = (utilidad_neta / ingreso_total * 100) if ingreso_total > 0 else 0.0
-    pct_cd        = (costo_directo_total / ingreso_total * 100) if ingreso_total > 0 else 0.0
+    pct_cd        = (costo_directo / ingreso_total * 100) if ingreso_total > 0 else 0.0
     pct_ind_real  = (costos_ind / ingreso_total * 100) if ingreso_total > 0 else 0.0
 
     return {
