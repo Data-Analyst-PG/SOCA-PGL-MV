@@ -122,6 +122,7 @@ def _preview_edicion(r: dict, fd: dict) -> None:
         modalidad=fd.get("modalidad", "Flat"),
         cxm_flete=fd.get("cxm_flete", 0.0),
         cxm_fuel=fd.get("cxm_fuel", 0.0),
+        umbral_cd=r["umbral_cd"],
     )
 
 
