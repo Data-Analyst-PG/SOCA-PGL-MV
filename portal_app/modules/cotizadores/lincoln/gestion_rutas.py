@@ -27,7 +27,9 @@ from ._shared import (
     TABLE_RUTAS,
     TIPOS_RUTA,
     EXTRAS_USA,
+    DEFAULTS,
     cargar_datos_generales,
+    guardar_datos_generales,
     limpiar_fila_json,
     safe,
     calcular_ruta_lincoln,
@@ -155,6 +157,25 @@ def render() -> None:
         st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
     valores = cargar_datos_generales()
+
+    # ── Panel de parámetros (mismo patrón que captura_rutas) ──────────────
+    with st.expander("⚙️ Configuración de Parámetros", expanded=False):
+        tc_banxico = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
+        st.caption(f"💱 Banxico FIX del día: **${tc_banxico:,.4f} MXP/USD** — se actualiza automáticamente cada 24h.")
+        col1, col2, col3 = st.columns(3)
+        claves = list(DEFAULTS.keys())
+        for i, key in enumerate(claves):
+            col = [col1, col2, col3][i % 3]
+            valores[key] = col.number_input(
+                key,
+                value=float(valores.get(key, DEFAULTS[key])),
+                step=0.1,
+                key=f"ln_gest_gen_{key}",
+            )
+        if st.button("💾 Guardar Parámetros", key="ln_gest_save_gen"):
+            guardar_datos_generales(valores)
+            alert("success", "✅ Parámetros guardados correctamente.")
+
     df      = load_rutas_lincoln(TABLE_RUTAS)
 
     if df.empty:
