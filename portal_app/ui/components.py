@@ -1132,6 +1132,7 @@ def banner_tarifa_sugerida(
     valor_secundario: float = 0.0,
     modalidad:        str   = "",
     miles_load:       float = 0.0,
+    fuel_capturado:   float = 0.0,
 ) -> None:
     """
     Muestra una banda con la tarifa sugerida basada en el umbral de costo directo.
@@ -1146,7 +1147,11 @@ def banner_tarifa_sugerida(
                            MXP → tarifa_sugerida / tc   |  USD → tarifa_sugerida * tc
         modalidad        : solo americanas — "Flat" | "Desglosada" | "" (D2D o sin millas)
         miles_load       : solo americanas — millas de carga para calcular $/milla
- 
+        fuel_capturado    : solo americanas, modalidad Desglosada — monto de fuel ya
+                           cobrado al cliente (ingreso_fuel_usa). Se resta del total
+                           sugerido antes de dividir entre millas, para que el $/mi
+                           sugerido sea solo de flete (comparable contra lo capturado).
+                           
     ── BLOQUE MEXICANO (moneda_base == "MXP") ───────────────────────────────
         No se toca. Lógica original de Igloo/Picus:
         tarifa_sugerida = costo_directo × 2  (umbral 50% fijo)
@@ -1217,8 +1222,9 @@ def banner_tarifa_sugerida(
     pct_frac     = (umbral_cd / 100.0) if umbral_cd else 0.85
     tarifa_usd   = costo_directo / pct_frac if pct_frac else 0.0
  
-    # Valor por milla (solo si modalidad desglosada/por milla y hay millas)
-    xmilla       = (tarifa_usd / miles_load) if miles_load > 0 else 0.0
+    # $/mi sugerido SOLO de flete: se resta el fuel ya capturado antes de dividir
+    tarifa_flete_usd = max(tarifa_usd - fuel_capturado, 0.0)
+    xmilla            = (tarifa_flete_usd / miles_load) if miles_load > 0 else 0.0
  
     # Texto secundario — equivalente en MXP si se pasó el TC
     sec_html = (
@@ -1231,14 +1237,14 @@ def banner_tarifa_sugerida(
         tarifa_ref_html = (
             f'<b>USD ${tarifa_usd:,.2f}</b> flat'
             f'&nbsp;·&nbsp;'
-            f'<b>${xmilla:,.4f}/mi</b>'
+            f'<b>${xmilla:,.4f}/mi</b> de flete'
             f'&nbsp;<span style="font-size:0.78rem;opacity:0.8;">'
-            f'(flete+fuel incluidos en $/mi)</span>'
+            f'(fuel ${fuel_capturado:,.2f} ya descontado)</span>'
         )
         nota_modal = (
             f'<br><span style="font-size:0.76rem;opacity:0.75;">'
-            f'⚠️ En modo Desglosado el $/mi ya contempla flete y fuel juntos — '
-            f'no es necesario dividirlos para la referencia.</span>'
+            f'⚠️ El $/mi sugerido es solo de flete — el fuel se cobra aparte '
+            f'según lo ya capturado.</span>'
         )
     elif modalidad == "Flat" or miles_load == 0:
         tarifa_ref_html = f'<b>USD ${tarifa_usd:,.2f}</b> flat'
