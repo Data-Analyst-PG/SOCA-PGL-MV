@@ -30,6 +30,7 @@ from ._shared import (
     TABLE_RUTAS,
     TIPOS_RUTA,
     EXTRAS_USA,
+    DEFAULTS,
     cargar_datos_generales,
     guardar_datos_generales,
     limpiar_fila_json,
@@ -53,66 +54,19 @@ def _panel_datos_generales(valores: dict) -> dict:
     with st.expander("⚙️ Configuración de Parámetros", expanded=False):
         tc_banxico = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
         st.caption(f"💱 Banxico FIX del día: **${tc_banxico:,.4f} MXP/USD** — se actualiza automáticamente cada 24h.")
-
-        st.markdown("**Operador Sencillo (USD/milla)**")
-        c1, c2 = st.columns(2)
-        valores["CXM Operador USA"] = c1.number_input(
-            "Cargado", value=float(valores.get("CXM Operador USA", 0.48)),
-            step=0.01, format="%.4f", key="ln_cxm_carg")
-        valores["CXM Operador USA (Empty)"] = c2.number_input(
-            "Vacío", value=float(valores.get("CXM Operador USA (Empty)", 0.30)),
-            step=0.01, format="%.4f", key="ln_cxm_vac")
-
-        st.markdown("**Operador Team (USD/milla × operador)**")
-        t1, t2 = st.columns(2)
-        valores["CXM Team USA"] = t1.number_input(
-            "Team Cargado", value=float(valores.get("CXM Team USA", 0.30)),
-            step=0.01, format="%.4f", key="ln_cxm_team_carg")
-        valores["CXM Team USA (Empty)"] = t2.number_input(
-            "Team Vacío", value=float(valores.get("CXM Team USA (Empty)", 0.25)),
-            step=0.01, format="%.4f", key="ln_cxm_team_vac")
-
-        st.markdown("**Diesel**")
-        d1, d2 = st.columns(2)
-        valores["Truck Performance (mpg)"] = d1.number_input(
-            "Rendimiento (mpg)", value=float(valores.get("Truck Performance (mpg)", 7.0)),
-            step=0.1, format="%.1f", key="ln_mpg")
-        valores["Diesel Price ($/gal)"] = d2.number_input(
-            "Diesel ($/gal)", value=float(valores.get("Diesel Price ($/gal)", 3.60)),
-            step=0.01, format="%.2f", key="ln_diesel")
-
-        st.markdown("**Cruce Propio (USD)**")
-        cr1, cr2 = st.columns(2)
-        valores["Cruce Propio (Cargado)"] = cr1.number_input(
-            "Cargado", value=float(valores.get("Cruce Propio (Cargado)", 50.0)),
-            step=1.0, format="%.2f", key="ln_cruce_carg")
-        valores["Cruce Propio (Vacío)"] = cr2.number_input(
-            "Vacío", value=float(valores.get("Cruce Propio (Vacío)", 30.0)),
-            step=1.0, format="%.2f", key="ln_cruce_vac")
-
-        st.markdown("**Prestaciones y Bonos**")
-        p1, p2 = st.columns(2)
-        valores["ISR/IMSS"] = p1.number_input(
-            "ISR/IMSS (USD/viaje)", value=float(valores.get("ISR/IMSS", 462.66)),
-            step=1.0, format="%.2f", key="ln_isr")
-        valores["Bono por milla cargada"] = p2.number_input(
-            "Bono/Short Mile (USD)", value=float(valores.get("Bono por milla cargada", 0.01)),
-            step=0.001, format="%.3f", key="ln_bono")
-
-        st.markdown("**Costo Indirecto y Tipo de Cambio**")
-        i1, i2 = st.columns(2)
-        pct_raw = float(valores.get("% Costo Indirecto", 0.35))
-        pct_display = pct_raw if pct_raw <= 1.0 else pct_raw / 100
-        valores["% Costo Indirecto"] = i1.number_input(
-            "% Costo Indirecto (ej. 0.35)", value=pct_display,
-            step=0.01, format="%.2f", key="ln_pct_ind")
-        valores["Tipo de Cambio USD/MXP"] = i2.number_input(
-            "Tipo de Cambio USD/MXP", value=float(valores.get("Tipo de Cambio USD/MXP", 18.50)),
-            step=0.1, format="%.2f", key="ln_tc")
-
-        if st.button("💾 Guardar parámetros", key="ln_guardar_params"):
+        col1, col2, col3 = st.columns(3)
+        claves = list(DEFAULTS.keys())
+        for i, key in enumerate(claves):
+            col = [col1, col2, col3][i % 3]
+            valores[key] = col.number_input(
+                key,
+                value=float(valores.get(key, DEFAULTS[key])),
+                step=0.1,
+                key=f"ln_gen_{key}",
+            )
+        if st.button("💾 Guardar Parámetros", key="ln_save_gen"):
             guardar_datos_generales(valores)
-            st.success("Parámetros guardados.")
+            alert("success", "✅ Parámetros guardados correctamente.")
 
     return valores
 
