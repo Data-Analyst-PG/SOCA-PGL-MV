@@ -85,6 +85,8 @@ def _preview_edicion(r: dict, fd: dict) -> None:
     banner_tarifa_sugerida(
         r["costo_directo"], r["ingreso_total"],
         _umbral, "USD", _tarifa_mxp,
+        modalidad=fd.get("modalidad", "Flat"),
+        miles_load=fd.get("miles_load", 0.0),
     )
     mostrar_resultados_ruta(r)
 
