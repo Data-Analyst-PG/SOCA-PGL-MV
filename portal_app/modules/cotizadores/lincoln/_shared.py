@@ -311,6 +311,8 @@ def mostrar_resultados_lincoln(
         cxm_flete=cxm_flete,
         cxm_fuel=cxm_fuel,
         umbral_cd=_umbral,
+        fuel_capturado=r.get("ingreso_fuel_usa", 0.0),
+        miles_load_banner=miles_load,
     )
 
 
