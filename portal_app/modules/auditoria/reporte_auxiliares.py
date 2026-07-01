@@ -216,8 +216,27 @@ def _detect_mode(df_raw: pd.DataFrame) -> str:
         df_guess = df_raw.copy()
 
     cols_norm = [str(c).strip().lower().replace("\xa0", " ") for c in df_guess.columns]
+    header_join = " ".join(cols_norm)
 
+    # STAR 1 Balanza: tiene columna Poliza, pero las cuentas vienen como filas padre
+    # en la misma columna Poliza y el concepto de cuenta viene a un lado.
+    # Ejemplo: 200-01-01-001-01-001-0001 | SUELDO A OPERADORES | ... | Saldo Inicial:
     if any(c == "poliza" for c in cols_norm):
+        sample = df_guess.head(80).fillna("").astype(str)
+        first_col = sample.iloc[:, 0].str.replace("\xa0", " ", regex=False).str.strip() if sample.shape[1] else pd.Series(dtype=str)
+        has_balanza_parent = first_col.str.match(
+            r"^\d{3}-\d{2}-\d{2}-\d{3}-\d{2}-\d{3}-\d{4}$"
+        ).any()
+        has_saldo_inicial = sample.apply(
+            lambda r: r.str.replace("\xa0", " ", regex=False).str.contains(
+                r"saldo\s+inicial", case=False, regex=True
+            ).any(),
+            axis=1,
+        ).any()
+        if has_balanza_parent and has_saldo_inicial:
+            return "star1_balanza"
+
+        # STAR 2.0: conserva su comportamiento anterior.
         return "star2"
 
     if len(df_guess.index) >= 1 and len(df_guess.columns) >= 1:
@@ -225,7 +244,6 @@ def _detect_mode(df_raw: pd.DataFrame) -> str:
         if a2.replace("\xa0", " ").strip().startswith(":"):
             return "star2"
 
-    header_join = " ".join(cols_norm)
     if ("poliza" in header_join and "concepto" in header_join) or ("poliza" in header_join and "fecha" in header_join):
         return "star2"
 
@@ -292,6 +310,104 @@ def _normalize_date_series(s: pd.Series) -> pd.Series:
         s2 = s2.replace({"NaT": ""})
 
     return s2
+
+
+
+# =====================================================
+# --- STAR 1: BALANZA DE COMPROBACIÓN ---
+# =====================================================
+
+_CUENTA_BALANZA_RE = re.compile(r"^\s*(\d{3}-\d{2}-\d{2}-\d{3}-\d{2}-\d{3}-\d{4})\s*$")
+
+
+def process_star1_balanza(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    STAR 1 (Balanza de Comprobacion): auxiliar con columna Poliza.
+
+    La cuenta aparece como fila padre en la columna Poliza y el concepto de
+    cuenta aparece en la columna Concepto. Las pólizas detalle quedan debajo.
+    Resultado: se agregan al inicio las columnas Cuenta y Concepto cuenta,
+    se eliminan Saldo Inicial / SUMAS TOTALES y se conserva el detalle.
+    """
+    df, _ = _guess_header(df_raw.copy())
+
+    def _norm_name(c: str) -> str:
+        s = str(c).strip().replace("\xa0", " ")
+        s_l = re.sub(r"\s+", " ", s.lower())
+        if s_l == "poliza": return "Poliza"
+        if s_l == "concepto": return "Concepto"
+        if s_l == "cheque": return "Cheque"
+        if s_l in ("trafico", "tráfico"): return "Trafico"
+        if s_l == "factura": return "Factura"
+        if s_l == "fecha": return "Fecha"
+        if s_l == "cargos": return "Cargos"
+        if s_l == "abonos": return "Abonos"
+        if s_l == "saldo": return "Saldo"
+        return s
+
+    df = df.rename(columns={c: _norm_name(c) for c in df.columns}).copy()
+
+    required = ["Poliza", "Concepto", "Cheque", "Trafico", "Factura", "Fecha", "Cargos", "Abonos", "Saldo"]
+    for c in required:
+        if c not in df.columns:
+            df[c] = ""
+
+    last_cuenta = ""
+    last_concepto_cuenta = ""
+    rows_to_drop = []
+
+    for idx, row in df.iterrows():
+        poliza = str(row.get("Poliza", "")).replace("\xa0", " ").strip()
+        concepto = str(row.get("Concepto", "")).replace("\xa0", " ").strip()
+        row_text = " ".join(str(v).replace("\xa0", " ").strip() for v in row.values)
+
+        # Fila padre de cuenta: cuenta exacta en Poliza + concepto de cuenta + Saldo Inicial.
+        if _CUENTA_BALANZA_RE.match(poliza) and (concepto or re.search(r"saldo\s+inicial", row_text, re.IGNORECASE)):
+            last_cuenta = poliza
+            last_concepto_cuenta = concepto
+            rows_to_drop.append(idx)
+            continue
+
+        # Filas de resumen del bloque.
+        if re.search(r"\b(sumas?\s+totales?|saldo\s+inicial)\b", row_text, re.IGNORECASE):
+            rows_to_drop.append(idx)
+            continue
+
+        df.at[idx, "Cuenta"] = last_cuenta if last_cuenta else "__SIN_CUENTA_DETECTADA__"
+        df.at[idx, "Concepto cuenta"] = last_concepto_cuenta if last_concepto_cuenta else "__SIN_CONCEPTO_CUENTA__"
+
+    df = df.drop(index=rows_to_drop).reset_index(drop=True)
+    df = _drop_summary_rows(df)
+
+    # El detalle válido debe tener póliza y algún importe/saldo.
+    df = df[df["Poliza"].astype(str).str.replace("\xa0", " ", regex=False).str.strip().ne("")]
+    df = df[~df["Poliza"].astype(str).str.match(_CUENTA_BALANZA_RE, na=False)]
+
+    for col in ["Cargos", "Abonos", "Saldo"]:
+        df[col] = df[col].apply(_to_num_safe)
+
+    amt_cols = ["Cargos", "Abonos", "Saldo"]
+    df = df[df[amt_cols].fillna(0).abs().sum(axis=1) > 0].reset_index(drop=True)
+
+    # Mantener formato del auxiliar tal como viene; solo normalizar si llega como serial.
+    # Si viene como datetime/string de Excel, se conserva como texto legible.
+    if "Fecha" in df.columns:
+        fecha_raw = df["Fecha"].astype(str).str.strip()
+        serial_mask = pd.to_numeric(fecha_raw, errors="coerce").notna()
+        if serial_mask.any():
+            df.loc[serial_mask, "Fecha"] = _normalize_date_series(df.loc[serial_mask, "Fecha"])
+
+    desired = ["Cuenta", "Concepto cuenta", "Poliza", "Concepto", "Cheque", "Trafico", "Factura", "Fecha", "Cargos", "Abonos", "Saldo"]
+    ordered = [c for c in desired if c in df.columns]
+    rest = [c for c in df.columns if c not in ordered]
+    return df[ordered + rest]
+
+
+def process_star1_balanza_many(raws):
+    frames = [process_star1_balanza(df_raw) for df_raw in raws]
+    if not frames:
+        return pd.DataFrame(columns=["Cuenta", "Concepto cuenta", "Poliza", "Concepto", "Cheque", "Trafico", "Factura", "Fecha", "Cargos", "Abonos", "Saldo"])
+    return pd.concat(frames, ignore_index=True)
 
 
 # =====================================================
@@ -561,7 +677,7 @@ def render():
     with col_modo:
         mode = st.selectbox(
             "Modo de procesamiento",
-            ["Auto", "STAR 1 (todas las cuentas en un archivo)", "STAR 2.0 (por cuenta, múltiples archivos)"],
+            ["Auto", "STAR 1 (Balanza de Comprobacion)", "STAR 1 (Fichero Excel)", "STAR 2.0 (por cuenta, múltiples archivos)"],
             index=0,
             key="ra_mode"
         )
@@ -593,12 +709,16 @@ def render():
 
         if mode.startswith("Auto"):
             eff_mode = _detect_mode(raws[0])
+        elif mode.startswith("STAR 1 (Balanza"):
+            eff_mode = "star1_balanza"
         elif mode.startswith("STAR 1"):
             eff_mode = "star1"
         else:
             eff_mode = "star2"
 
-        if eff_mode == "star1":
+        if eff_mode == "star1_balanza":
+            df_clean = process_star1_balanza_many(raws)
+        elif eff_mode == "star1":
             if len(raws) > 1:
                 alert("warn", "Modo STAR 1: se tomará solo el primer archivo.")
             df_clean = process_report(raws[0])
