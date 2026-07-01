@@ -1049,8 +1049,9 @@ def desglose_ruta(
                     unsafe_allow_html=True,
                 )
                 if ing_cruce or cos_cruce:
-                    pct_ut_cruc = (ut_cruc / ing_cruce * 100) if ing_cruce else 0.0
-                    color_cruc = "#059669" if ut_cruc >= 0 else "#DC2626"
+                    pct_ut_cruc    = (ut_cruc / ing_cruce * 100) if ing_cruce else 0.0
+                    color_cruc     = "#059669" if ut_cruc >= 0 else "#DC2626"
+                    tarifa_sug_cruc = (cos_cruce / (umbral_cd / 100)) if umbral_cd else 0.0
                     st.markdown(
                         f'<div style="margin-top:0.4rem;padding:0.4rem 0.75rem;'
                         f'background:#f0f4ff;border-radius:6px;font-size:0.82rem;">'
@@ -1058,7 +1059,7 @@ def desglose_ruta(
                         f'&nbsp;&nbsp;·&nbsp;&nbsp;'
                         f'<b style="color:{color_cruc}">Utilidad: ${ut_cruc:,.2f} ({pct_ut_cruc:.1f}%)</b>'
                         f'&nbsp;&nbsp;·&nbsp;&nbsp;'
-                        f'<b>Tarifa:</b> ingreso fijo capturado'
+                        f'<b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b> ${tarifa_sug_cruc:,.2f} flat'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
@@ -1088,8 +1089,9 @@ def desglose_ruta(
                     unsafe_allow_html=True,
                 )
                 if ing_mx or cos_mx:
-                    pct_ut_mx = (ut_mx / ing_mx * 100) if ing_mx else 0.0
-                    color_mx  = "#059669" if ut_mx >= 0 else "#DC2626"
+                    pct_ut_mx      = (ut_mx / ing_mx * 100) if ing_mx else 0.0
+                    color_mx       = "#059669" if ut_mx >= 0 else "#DC2626"
+                    tarifa_sug_mx  = (cos_mx / (umbral_cd / 100)) if umbral_cd else 0.0
                     st.markdown(
                         f'<div style="margin-top:0.4rem;padding:0.4rem 0.75rem;'
                         f'background:#f0f4ff;border-radius:6px;font-size:0.82rem;">'
@@ -1097,7 +1099,7 @@ def desglose_ruta(
                         f'&nbsp;&nbsp;·&nbsp;&nbsp;'
                         f'<b style="color:{color_mx}">Utilidad: ${ut_mx:,.2f} ({pct_ut_mx:.1f}%)</b>'
                         f'&nbsp;&nbsp;·&nbsp;&nbsp;'
-                        f'<b>Tarifa:</b> ingreso fijo capturado'
+                        f'<b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b> ${tarifa_sug_mx:,.2f} flat'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
