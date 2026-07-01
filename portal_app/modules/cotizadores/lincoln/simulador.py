@@ -47,7 +47,6 @@ from reportlab.platypus import (
 from services.supabase_client import get_supabase_client
 from ui.components import (
     section_header, alert, divider,
-    banner_tarifa_sugerida, mostrar_resultados_ruta,
 )
 from ._shared import (
     TABLE_RUTAS,
@@ -55,6 +54,7 @@ from ._shared import (
     cargar_datos_generales,
     load_rutas_lincoln,
     label_ruta_lincoln,
+    mostrar_resultados_lincoln,
 )
 
 TIPOS_PRINCIPAL = {"NB", "SB", "D2DNB", "D2DSB"}
@@ -598,28 +598,8 @@ def render() -> None:
         section_header("📊", "Resumen de Vuelta Redonda")
         res = _resumen_vr(rutas_series, valores)
 
-        # Banner — usa costo_directo_americana (sum de tramos americanos)
-        # y fuel_capturado (sum de fuel de todos los tramos)
-        tc_usd         = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
-        _umbral        = res["umbral_cd"]
-        _costo_ame_vr  = sum(
-            safe(pd.Series(r).get("Costo_Directo", 0))
-            - safe(pd.Series(r).get("Costo_Cruce",  0))
-            - safe(pd.Series(r).get("Costo_MX_USD", 0))
-            for r in datos["rutas"]
-        )
-        _fuel_vr       = sum(safe(pd.Series(r).get("Ingreso_Fuel_USA", 0)) for r in datos["rutas"])
-        _tarifa_sug    = _costo_ame_vr / (_umbral / 100) if _umbral else 0.0
-        _tarifa_mxp    = _tarifa_sug * tc_usd
-        divider()
-        banner_tarifa_sugerida(
-            _costo_ame_vr, res["ingreso_total"],
-            _umbral, "USD", _tarifa_mxp,
-            modalidad="",
-            miles_load=0.0,
-            fuel_capturado=_fuel_vr,
-        )
-        mostrar_resultados_ruta(res)
+        # Simulador VR — sin $/mi (modalidad=""), sin desglose de tramo
+        mostrar_resultados_lincoln(res, modalidad="", miles_load=0.0)
 
         divider()
         section_header("🗺️", "Secuencia del Road Trip")
