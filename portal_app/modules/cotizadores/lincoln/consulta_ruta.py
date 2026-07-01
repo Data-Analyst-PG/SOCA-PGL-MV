@@ -36,6 +36,7 @@ from ._shared import (
     load_rutas_lincoln,
     filtrar_rutas_lincoln,
     label_ruta_lincoln,
+    mostrar_resultados_lincoln,
 )
 
 
@@ -112,43 +113,15 @@ def _mostrar_kpis(r: dict, es_simulacion: bool = False) -> None:
     mostrar_resultados_ruta(r)
 
 
-def _mostrar_detalles(r: dict, ruta: pd.Series) -> None:
-    section_header("📋", "Detalles y Costos de la Ruta")
-
-    tipo_ruta   = str(ruta.get("Tipo", "NB"))
-    es_empty    = (tipo_ruta == "Empty")
-    short_miles = safe(ruta.get("Short_Miles") or ruta.get("Millas_USA",    0))
-    miles_empty = safe(ruta.get("Miles_Empty") or ruta.get("Millas_Vacias", 0))
-    modo_viaje  = str(ruta.get("Modo_Viaje", "Sencillo"))
-    factor      = 2 if modo_viaje == "Team" else 1
-
-    if es_empty:
-        filas = [
-            (f"Operador Vacío ({miles_empty:.0f} mi × ${r['cxm_vacio']:.4f})", r["sueldo_base"]),
-            (f"Diesel ({miles_empty:.0f} mi vacías)", r["diesel_usa"]),
-        ]
-    else:
-        filas = [
-            (f"Sueldo Cargado ({short_miles:.0f} Short Mi × ${r['cxm_cargado']:.4f})",
-             short_miles * r["cxm_cargado"] * factor),
-            (f"Sueldo Vacío ({miles_empty:.0f} Mi Vacías × ${r['cxm_vacio']:.4f})",
-             miles_empty * r["cxm_vacio"] * factor),
-            (f"Bono ({short_miles:.0f} Short Mi × ${r['bono_por_milla']:.3f})", r["bono_millas"]),
-            (f"Diesel ({short_miles:.0f} SM + {miles_empty:.0f} ME)", r["diesel_usa"]),
-            ("ISR/IMSS", r["isr_imss"]),
-        ]
-        if r.get("otros_cargos_costo", 0) > 0:
-            filas.append(("Otros Conceptos (Lincoln pagó)", r["otros_cargos_costo"]))
-
-    modalidad = str(ruta.get("Modalidad") or ruta.get("Modalidad_Tarifa") or "Flat")
-
-    desglose_ruta(
+def _mostrar_kpis(r: dict, ruta: pd.Series, es_simulacion: bool = False) -> None:
+    mostrar_resultados_lincoln(
         r,
-        filas_costo_americana=filas,
-        modalidad=modalidad,
-        cxm_flete=safe(ruta.get("CXM_Flete", 0)),
-        cxm_fuel=safe(ruta.get("CXM_Fuel", 0)),
-        umbral_cd=r["umbral_cd"],
+        modalidad     = str(ruta.get("Modalidad") or "Flat"),
+        miles_load    = safe(ruta.get("Miles_Load", 0.0)),
+        cxm_flete     = safe(ruta.get("CXM_Flete",  0.0)),
+        cxm_fuel      = safe(ruta.get("CXM_Fuel",   0.0)),
+        modo_viaje    = str(ruta.get("Modo_Viaje", "Sencillo")),
+        es_simulacion = es_simulacion,
     )
 
     if ruta.get("Capturado_Por"):
@@ -430,8 +403,7 @@ def render() -> None:
     # ── Calcular y mostrar ────────────────────────────────────────
     r = _recalcular(ruta, vals_sim)
 
-    _mostrar_kpis(r, es_simulacion)
-    _mostrar_detalles(r, ruta)
+    _mostrar_kpis(r, ruta, es_simulacion)
 
     # ── PDF ───────────────────────────────────────────────────────
     divider()
