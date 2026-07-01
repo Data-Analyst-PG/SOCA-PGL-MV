@@ -891,6 +891,8 @@ def desglose_ruta(
     moneda_mx:  str   = "USD",
     tc:         float = 1.0,
     umbral_cd:  float = 0.0,
+    fuel_capturado: float = 0.0,
+    miles_load_banner: float = 0.0,
 ) -> None:
     """
     Expander con tabs de desglose ingreso/costo por tramo.
@@ -1008,8 +1010,21 @@ def desglose_ruta(
                     unsafe_allow_html=True,
                 )
                 if umbral_cd:
-                    pct_ut_ame = (ut_ame / ing_ame * 100) if ing_ame else 0.0
-                    color_ut_caption = "#059669" if ut_ame >= 0 else "#DC2626"
+                    pct_ut_ame        = (ut_ame / ing_ame * 100) if ing_ame else 0.0
+                    color_ut_caption  = "#059669" if ut_ame >= 0 else "#DC2626"
+                    # $/mi de flete sugerido: restar fuel capturado antes de dividir
+                    tarifa_flete_ame  = max(tarifa_sug_ame - fuel_capturado, 0.0)
+                    xmilla_ame        = (tarifa_flete_ame / miles_load_banner) if miles_load_banner > 0 else 0.0
+
+                    if modalidad == "Desglosada" and xmilla_ame > 0:
+                        tarifa_txt = (
+                            f'${tarifa_sug_ame:,.2f} flat'
+                            f'&nbsp;·&nbsp;${xmilla_ame:,.4f}/mi flete'
+                            f'&nbsp;<span style="opacity:0.7">(fuel ${fuel_capturado:,.2f} descontado)</span>'
+                        )
+                    else:
+                        tarifa_txt = f'${tarifa_sug_ame:,.2f} flat'
+
                     st.markdown(
                         f'<div style="margin-top:0.4rem;padding:0.4rem 0.75rem;'
                         f'background:#f0f4ff;border-radius:6px;font-size:0.82rem;">'
@@ -1017,7 +1032,7 @@ def desglose_ruta(
                         f'&nbsp;&nbsp;·&nbsp;&nbsp;'
                         f'<b style="color:{color_ut_caption}">Utilidad: ${ut_ame:,.2f} ({pct_ut_ame:.1f}%)</b>'
                         f'&nbsp;&nbsp;·&nbsp;&nbsp;'
-                        f'<b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b> ${tarifa_sug_ame:,.2f}'
+                        f'<b>Tarifa sugerida ({umbral_cd:.0f}% C.D.):</b> {tarifa_txt}'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
