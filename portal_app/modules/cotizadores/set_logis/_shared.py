@@ -27,11 +27,13 @@ import json
 import os
 import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+from services.supabase_client import get_supabase_client
 
 # ─────────────────────────────────────────────
 # TABLAS SUPABASE
@@ -65,6 +67,15 @@ EXTRAS_USA = [
 ]
 
 # ─────────────────────────────────────────────
+# UMBRALES SET LOGIS — viajan en el dict de resultado
+# Se definen aquí para que sean editables sin tocar components.py
+# ─────────────────────────────────────────────
+UMBRAL_CD = 85.0   # % máximo de costo directo aceptable
+UMBRAL_UB = 15.0   # % mínimo de utilidad bruta aceptable
+UMBRAL_CI =  9.0   # % máximo de costo indirecto aceptable
+UMBRAL_UN =  6.0   # % mínimo de utilidad neta aceptable
+
+# ─────────────────────────────────────────────
 # DEFAULTS
 # ─────────────────────────────────────────────
 DEFAULTS: dict[str, float] = {
@@ -80,6 +91,7 @@ DEFAULTS: dict[str, float] = {
     "CXM Indirecto":           0.10,
     "% Costo Indirecto":       0.09,
 }
+
 
 # ─────────────────────────────────────────────
 # RUTAS DE ARCHIVOS
@@ -113,88 +125,69 @@ def cargar_datos_generales() -> dict:
                 for k, v in DEFAULTS.items():
                     if k not in out:
                         out[k] = v
-            else:
-                out = DEFAULTS.copy()
+                return out
         except Exception:
-            out = DEFAULTS.copy()
-    else:
-        out = DEFAULTS.copy()
-
-    # TC FIX de Banxico (cache 24h)
-    try:
-        from services.banxico import get_tipo_cambio_fix
-        token = st.secrets.get("TOKEN_BMX", "")
-        tc = get_tipo_cambio_fix(token) if token else None
-        if tc:
-            out["Tipo de Cambio USD/MXP"] = tc
-    except Exception:
-        pass
-
-    return out
+            pass
+    return DEFAULTS.copy()
 
 
 def guardar_datos_generales(valores: dict) -> None:
-    df = pd.DataFrame(list(valores.items()), columns=["Parametro", "Valor"])
-    df.to_csv(_datos_generales_path(), index=False)
+    path = _datos_generales_path()
+    rows = [{"Parametro": k, "Valor": v} for k, v in valores.items()]
+    pd.DataFrame(rows).to_csv(path, index=False)
 
 
 # ─────────────────────────────────────────────
-# HELPERS NUMÉRICOS
+# UTILIDADES GENERALES
 # ─────────────────────────────────────────────
-def safe(x, default: float = 0.0) -> float:
+def safe(val, default: float = 0.0) -> float:
     try:
-        if x is None:
-            return default
-        f = float(x)
-        return default if (isinstance(f, float) and np.isnan(f)) else f
+        return float(val) if val not in (None, "", "nan") else default
     except Exception:
         return default
 
 
-def limpiar_fila_json(fila: dict) -> dict:
-    limpio: dict = {}
-    for k, v in fila.items():
-        if v is None or (isinstance(v, float) and np.isnan(v)):
-            limpio[k] = None
-        elif isinstance(v, (pd.Timestamp, datetime, date, np.datetime64)):
-            limpio[k] = str(v)[:10]
-        elif isinstance(v, np.integer):
-            limpio[k] = int(v)
-        elif isinstance(v, np.floating):
-            limpio[k] = float(v)
-        else:
-            try:
-                json.dumps(v)
-                limpio[k] = v
-            except TypeError:
-                limpio[k] = str(v)
-    return limpio
-
-
-# ─────────────────────────────────────────────
-# HELPERS DE TEXTO Y CONVERSIÓN
-# (movidos desde captura_rutas — usados en captura, gestion, consulta)
-# ─────────────────────────────────────────────
 def normalizar(texto: str) -> str:
-    """Convierte texto a mayúsculas, elimina espacios extra y normaliza comas."""
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = re.sub(r"\s+", " ", texto)
-    texto = re.sub(r"\s*,\s*", ", ", texto)
-    return texto
+    return str(texto or "").strip().upper()
 
 
-def a_usd(monto: float, moneda: str, tc: float) -> float:
-    """Convierte un monto a USD si está en MXP usando el tipo de cambio dado."""
-    if moneda == "MXP":
-        return monto / tc if tc > 0 else 0.0
-    return monto
+def a_usd(valor: float, moneda: str, tc: float) -> float:
+    """Convierte MXP → USD si moneda es 'MXP'; si ya es USD lo devuelve igual."""
+    if moneda == "MXP" and tc > 0:
+        return valor / tc
+    return valor
 
 
+def now_iso() -> str:
+    """Timestamp ISO UTC — usar en todos los módulos en vez de _now_iso() local."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def limpiar_fila_json(fila: dict) -> dict:
+    """Convierte tipos no serializables (numpy, date, datetime) para Supabase."""
+    resultado = {}
+    for k, v in fila.items():
+        if isinstance(v, (np.integer,)):
+            resultado[k] = int(v)
+        elif isinstance(v, (np.floating,)):
+            resultado[k] = float(v)
+        elif isinstance(v, (np.bool_,)):
+            resultado[k] = bool(v)
+        elif isinstance(v, (date, datetime)):
+            resultado[k] = v.isoformat()
+        elif isinstance(v, dict):
+            resultado[k] = json.dumps(v)
+        elif isinstance(v, list):
+            resultado[k] = json.dumps(v)
+        else:
+            resultado[k] = v
+    return resultado
+
+
+# ─────────────────────────────────────────────
+# PERFIL DE USUARIO
+# ─────────────────────────────────────────────
 def get_profile_name(user_id: str) -> str | None:
-    """Obtiene el nombre completo del usuario desde la tabla profiles de Supabase."""
-    from services.supabase_client import get_supabase_client
     sb = get_supabase_client()
     if sb is None or not user_id:
         return None
@@ -205,6 +198,9 @@ def get_profile_name(user_id: str) -> str | None:
         return None
 
 
+# ─────────────────────────────────────────────
+# GENERADOR DE ID
+# ─────────────────────────────────────────────
 def generar_id_ruta(supabase) -> str:
     """
     Genera el siguiente ID correlativo para Rutas_SetLogis.
@@ -361,12 +357,13 @@ def calcular_ruta_setlogis(
     pct_ut_b = _pct(utilidad_bruta,      ingreso_global)
     pct_ut_n = _pct(utilidad_neta,       ingreso_global)
 
-    # ── SEMÁFOROS Set Logis ───────────────────────────────────────────────────
-    color_dir  = "#16a34a" if pct_dir  <= 85.0 else "#dc2626"
-    color_ind  = "#16a34a" if pct_ind_ <=  9.0 else "#dc2626"
-    color_ut_n = "#16a34a" if pct_ut_n >=  6.0 else "#dc2626"
+    # ── COLORES — calculados con umbrales reales de Set Logis ────────────────
+    color_dir  = "#059669" if pct_dir  <= UMBRAL_CD else "#DC2626"
+    color_ind  = "#059669" if pct_ind_ <= UMBRAL_CI else "#D97706"
+    color_ut_n = "#059669" if pct_ut_n >= UMBRAL_UN else "#DC2626"
 
     return {
+        # ── Campos de negocio Set Logis (PascalCase — guardados en Supabase) ──
         "Tipo_Viaje":          tipo_ruta,
         "Modo":                modo,
         "Direccion":           direccion_label(tipo_ruta),
@@ -410,4 +407,226 @@ def calcular_ruta_setlogis(
         "CXM_Indirecto":       cxm_aplicado,
         "Pct_Indirecto":       pct_aplicado,
         "TC":                  safe(v.get("Tipo de Cambio USD/MXP", 18.50)),
+
+        # ── Alias canónicos (snake_case) — requeridos por components.py ──────
+        # mostrar_resultados_ruta(), semaforos_ruta(), banner_tarifa_sugerida()
+        # esperan estos nombres exactos — NO renombrar
+        "ingreso_total":       ingreso_global,
+        "costo_directo":       costo_directo_total,
+        "utilidad_bruta":      utilidad_bruta,
+        "costos_indirectos":   costo_indirecto,
+        "utilidad_neta":       utilidad_neta,
+        "moneda_display":      "USD",
+
+        # ── Umbrales Set Logis — viajan con el resultado para semaforos_ruta() ─
+        "umbral_cd":           UMBRAL_CD,
+        "umbral_ub":           UMBRAL_UB,
+        "umbral_ci":           UMBRAL_CI,
+        "umbral_un":           UMBRAL_UN,
     }
+
+
+# ─────────────────────────────────────────────
+# CARGA DE RUTAS — compartida por consulta, gestión y simulador
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def load_rutas_setlogis(table: str) -> pd.DataFrame:
+    """
+    Carga todas las rutas ordenadas por Fecha desc.
+    Compartida por consulta_ruta, gestion_rutas y simulador.
+    Reemplaza los _cargar_rutas() locales de cada módulo.
+    """
+    sb = get_supabase_client()
+    if sb is None:
+        return pd.DataFrame()
+    try:
+        resp = sb.table(table).select("*").order("Fecha", desc=True).execute()
+        df = pd.DataFrame(resp.data or [])
+        if not df.empty and "Fecha" in df.columns:
+            df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.strftime("%Y-%m-%d")
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+# ─────────────────────────────────────────────
+# POOL DE UBICACIONES — compartido por captura y gestión
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def cargar_pool_ubicaciones_setlogis() -> list[str]:
+    """
+    Une y deduplica ubicaciones USA (Origen + Destino) y MX
+    (Origen_MX + Destino_MX) de la tabla Rutas_SetLogis.
+    Compartida por captura_rutas y gestion_rutas.
+    """
+    sb = get_supabase_client()
+    if sb is None:
+        return []
+    try:
+        resp = sb.table(TABLE_RUTAS).select(
+            "Origen, Destino, Origen_MX, Destino_MX"
+        ).execute()
+        ubicaciones: set[str] = set()
+        for row in (resp.data or []):
+            for col in ("Origen", "Destino", "Origen_MX", "Destino_MX"):
+                v = (row.get(col) or "").strip().upper()
+                if v:
+                    ubicaciones.add(v)
+        return sorted(ubicaciones)
+    except Exception:
+        return []
+
+
+def buscar_ubicacion_setlogis(termino: str) -> list[str]:
+    """
+    Filtra el pool por lo que escribe el usuario.
+    Si no hay coincidencias devuelve el término como opción libre
+    para permitir ubicaciones nuevas sin que el campo se limpie.
+    """
+    if not termino or len(termino) < 2:
+        return []
+    termino_upper = termino.upper()
+    pool = cargar_pool_ubicaciones_setlogis()
+    coincidencias = [u for u in pool if termino_upper in u]
+    if not coincidencias:
+        return [termino_upper]
+    return coincidencias
+
+
+# ─────────────────────────────────────────────
+# LABEL Y FILTROS — compartidos por consulta, gestión y simulador
+# ─────────────────────────────────────────────
+def label_ruta_setlogis(row) -> str:
+    """Etiqueta de selectbox para una ruta Set Logis."""
+    fo  = " ⛽" if row.get("Fuel_Owner") else ""
+    pct = safe(row.get("Pct_Ut_Bruta", 0))
+    return (
+        f"{row.get('ID_Ruta', '')} | {row.get('Fecha', '')} | "
+        f"{row.get('Tipo_Viaje', '')} | {row.get('Cliente', '—')} | "
+        f"{row.get('Ruta_USA', '')}{fo} | "
+        f"{pct:.1f}% Ut.B"
+    )
+
+
+def filtrar_rutas_setlogis(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """
+    Filtros de búsqueda reutilizables para consulta, gestión y simulador.
+    Compartida por los 3 módulos — usa prefix para evitar DuplicateElementKey.
+    """
+    if df.empty:
+        return df
+
+    f1, f2, f3, f4 = st.columns(4)
+
+    tipos_disp = ["Todos"] + sorted(df["Tipo_Viaje"].dropna().unique().tolist())
+    tipo_fil = f1.selectbox("Tipo Viaje", tipos_disp, key=f"{prefix}_fil_tipo")
+
+    modos_disp = ["Todos"] + sorted(df["Modo"].dropna().unique().tolist()) if "Modo" in df.columns else ["Todos"]
+    modo_fil = f2.selectbox("Modo", modos_disp, key=f"{prefix}_fil_modo")
+
+    clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().unique().tolist()) if "Cliente" in df.columns else ["Todos"]
+    cliente_fil = f3.selectbox("Cliente", clientes_disp, key=f"{prefix}_fil_cliente")
+
+    texto_fil = f4.text_input("Buscar ruta / ID", key=f"{prefix}_fil_texto").strip().upper()
+
+    resultado = df.copy()
+    if tipo_fil    != "Todos":
+        resultado = resultado[resultado["Tipo_Viaje"] == tipo_fil]
+    if modo_fil    != "Todos" and "Modo" in resultado.columns:
+        resultado = resultado[resultado["Modo"] == modo_fil]
+    if cliente_fil != "Todos" and "Cliente" in resultado.columns:
+        resultado = resultado[resultado["Cliente"] == cliente_fil]
+    if texto_fil:
+        mask = (
+            resultado.get("ID_Ruta",  pd.Series(dtype=str)).astype(str).str.upper().str.contains(texto_fil, na=False)
+            | resultado.get("Ruta_USA", pd.Series(dtype=str)).astype(str).str.upper().str.contains(texto_fil, na=False)
+        )
+        resultado = resultado[mask]
+
+    return resultado
+
+
+# ─────────────────────────────────────────────
+# MOSTRAR RESULTADOS — centraliza banner + KPIs + desglose
+# Todos los módulos llaman esta función en lugar de construir el bloque manualmente
+# ─────────────────────────────────────────────
+def mostrar_resultados_setlogis(
+    r:             dict,
+    modalidad:     str   = "Flat",
+    miles_load:    float = 0.0,
+    cxm_flete:     float = 0.0,
+    cxm_fuel:      float = 0.0,
+    es_simulacion: bool  = False,
+) -> None:
+    """
+    Muestra banner tarifa sugerida + 5 cards KPI + desglose por tramo.
+    Centraliza lo que antes se repetía en captura, consulta, gestión y simulador.
+
+    Parámetros:
+        r             : dict resultado de calcular_ruta_setlogis()
+        modalidad     : "Flat" | "Desglosada" — afecta banner y desglose
+        miles_load    : millas de carga para calcular $/mi en banner Desglosada
+        cxm_flete     : CXM flete capturado — para desglose ingreso americano
+        cxm_fuel      : CXM fuel capturado  — para desglose ingreso americano
+        es_simulacion : True → muestra aviso de simulación
+    """
+    from ui.components import (
+        banner_tarifa_sugerida, mostrar_resultados_ruta,
+        desglose_ruta, divider, alert,
+    )
+
+    if es_simulacion:
+        alert("info", "🔧 Estás viendo una simulación con parámetros ajustados.")
+
+    # ── Fuel Owner — aviso visual ─────────────────────────────────────────────
+    if r.get("Fuel_Owner"):
+        st.info(f"⛽ **Fuel pagado al Owner:** ${r.get('Pago_Fuel_Owner', 0):,.2f} USD — incluido en Costo Directo")
+
+    # ── Banner tarifa sugerida ────────────────────────────────────────────────
+    tc_usd      = r.get("TC", safe(DEFAULTS.get("Tipo de Cambio USD/MXP", 18.50)))
+    _umbral     = r["umbral_cd"]
+    _tarifa_sug = r["costo_directo"] / (_umbral / 100)
+    _tarifa_mxp = _tarifa_sug * tc_usd
+
+    divider()
+    banner_tarifa_sugerida(
+        r["costo_directo"], r["ingreso_total"],
+        _umbral, "USD", _tarifa_mxp,
+        modalidad=modalidad,
+        miles_load=miles_load,
+        fuel_capturado=r.get("Fuel", 0.0),
+    )
+
+    # ── 5 cards KPI canónicas ─────────────────────────────────────────────────
+    mostrar_resultados_ruta(r)
+
+    # ── Desglose por tramo ────────────────────────────────────────────────────
+    tipo_ruta   = str(r.get("Tipo_Viaje", "NB"))
+    es_empty    = (tipo_ruta == "Empty")
+    short_m     = safe(r.get("Short_Miles", 0.0))
+    miles_emp   = safe(r.get("Miles_Empty", 0.0))
+    pxm_c       = safe(r.get("PxM_Cargado", 0.0))
+    pxm_v       = safe(r.get("PxM_Vacio",   0.0))
+
+    if es_empty:
+        filas_costo = [
+            (f"Owner Vacío ({miles_emp:.0f} mi × ${pxm_v:.4f})", r["Pago_Owner_Vacio"]),
+        ]
+    else:
+        filas_costo = [
+            (f"Owner Cargado ({short_m:.0f} Short Mi × ${pxm_c:.4f})", r["Pago_Owner_Cargado"]),
+            (f"Owner Vacío ({miles_emp:.0f} Mi Vacías × ${pxm_v:.4f})",  r["Pago_Owner_Vacio"]),
+        ]
+        if r.get("Fuel_Owner"):
+            filas_costo.append(("Fuel pagado al Owner", r.get("Pago_Fuel_Owner", 0.0)))
+        if safe(r.get("Extras_Costo_Total", 0)) > 0:
+            filas_costo.append(("Extras (Set Logis pagó)", r["Extras_Costo_Total"]))
+
+    desglose_ruta(
+        r,
+        filas_costo_americana=filas_costo,
+        modalidad=modalidad,
+        cxm_flete=cxm_flete,
+        cxm_fuel=cxm_fuel,
+        umbral_cd=_umbral,
+    )
