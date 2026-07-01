@@ -232,6 +232,33 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def mostrar_banner_lincoln(r: dict, modalidad: str = "Flat", miles_load: float = 0.0) -> None:
+    """
+    Banner de tarifa sugerida + resultados para Lincoln.
+    Centraliza la lógica que antes se repetía en captura, consulta,
+    gestión y simulador. Todos los módulos llaman esta función.
+
+    r         : dict resultado de calcular_ruta_lincoln()
+    modalidad : "Flat" | "Desglosada" — para el bloque $/mi del banner
+    miles_load: millas de carga para calcular $/mi (solo Desglosada)
+    """
+    from ui.components import banner_tarifa_sugerida, mostrar_resultados_ruta, divider
+
+    tc_usd      = r.get("tc", 18.50)
+    _umbral     = r["umbral_cd"]
+    _tarifa_sug = r["costo_directo"] / (_umbral / 100)
+    _tarifa_mxp = _tarifa_sug * tc_usd
+    divider()
+    banner_tarifa_sugerida(
+        r["costo_directo"], r["ingreso_total"],
+        _umbral, "USD", _tarifa_mxp,
+        modalidad=modalidad,
+        miles_load=miles_load,
+        fuel_capturado=r.get("ingreso_fuel_usa", 0.0),
+    )
+    mostrar_resultados_ruta(r)
+
+
 # ─────────────────────────────────────────────
 # CARGA DE RUTAS — compartida por consulta, gestión y simulador
 # ─────────────────────────────────────────────
