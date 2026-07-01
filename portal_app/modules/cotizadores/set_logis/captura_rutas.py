@@ -1,7 +1,19 @@
 """
 captura_rutas.py – Set Logis Plus
-Helpers de texto/conversión y generación de ID viven en _shared.py.
-HTML de resultados delegado a ui/components (semaforos_ruta, desglose_ruta).
+Homologado con Lincoln:
+  - Sin st.form — usa st.button + sl_form_key para reset (compatible con st_searchbox)
+  - st_searchbox para Origen/Destino USA
+  - Panel de parámetros: loop genérico sobre DEFAULTS + caption Banxico FIX
+  - mostrar_resultados_setlogis() de _shared — 1 línea reemplaza bloque completo
+  - Modal @st.dialog al guardar
+  - Prefijos sl_* en todos los keys
+
+Diferencias Set Logis que se preservan:
+  - Fuel_Owner checkbox (agrega costo fuel al pago del owner)
+  - Modo: "Individual" / "Team" (Lincoln usa "Sencillo")
+  - 3 tipos de millas: Miles Load, Short Miles, Miles Empty
+  - Modalidad Flat / Desglosada con CXM_Flete y CXM_Fuel
+  - modo_costo_indirecto: CXM vs %
 """
 
 from __future__ import annotations
@@ -9,9 +21,10 @@ from __future__ import annotations
 from datetime import datetime
 
 import streamlit as st
+from streamlit_searchbox import st_searchbox
 
 from services.supabase_client import get_supabase_client, current_user
-from ui.components import section_header, alert, divider, kpi_row, semaforos_ruta, desglose_ruta
+from ui.components import section_header, alert, divider
 from ._shared import (
     TABLE_RUTAS,
     TIPOS_RUTA,
@@ -23,99 +36,243 @@ from ._shared import (
     safe,
     calcular_ruta_setlogis,
     tiene_mx,
-    direccion_label,
-    # helpers movidos desde este archivo a _shared:
     normalizar,
     a_usd,
     get_profile_name,
     generar_id_ruta,
+    buscar_ubicacion_setlogis,
+    mostrar_resultados_setlogis,
 )
 
 
 # ─────────────────────────────────────────────
-# PANEL DATOS GENERALES
+# MODAL CONFIRMACIÓN
+# ─────────────────────────────────────────────
+@st.dialog("✅ Ruta Guardada Exitosamente", width="small")
+def _modal_guardado(id_ruta: str) -> None:
+    alert("success", "**¡La ruta se guardó correctamente!**")
+    st.info(f"### 🆔 ID de la ruta\n`{id_ruta}`")
+    st.caption("Puedes consultarla en 'Consulta Ruta' o 'Gestión de Rutas'.")
+    if st.button("✅ Aceptar", type="primary", use_container_width=True, key="sl_modal_ok"):
+        st.session_state.pop("sl_ruta_guardada_id", None)
+        st.session_state.pop("sl_mostrar_modal",    None)
+        st.session_state.pop("sl_resultado",        None)
+        st.session_state.pop("sl_datos",            None)
+        st.session_state["sl_form_key"] = st.session_state.get("sl_form_key", 0) + 1
+        st.rerun()
+
+
+# ─────────────────────────────────────────────
+# PANEL PARÁMETROS — loop genérico sobre DEFAULTS
 # ─────────────────────────────────────────────
 def _panel_datos_generales(valores: dict) -> dict:
     with st.expander("⚙️ Configuración de Parámetros", expanded=False):
-
-        st.markdown("**Tarifas Owner Individual (USD/milla)**")
-        c1, c2, c3 = st.columns(3)
-        valores["PxM Owner Subidas"] = c1.number_input(
-            "PxM Subidas", value=float(valores.get("PxM Owner Subidas", 1.60)),
-            step=0.01, format="%.2f", key="sl_pxm_sub")
-        valores["PxM Owner Bajadas"] = c2.number_input(
-            "PxM Bajadas", value=float(valores.get("PxM Owner Bajadas", 1.40)),
-            step=0.01, format="%.2f", key="sl_pxm_baj")
-        valores["PxM Owner Vacio"] = c3.number_input(
-            "PxM Vacío", value=float(valores.get("PxM Owner Vacio", 0.80)),
-            step=0.01, format="%.2f", key="sl_pxm_vac")
-
-        st.markdown("**Tarifas Owner Team (USD/milla)**")
-        t1, t2, t3 = st.columns(3)
-        valores["PxM Owner Subidas Team"] = t1.number_input(
-            "PxM Subidas Team", value=float(valores.get("PxM Owner Subidas Team", 1.80)),
-            step=0.01, format="%.2f", key="sl_pxm_sub_team")
-        valores["PxM Owner Bajadas Team"] = t2.number_input(
-            "PxM Bajadas Team", value=float(valores.get("PxM Owner Bajadas Team", 1.60)),
-            step=0.01, format="%.2f", key="sl_pxm_baj_team")
-        valores["PxM Owner Vacio Team"] = t3.number_input(
-            "PxM Vacío Team", value=float(valores.get("PxM Owner Vacio Team", 0.90)),
-            step=0.01, format="%.2f", key="sl_pxm_vac_team")
-
-        st.markdown("**Cruce Propio (USD)**")
-        cr1, cr2 = st.columns(2)
-        valores["Cruce Propio Cargado"] = cr1.number_input(
-            "Cruce Propio Cargado", value=float(valores.get("Cruce Propio Cargado", 80.0)),
-            step=1.0, format="%.2f", key="sl_cruce_carg")
-        valores["Cruce Propio Vacio"] = cr2.number_input(
-            "Cruce Propio Vacío", value=float(valores.get("Cruce Propio Vacio", 50.0)),
-            step=1.0, format="%.2f", key="sl_cruce_vac")
-
-        st.markdown("**Tipo de Cambio y Costo Indirecto**")
-        tc1, tc2, tc3 = st.columns(3)
-        with tc1:
-            tc_valor = float(valores.get("Tipo de Cambio USD/MXP", 18.50))
-            st.caption(f"💱 Banxico FIX: **${tc_valor:,.4f}**")
-            valores["Tipo de Cambio USD/MXP"] = st.number_input(
-                "TC USD/MXP", value=tc_valor,
-                step=0.1, format="%.4f", key="sl_tc",
-                help="Valor FIX cargado automáticamente desde Banxico (actualización diaria)")
-        valores["CXM Indirecto"] = tc2.number_input(
-            "CXM Indirecto ($/mi)", value=float(valores.get("CXM Indirecto", 0.10)),
-            step=0.01, format="%.4f", key="sl_cxm_ind")
-        pct_display = float(valores.get("% Costo Indirecto", 0.09)) * 100
-        pct_val = tc3.number_input(
-            "% Costo Indirecto", value=pct_display,
-            step=0.1, format="%.1f", key="sl_pct_ind")
-        valores["% Costo Indirecto"] = pct_val / 100
-
-        if st.button("💾 Guardar parámetros", key="sl_guardar_params"):
+        tc_banxico = float(valores.get("Tipo de Cambio USD/MXP", DEFAULTS["Tipo de Cambio USD/MXP"]))
+        st.caption(
+            f"💱 Banxico FIX del día: **${tc_banxico:,.4f} MXP/USD** "
+            "— se actualiza automáticamente cada 24h."
+        )
+        col1, col2, col3 = st.columns(3)
+        claves = list(DEFAULTS.keys())
+        for i, key in enumerate(claves):
+            col = [col1, col2, col3][i % 3]
+            valores[key] = col.number_input(
+                key,
+                value=float(valores.get(key, DEFAULTS[key])),
+                step=0.01,
+                format="%.4f",
+                key=f"sl_gen_{key}",
+            )
+        if st.button("💾 Guardar Parámetros", key="sl_save_gen"):
             guardar_datos_generales(valores)
-            st.success("Parámetros guardados.")
-
+            alert("success", "✅ Parámetros guardados correctamente.")
     return valores
 
 
 # ─────────────────────────────────────────────
-# RESUMEN DE RESULTADOS
+# SECCIÓN INFO GENERAL
 # ─────────────────────────────────────────────
-def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float) -> None:
-    section_header("📊", "Resultado del Cálculo")
+def _seccion_info_general(fk: int) -> tuple:
+    """Devuelve: fecha, tipo_ruta, cliente, modo"""
+    st.markdown("### 📋 Información General")
+    g1, g2, g3, g4 = st.columns(4)
+    fecha      = g1.date_input("📅 Fecha", value=datetime.today(), key=f"sl_fecha_{fk}")
+    tipo_ruta  = g2.selectbox("🚛 Tipo de Ruta", TIPOS_RUTA, key=f"sl_tipo_{fk}")
+    cliente    = g3.text_input("🏢 Cliente", placeholder="NOMBRE DEL CLIENTE", key=f"sl_cliente_{fk}")
+    modo       = g4.selectbox("👥 Modo", ["Individual", "Team"], key=f"sl_modo_{fk}")
+    return fecha, tipo_ruta, cliente, modo
 
-    kpi_row([
-        {"icono": "💰", "label": "Ingreso Global",   "valor": f"${r['Ingreso_Global']:,.2f}",  "sub": "USD", "color": "#1B2266"},
-        {"icono": "📉", "label": "Costo Directo",    "valor": f"${r['Costo_Directo']:,.2f}",   "sub": f"{r['Pct_Costo_Directo']:.1f}%", "color": r.get("Color_Directo","#dc2626")},
-        {"icono": "📊", "label": "Costo Indirecto",  "valor": f"${r['Costo_Indirecto']:,.2f}", "sub": f"{r['Pct_Costo_Indirecto']:.1f}%", "color": r.get("Color_Indirecto","#dc2626")},
-        {"icono": "✅", "label": "Utilidad Neta",    "valor": f"${r['Utilidad_Neta']:,.2f}",   "sub": f"{r['Pct_Ut_Neta']:.1f}%", "color": r.get("Color_Ut_Neta","#dc2626")},
-    ])
 
-    if r.get("Fuel_Owner"):
-        st.info(f"⛽ **Fuel pagado al Owner:** ${r.get('Pago_Fuel_Owner', 0):,.2f} USD — incluido en Costo Directo")
+# ─────────────────────────────────────────────
+# SECCIÓN RUTA AMERICANA
+# ─────────────────────────────────────────────
+def _seccion_ruta_americana(es_empty: bool, fk: int) -> tuple:
+    """Devuelve: origen_usa, destino_usa, miles_load, short_miles, miles_empty,
+                 modalidad, moneda_flete, cxm_flete, cxm_fuel, flete_flat, fuel_owner"""
+    st.markdown("### 🇺🇸 Ruta Americana")
 
-    divider()
-    semaforos_ruta(r)
-    divider()
-    desglose_ruta(r, modalidad=modalidad, cxm_flete=cxm_flete, cxm_fuel=cxm_fuel)
+    ru1, ru2 = st.columns(2)
+    with ru1:
+        origen_sel = st_searchbox(
+            buscar_ubicacion_setlogis,
+            label="📍 Origen USA",
+            placeholder="Escribe para buscar o capturar nueva...",
+            key=f"sl_ori_usa_{fk}",
+            clear_on_submit=False,
+        )
+    with ru2:
+        destino_sel = st_searchbox(
+            buscar_ubicacion_setlogis,
+            label="📍 Destino USA",
+            placeholder="Escribe para buscar o capturar nueva...",
+            key=f"sl_dest_usa_{fk}",
+            clear_on_submit=False,
+        )
+    origen_usa  = str(origen_sel  or "").strip()
+    destino_usa = str(destino_sel or "").strip()
+
+    # ── Millas ───────────────────────────────────────────────────────────────
+    m1, m2, m3 = st.columns(3)
+    miles_load  = m1.number_input("Miles Load (facturadas al cliente)", min_value=0.0,
+                                   step=1.0, format="%.1f", key=f"sl_miles_load_{fk}")
+    short_miles = m2.number_input("Short Miles (operador cargado)",     min_value=0.0,
+                                   step=1.0, format="%.1f", key=f"sl_short_miles_{fk}")
+    miles_empty = m3.number_input("Miles Empty (vacías)",               min_value=0.0,
+                                   step=1.0, format="%.1f", key=f"sl_miles_empty_{fk}")
+
+    # ── Modalidad e ingreso ───────────────────────────────────────────────────
+    if not es_empty:
+        r1, r2 = st.columns([1, 3])
+        modalidad    = r1.selectbox("Modalidad", ["Desglosada", "Flat"], key=f"sl_modalidad_{fk}")
+        moneda_flete = r2.selectbox("Moneda Flete", ["USD", "MXP"], key=f"sl_mon_flete_{fk}")
+
+        if modalidad == "Desglosada":
+            d1, d2 = st.columns(2)
+            cxm_flete  = d1.number_input("CXM Flete (USD/milla)",
+                                          min_value=0.0, step=0.001, format="%.4f",
+                                          key=f"sl_cxm_flete_{fk}")
+            cxm_fuel   = d2.number_input("CXM Fuel  (USD/milla)",
+                                          min_value=0.0, step=0.001, format="%.4f",
+                                          key=f"sl_cxm_fuel_{fk}")
+            flete_flat = 0.0
+        else:
+            flete_flat = st.number_input("Flete Flat (monto total)",
+                                          min_value=0.0, step=1.0, format="%.2f",
+                                          key=f"sl_flete_flat_{fk}")
+            cxm_flete  = 0.0
+            cxm_fuel   = 0.0
+
+        # Fuel Owner — exclusivo de Set Logis
+        fuel_owner = st.checkbox(
+            "⛽ Fuel Owner — el fuel se paga al owner (suma a Costo Directo)",
+            key=f"sl_fuel_owner_{fk}",
+        )
+    else:
+        # Ruta Empty: sin flete ni fuel
+        modalidad    = "Flat"
+        moneda_flete = "USD"
+        cxm_flete    = 0.0
+        cxm_fuel     = 0.0
+        flete_flat   = 0.0
+        fuel_owner   = False
+
+    return (origen_usa, destino_usa, miles_load, short_miles, miles_empty,
+            modalidad, moneda_flete, cxm_flete, cxm_fuel, flete_flat, fuel_owner)
+
+
+# ─────────────────────────────────────────────
+# SECCIÓN CRUCE
+# ─────────────────────────────────────────────
+def _seccion_cruce(fk: int) -> tuple:
+    """Devuelve: incluye_cruce, tipo_cruce, tipo_carga_c,
+                 mon_ing_cruce, ingreso_cruce_raw,
+                 mon_costo_cruce, costo_cruce_raw"""
+    st.markdown("### 🛂 Cruce")
+    incluye_cruce = st.checkbox("¿Incluye cruce?", key=f"sl_incluye_cruce_{fk}")
+
+    tipo_cruce     = "Propio"
+    tipo_carga_c   = "Cargado"
+    mon_ing_cruce  = "USD"
+    ingreso_cruce  = 0.0
+    mon_costo_cruce = "USD"
+    costo_cruce_raw = 0.0
+
+    if incluye_cruce:
+        cr1, cr2 = st.columns(2)
+        tipo_cruce   = cr1.selectbox("Tipo de Cruce", ["Propio", "Tercero"],        key=f"sl_tipo_cruce_{fk}")
+        tipo_carga_c = cr2.selectbox("Tipo de Carga", ["Cargado", "Vacío"],         key=f"sl_tipo_carga_c_{fk}")
+
+        ic1, ic2, ic3, ic4 = st.columns(4)
+        mon_ing_cruce   = ic1.selectbox("Moneda Ingreso", ["USD", "MXP"],           key=f"sl_mon_ing_cr_{fk}")
+        ingreso_cruce   = ic2.number_input("Ingreso Cruce", min_value=0.0,
+                                            step=0.01, format="%.2f",               key=f"sl_ing_cruce_{fk}")
+        if tipo_cruce == "Tercero":
+            mon_costo_cruce = ic3.selectbox("Moneda Costo",  ["USD", "MXP"],        key=f"sl_mon_costo_cr_{fk}")
+            costo_cruce_raw = ic4.number_input("Costo Cruce", min_value=0.0,
+                                               step=0.01, format="%.2f",            key=f"sl_costo_cruce_{fk}")
+
+    return (incluye_cruce, tipo_cruce, tipo_carga_c,
+            mon_ing_cruce, ingreso_cruce,
+            mon_costo_cruce, costo_cruce_raw)
+
+
+# ─────────────────────────────────────────────
+# SECCIÓN PARTE MX
+# ─────────────────────────────────────────────
+def _seccion_mx(fk: int) -> tuple:
+    """Devuelve: origen_mx, destino_mx,
+                 mon_ing_mx, ingreso_mx_raw,
+                 mon_costo_mx, costo_mx_raw"""
+    st.markdown("### 🇲🇽 Parte MX")
+    mx1, mx2 = st.columns(2)
+    origen_mx  = mx1.text_input("Origen MX",  placeholder="CIUDAD, MX", key=f"sl_ori_mx_{fk}")
+    destino_mx = mx2.text_input("Destino MX", placeholder="CIUDAD, MX", key=f"sl_dest_mx_{fk}")
+
+    m1, m2, m3, m4 = st.columns(4)
+    mon_ing_mx   = m1.selectbox("Moneda Ingreso MX",  ["MXP", "USD"], key=f"sl_mon_ing_mx_{fk}")
+    ingreso_mx   = m2.number_input("Ingreso MX", min_value=0.0, step=0.01, format="%.2f",
+                                    key=f"sl_ing_mx_{fk}")
+    mon_costo_mx = m3.selectbox("Moneda Costo MX",   ["MXP", "USD"], key=f"sl_mon_costo_mx_{fk}")
+    costo_mx     = m4.number_input("Costo MX",   min_value=0.0, step=0.01, format="%.2f",
+                                    key=f"sl_costo_mx_{fk}")
+
+    return origen_mx, destino_mx, mon_ing_mx, ingreso_mx, mon_costo_mx, costo_mx
+
+
+# ─────────────────────────────────────────────
+# SECCIÓN EXTRAS
+# ─────────────────────────────────────────────
+def _seccion_extras(fk: int) -> tuple:
+    """Devuelve: otros_cargos (dict nombre→monto), otros_pagados (dict nombre→bool cobrado)"""
+    st.markdown("### ➕ Extras / Otros Cargos")
+    otros_cargos  = {}
+    otros_pagados = {}
+    cols = st.columns(3)
+    for i, nombre in enumerate(EXTRAS_USA):
+        col = cols[i % 3]
+        monto   = col.number_input(nombre, min_value=0.0, step=0.01, format="%.2f",
+                                   key=f"sl_extra_{nombre.replace(' ','_')}_{fk}")
+        cobrado = col.checkbox(f"Cobrado al cliente ({nombre})",
+                               key=f"sl_extra_cob_{nombre.replace(' ','_')}_{fk}")
+        if monto > 0:
+            otros_cargos[nombre]  = monto
+            otros_pagados[nombre] = cobrado
+    return otros_cargos, otros_pagados
+
+
+# ─────────────────────────────────────────────
+# COSTO INDIRECTO (modo)
+# ─────────────────────────────────────────────
+def _seccion_costo_indirecto(fk: int) -> str:
+    st.markdown("### 📊 Costo Indirecto")
+    modo_ci = st.radio(
+        "Método de cálculo",
+        ["CXM", "%"],
+        horizontal=True,
+        key=f"sl_modo_ci_{fk}",
+        help="CXM = costo por milla total · % = porcentaje del ingreso global",
+    )
+    return modo_ci
 
 
 # ─────────────────────────────────────────────
@@ -124,193 +281,117 @@ def _mostrar_resumen(r: dict, modalidad: str, cxm_flete: float, cxm_fuel: float)
 def render() -> None:
     supabase = get_supabase_client()
     if supabase is None:
-        alert("error", "⚠️ Supabase no configurado.")
-        return
+        alert("warn", "⚠️ Supabase no configurado. Podrás revisar cálculos, pero NO guardar rutas.")
 
     u              = current_user() or {}
     user_id        = u.get("id") or u.get("sub") or ""
     nombre_usuario = get_profile_name(user_id) or u.get("email") or "Desconocido"
 
-    st.session_state.setdefault("sl_resultado", None)
-    st.session_state.setdefault("sl_datos", {})
-    st.session_state.setdefault("sl_form_key", 0)
+    st.session_state.setdefault("sl_resultado",    None)
+    st.session_state.setdefault("sl_datos",        {})
+    st.session_state.setdefault("sl_form_key",     0)
 
+    # ── Modal post-guardado ────────────────────────────────────────────────────
+    if st.session_state.get("sl_mostrar_modal") and st.session_state.get("sl_ruta_guardada_id"):
+        _modal_guardado(st.session_state["sl_ruta_guardada_id"])
+
+    # ── Parámetros ─────────────────────────────────────────────────────────────
     valores = cargar_datos_generales()
     valores = _panel_datos_generales(valores)
-    tc      = safe(valores.get("Tipo de Cambio USD/MXP", 18.50))
+    tc      = safe(valores.get("Tipo de Cambio USD/MXP", DEFAULTS["Tipo de Cambio USD/MXP"]))
 
     divider()
     section_header("🛣️", "Nueva Ruta")
 
-    tipo_ruta_actual = st.session_state.get("sl_tipo", TIPOS_RUTA[0])
-    es_empty_outer   = (tipo_ruta_actual == "Empty")
-
     _k = st.session_state.get("sl_form_key", 0)
-    with st.form(f"sl_captura_ruta_{_k}", clear_on_submit=False):
 
-        # ── 1. INFO GENERAL ───────────────────────────────────────────────────
-        st.markdown("### 📋 Información General")
-        g1, g2, g3, g4 = st.columns(4)
-        fecha      = g1.date_input("📅 Fecha", value=datetime.today(), key="sl_fecha")
-        tipo_ruta  = g2.selectbox("🚛 Tipo de Ruta", TIPOS_RUTA,
-                                   index=TIPOS_RUTA.index(tipo_ruta_actual), key="sl_tipo")
-        cliente    = g3.text_input("🏢 Cliente", placeholder="NOMBRE DEL CLIENTE", key="sl_cliente")
-        modo       = g4.selectbox("👥 Modo", ["Individual", "Team"], key="sl_modo")
+    # ── Leer tipo_ruta anticipado para saber orden de secciones ───────────────
+    tipo_ruta_actual = st.session_state.get(f"sl_tipo_{_k}", TIPOS_RUTA[0])
+    es_empty         = (tipo_ruta_actual == "Empty")
+    aplica_mx        = tiene_mx(tipo_ruta_actual)
 
-        es_empty = (tipo_ruta == "Empty")
-        aplica_mx = tiene_mx(tipo_ruta)
+    # ── Sección siempre primera: Info General ─────────────────────────────────
+    fecha, tipo_ruta, cliente, modo = _seccion_info_general(_k)
+    es_empty  = (tipo_ruta == "Empty")
+    aplica_mx = tiene_mx(tipo_ruta)
 
-        dir_label = direccion_label(tipo_ruta)
-        mx_label  = "Sí" if aplica_mx else "No"
-        st.caption(f"📌 Dirección: **{dir_label}** · Tramo MX: **{mx_label}**")
+    # ── Orden de secciones según tipo (espeja comportamiento de Lincoln) ───────
+    # NB    → americana → cruce → extras
+    # SB    → americana → cruce → extras
+    # D2DNB → mx → cruce → americana → extras
+    # D2DSB → americana → cruce → mx → extras
+    # Empty → americana (solo millas) → extras
 
-        # ── 2. RUTA AMERICANA ─────────────────────────────────────────────────
+    origen_usa = destino_usa = ""
+    miles_load = short_miles = miles_empty = 0.0
+    modalidad = "Desglosada"; moneda_flete = "USD"
+    cxm_flete = cxm_fuel = flete_flat = 0.0
+    fuel_owner = False
+    incluye_cruce = False; tipo_cruce = "Propio"; tipo_carga_c = "Cargado"
+    mon_ing_cruce = "USD"; ingreso_cruce_raw = 0.0
+    mon_costo_cruce = "USD"; costo_cruce_raw = 0.0
+    origen_mx = destino_mx = ""
+    mon_ing_mx = "MXP"; ingreso_mx_raw = 0.0
+    mon_costo_mx = "MXP"; costo_mx_raw = 0.0
+
+    if tipo_ruta == "D2DNB":
         divider()
-        st.markdown("### 🇺🇸 Ruta Americana")
-
-        ru1, ru2 = st.columns(2)
-        origen_usa  = ru1.text_input("📍 Origen",  key="sl_ori",  placeholder="CIUDAD, ESTADO")
-        destino_usa = ru2.text_input("📍 Destino", key="sl_dest", placeholder="CIUDAD, ESTADO")
-
-        m1, m2, m3 = st.columns(3)
-        miles_load  = m1.number_input("🛣️ Miles Load",  min_value=0.0, step=10.0, key="sl_ml")
-        short_miles = m2.number_input("🔀 Short Miles",  min_value=0.0, step=1.0,  key="sl_sm")
-        miles_empty = m3.number_input("⚪ Miles Empty",  min_value=0.0, step=10.0, key="sl_me")
-
+        (origen_mx, destino_mx,
+         mon_ing_mx, ingreso_mx_raw,
+         mon_costo_mx, costo_mx_raw)          = _seccion_mx(_k)
         divider()
-        st.markdown("**💵 Tarifa Americana**")
-        mod1, mod2 = st.columns([1, 3])
-        modalidad = mod1.radio("Modalidad", ["Desglosada", "Flat"],
-                                horizontal=False, key="sl_modalidad",
-                                disabled=es_empty)
-
-        if modalidad == "Desglosada":
-            td1, td2, td3 = mod2.columns(3)
-            moneda_flete  = td1.selectbox("💱 Moneda", ["USD", "MXP"],
-                                           key="sl_mon_flete", disabled=es_empty)
-            cxm_flete_cap = td2.number_input("CXM Flete ($/mi)", min_value=0.0,
-                                              step=0.001, format="%.4f",
-                                              key="sl_cxm_flete", disabled=es_empty)
-            cxm_fuel_cap  = td3.number_input("CXM Fuel ($/mi)", min_value=0.0,
-                                              step=0.001, format="%.4f",
-                                              key="sl_cxm_fuel", disabled=es_empty)
-            flete_flat_cap = 0.0
-            if not es_empty:
-                preview = (safe(cxm_flete_cap) + safe(cxm_fuel_cap)) * safe(miles_load)
-                mod2.caption(
-                    f"Vista previa: (CXM Flete ${safe(cxm_flete_cap):.4f}"
-                    f" + CXM Fuel ${safe(cxm_fuel_cap):.4f})"
-                    f" × {miles_load:.0f} ML"
-                    f" = **${preview:,.2f} USD**"
-                )
-        else:
-            tf1, tf2 = mod2.columns(2)
-            moneda_flete   = tf1.selectbox("💱 Moneda", ["USD", "MXP"],
-                                            key="sl_mon_flete", disabled=es_empty)
-            flete_flat_cap = tf2.number_input("Tarifa Total (Flat)", min_value=0.0,
-                                               step=50.0, key="sl_flete_flat",
-                                               disabled=es_empty)
-            cxm_flete_cap = cxm_fuel_cap = 0.0
-
-        # ── Fuel Owner ────────────────────────────────────────────────────────
-        if not es_empty and modalidad == "Desglosada":
+        (incluye_cruce, tipo_cruce, tipo_carga_c,
+         mon_ing_cruce, ingreso_cruce_raw,
+         mon_costo_cruce, costo_cruce_raw)    = _seccion_cruce(_k)
+        divider()
+        (origen_usa, destino_usa,
+         miles_load, short_miles, miles_empty,
+         modalidad, moneda_flete,
+         cxm_flete, cxm_fuel, flete_flat,
+         fuel_owner)                           = _seccion_ruta_americana(es_empty, _k)
+    elif tipo_ruta == "D2DSB":
+        divider()
+        (origen_usa, destino_usa,
+         miles_load, short_miles, miles_empty,
+         modalidad, moneda_flete,
+         cxm_flete, cxm_fuel, flete_flat,
+         fuel_owner)                           = _seccion_ruta_americana(es_empty, _k)
+        divider()
+        (incluye_cruce, tipo_cruce, tipo_carga_c,
+         mon_ing_cruce, ingreso_cruce_raw,
+         mon_costo_cruce, costo_cruce_raw)    = _seccion_cruce(_k)
+        divider()
+        (origen_mx, destino_mx,
+         mon_ing_mx, ingreso_mx_raw,
+         mon_costo_mx, costo_mx_raw)          = _seccion_mx(_k)
+    else:
+        # NB, SB, Empty
+        divider()
+        (origen_usa, destino_usa,
+         miles_load, short_miles, miles_empty,
+         modalidad, moneda_flete,
+         cxm_flete, cxm_fuel, flete_flat,
+         fuel_owner)                           = _seccion_ruta_americana(es_empty, _k)
+        if not es_empty:
             divider()
-            fuel_owner = st.checkbox(
-                "⛽ Pagar Fuel al Owner (el monto de Fuel se suma al costo directo)",
-                value=False,
-                key=f"sl_fuel_owner_{_k}",
-                help=(
-                    "Actívalo cuando se acordó pagar el fuel al owner. "
-                    "El cálculo: Miles Load × CXM Fuel se suma como costo directo. "
-                    "El ingreso al cliente no cambia."
-                ),
-            )
-        else:
-            fuel_owner = False
+            (incluye_cruce, tipo_cruce, tipo_carga_c,
+             mon_ing_cruce, ingreso_cruce_raw,
+             mon_costo_cruce, costo_cruce_raw) = _seccion_cruce(_k)
 
-        # ── 3. CRUCE ──────────────────────────────────────────────────────────
-        divider()
-        st.markdown("### 🛂 Cruce Fronterizo")
+    # ── Extras ────────────────────────────────────────────────────────────────
+    divider()
+    otros_cargos, otros_pagados = _seccion_extras(_k)
 
-        incluye_cruce = st.checkbox("¿Incluye cruce?", key="sl_inc_cruce",
-                                     disabled=es_empty)
-        tipo_cruce    = "Propio"
-        tipo_carga_c  = "Cargado"
-        ingreso_cruce_raw = 0.0
-        costo_cruce_raw   = 0.0
-        mon_ing_cruce     = "USD"
-        mon_costo_cruce   = "USD"
+    # ── Costo indirecto ────────────────────────────────────────────────────────
+    divider()
+    modo_ci = _seccion_costo_indirecto(_k)
 
-        if incluye_cruce and not es_empty:
-            cx1, cx2 = st.columns(2)
-            tipo_cruce   = cx1.selectbox("Tipo de Cruce",  ["Propio", "Tercero"], key="sl_tcruce")
-            tipo_carga_c = cx2.selectbox("Tipo de Carga",  ["Cargado", "Vacío"],  key="sl_tcarga")
+    # ── Botón Calcular ────────────────────────────────────────────────────────
+    divider()
+    if st.button("🔍 Calcular Ruta", type="primary", use_container_width=True,
+                 key=f"sl_calcular_{_k}"):
 
-            ic1, ic2 = st.columns(2)
-            mon_ing_cruce     = ic1.selectbox("Moneda Ingreso Cruce",  ["USD", "MXP"], key="sl_mon_ic")
-            ingreso_cruce_raw = ic1.number_input("Ingreso Cruce", min_value=0.0, step=10.0, key="sl_ing_cruce")
-
-            if tipo_cruce == "Tercero":
-                mon_costo_cruce   = ic2.selectbox("Moneda Costo Cruce",  ["USD", "MXP"], key="sl_mon_cc")
-                costo_cruce_raw   = ic2.number_input("Costo Cruce (Tercero)", min_value=0.0, step=10.0, key="sl_cos_cruce")
-
-        # ── 4. TRAMO MX ───────────────────────────────────────────────────────
-        origen_mx = destino_mx = ""
-        ingreso_mx_raw = costo_mx_raw = 0.0
-        mon_ing_mx = mon_costo_mx = "MXP"
-
-        if aplica_mx and not es_empty:
-            divider()
-            st.markdown("### 🇲🇽 Tramo Mexicano")
-            mx1, mx2 = st.columns(2)
-            origen_mx  = mx1.text_input("📍 Origen MX",  key="sl_ori_mx",  placeholder="CIUDAD")
-            destino_mx = mx2.text_input("📍 Destino MX", key="sl_dest_mx", placeholder="CIUDAD")
-
-            mi1, mi2 = st.columns(2)
-            mon_ing_mx     = mi1.selectbox("Moneda Ingreso MX",  ["MXP","USD"], key="sl_mon_imx")
-            ingreso_mx_raw = mi1.number_input("Ingreso MX", min_value=0.0, step=100.0, key="sl_ing_mx")
-            mon_costo_mx   = mi2.selectbox("Moneda Costo MX",    ["MXP","USD"], key="sl_mon_cmx")
-            costo_mx_raw   = mi2.number_input("Costo MX",  min_value=0.0, step=100.0, key="sl_cos_mx")
-
-        # ── 5. EXTRAS ─────────────────────────────────────────────────────────
-        divider()
-        st.markdown("### ➕ Otros Cargos")
-        otros_cargos  = {}
-        otros_pagados = {}
-
-        cols_extra = st.columns(3)
-        for i, extra in enumerate(EXTRAS_USA):
-            col = cols_extra[i % 3]
-            monto   = col.number_input(extra, min_value=0.0, step=10.0,
-                                        key=f"sl_ext_{extra}", label_visibility="visible")
-            cobrado = col.checkbox("Cobrado al cliente", key=f"sl_extc_{extra}")
-            if monto > 0:
-                otros_cargos[extra]  = monto
-                otros_pagados[extra] = cobrado
-
-        # ── 6. COSTO INDIRECTO ────────────────────────────────────────────────
-        divider()
-        st.markdown("### 📉 Costo Indirecto")
-        ci_col, _ = st.columns([1, 2])
-        modo_ci = ci_col.radio("Método", ["CXM", "Porcentaje"],
-                                horizontal=True, key="sl_modo_ci")
-        st.caption(
-            f"CXM configurado: **${safe(valores.get('CXM Indirecto', 0.10)):.3f}/mi**  ·  "
-            f"% configurado: **{safe(valores.get('% Costo Indirecto', 0.09)) * 100:.1f}%**"
-        )
-
-        divider()
-        calcular = st.form_submit_button(
-            "🧮 Calcular Ruta", type="primary", use_container_width=True
-        )
-
-    # ── Lógica post-form ──────────────────────────────────────────────────────
-    if calcular:
         errores = []
-        ruta_usa = f"{normalizar(origen_usa)} - {normalizar(destino_usa)}"
-
-        if not origen_usa.strip() or not destino_usa.strip():
-            errores.append("⚠️ Ingresa origen y destino de la ruta USA.")
         if not es_empty and not cliente.strip():
             errores.append("⚠️ Ingresa el cliente.")
         if not es_empty and miles_load <= 0 and short_miles <= 0:
@@ -322,15 +403,14 @@ def render() -> None:
             for e in errores:
                 st.error(e)
         else:
+            # Convertir monedas a USD
             if es_empty:
                 flete_usd = fuel_usd = 0.0
             elif modalidad == "Desglosada":
-                # Flete = CXM_Flete × Miles_Load  |  Fuel = CXM_Fuel × Miles_Load
-                # Se separan para que fuel_owner pueda identificar cuánto es fuel
-                flete_usd = a_usd(safe(cxm_flete_cap) * safe(miles_load), moneda_flete, tc)
-                fuel_usd  = a_usd(safe(cxm_fuel_cap)  * safe(miles_load), moneda_flete, tc)
+                flete_usd = a_usd(safe(cxm_flete) * safe(miles_load), moneda_flete, tc)
+                fuel_usd  = a_usd(safe(cxm_fuel)  * safe(miles_load), moneda_flete, tc)
             else:
-                flete_usd = a_usd(safe(flete_flat_cap), moneda_flete, tc)
+                flete_usd = a_usd(safe(flete_flat), moneda_flete, tc)
                 fuel_usd  = 0.0
 
             ingreso_cruce_u = a_usd(ingreso_cruce_raw, mon_ing_cruce,   tc)
@@ -340,6 +420,8 @@ def render() -> None:
 
             extras_ingreso    = sum(v for n, v in otros_cargos.items() if otros_pagados.get(n, False))
             extras_costo_puro = sum(v for n, v in otros_cargos.items() if not otros_pagados.get(n, False))
+
+            ruta_usa = f"{normalizar(origen_usa)} - {normalizar(destino_usa)}"
 
             resultado = calcular_ruta_setlogis(
                 tipo_ruta            = tipo_ruta,
@@ -365,12 +447,13 @@ def render() -> None:
                 incluye_cruce        = incluye_cruce and not es_empty,
             )
 
+            # Campos extra para guardado
             resultado["Modalidad"]     = modalidad
-            resultado["CXM_Flete_Cap"] = safe(cxm_flete_cap) if modalidad == "Desglosada" else 0.0
-            resultado["CXM_Fuel_Cap"]  = safe(cxm_fuel_cap)  if modalidad == "Desglosada" else 0.0
-            resultado["Flete_Flat"]    = flete_usd            if modalidad == "Flat"        else 0.0
+            resultado["CXM_Flete_Cap"] = safe(cxm_flete) if modalidad == "Desglosada" else 0.0
+            resultado["CXM_Fuel_Cap"]  = safe(cxm_fuel)  if modalidad == "Desglosada" else 0.0
+            resultado["Flete_Flat"]    = flete_usd        if modalidad == "Flat"       else 0.0
 
-            id_ruta = generar_id_ruta(supabase)
+            id_ruta = generar_id_ruta(supabase) if supabase else "SL000000"
 
             st.session_state["sl_resultado"] = resultado
             st.session_state["sl_datos"] = {
@@ -389,101 +472,119 @@ def render() -> None:
                 "otros_cargos":     otros_cargos,
                 "otros_pagados":    otros_pagados,
                 "fuel_owner":       fuel_owner,
+                "cxm_flete_cap":    safe(cxm_flete) if modalidad == "Desglosada" else 0.0,
+                "cxm_fuel_cap":     safe(cxm_fuel)  if modalidad == "Desglosada" else 0.0,
             }
-            alert("success", "✅ Ruta calculada correctamente.")
+            alert("success", "✅ Ruta calculada. Revisa el resultado abajo.")
 
-    # ── Mostrar resultado ─────────────────────────────────────────────────────
+    # ── Mostrar resultado — 1 línea gracias a mostrar_resultados_setlogis() ───
     if st.session_state.get("sl_resultado"):
         r = st.session_state["sl_resultado"]
-        _mostrar_resumen(
+        divider()
+        mostrar_resultados_setlogis(
             r,
-            modalidad = r.get("Modalidad", "Flat"),
-            cxm_flete = r.get("CXM_Flete_Cap", 0.0),
-            cxm_fuel  = r.get("CXM_Fuel_Cap",  0.0),
+            modalidad  = r.get("Modalidad", "Flat"),
+            miles_load = safe(r.get("Miles_Load", 0.0)),
+            cxm_flete  = r.get("CXM_Flete_Cap", 0.0),
+            cxm_fuel   = r.get("CXM_Fuel_Cap",  0.0),
         )
 
         divider()
-        if st.button("💾 Guardar en Base de Datos", key="sl_guardar",
-                     type="primary", use_container_width=True):
-            try:
-                r = st.session_state["sl_resultado"]
-                d = st.session_state["sl_datos"]
-
-                extras_db = {
-                    f"Extra_{n.replace(' ', '_')}": v
-                    for n, v in d.get("otros_cargos", {}).items()
-                }
-                extras_cobrado_db = {
-                    f"Extra_{n.replace(' ', '_')}_Cobrado": v
-                    for n, v in d.get("otros_pagados", {}).items()
-                }
-
-                fila = {
-                    "ID_Ruta":              d["id_ruta"],
-                    "Fecha":                d["fecha"],
-                    "Usuario":              d["usuario"],
-                    "Tipo_Viaje":           r["Tipo_Viaje"],
-                    "Modo":                 r["Modo"],
-                    "Direccion":            r["Direccion"],
-                    "Modalidad":            r["Modalidad"],
-                    "Cliente":              r["Cliente"],
-                    "Ruta_USA":             r["Ruta_USA"],
-                    "Origen_MX":            d["origen_mx"],
-                    "Destino_MX":           d["destino_mx"],
-                    "Moneda_Flete":         d["moneda_flete"],
-                    "Moneda_Ingreso_Cruce": d["mon_ing_cruce"],
-                    "Moneda_Costo_Cruce":   d["mon_costo_cruce"],
-                    "Moneda_Ingreso_MX":    d["mon_ing_mx"],
-                    "Moneda_Costo_MX":      d["mon_costo_mx"],
-                    "Tipo_Carga_Cruce":     d["tipo_carga_cruce"],
-                    "Incluye_Cruce":        d["incluye_cruce"],
-                    "Miles_Load":           r["Miles_Load"],
-                    "Miles_Empty":          r["Miles_Empty"],
-                    "Short_Miles":          r["Short_Miles"],
-                    "Millas_Totales":       r["Millas_Totales"],
-                    "CXM_Flete":            r["CXM_Flete_Cap"],
-                    "CXM_Fuel":             r["CXM_Fuel_Cap"],
-                    "Flete_Flat":           r["Flete_Flat"],
-                    "Flete_USA":            r["Flete_USA"],
-                    "Fuel":                 r["Fuel"],
-                    "Flete_Fuel":           r["Flete_Fuel"],
-                    "Ingreso_Cruce":        r["Ingreso_Cruce"],
-                    "Tipo_Cruce":           r["Tipo_Cruce"],
-                    "Ingreso_MX":           r["Ingreso_MX"],
-                    "Extras_Ingreso":       r["Extras_Ingreso"],
-                    "Extras_Costo":         r["Extras_Costo"],
-                    "Ingreso_Global":       r["Ingreso_Global"],
-                    "PxM_Cargado":          r["PxM_Cargado"],
-                    "PxM_Vacio":            r["PxM_Vacio"],
-                    "Pago_Owner_Cargado":   r["Pago_Owner_Cargado"],
-                    "Pago_Owner_Vacio":     r["Pago_Owner_Vacio"],
-                    "Pago_Owner_Total":     r["Pago_Owner_Total"],
-                    "Fuel_Owner":           r.get("Fuel_Owner", False),
-                    "Pago_Fuel_Owner":      r.get("Pago_Fuel_Owner", 0.0),
-                    "Costo_Cruce":          r["Costo_Cruce"],
-                    "Costo_MX":             r["Costo_MX"],
-                    "Costo_Directo":        r["Costo_Directo"],
-                    "Costo_Indirecto":      r["Costo_Indirecto"],
-                    "Costo_Total":          r["Costo_Total"],
-                    "Utilidad_Bruta":       r["Utilidad_Bruta"],
-                    "Utilidad_Neta":        r["Utilidad_Neta"],
-                    "Pct_Costo_Directo":    r["Pct_Costo_Directo"],
-                    "Pct_Costo_Indirecto":  r["Pct_Costo_Indirecto"],
-                    "Pct_Ut_Bruta":         r["Pct_Ut_Bruta"],
-                    "Pct_Ut_Neta":          r["Pct_Ut_Neta"],
-                    "TC_USD_MXP":           r["TC"],
-                    **extras_db,
-                    **extras_cobrado_db,
-                }
-
-                fila_limpia = limpiar_fila_json(fila)
-                supabase.table(TABLE_RUTAS).insert(fila_limpia).execute()
-
-                alert("success", f"✅ Ruta **{d['id_ruta']}** guardada correctamente.")
-                st.session_state["sl_resultado"] = None
-                st.session_state["sl_datos"]     = {}
-                st.session_state["sl_form_key"]  = _k + 1
+        col_g, col_x = st.columns([2, 1])
+        with col_g:
+            if st.button("💾 Guardar en Base de Datos", type="primary",
+                         use_container_width=True, key="sl_guardar_ruta"):
+                if supabase is None:
+                    alert("error", "❌ Supabase no está configurado.")
+                else:
+                    _guardar_ruta(r, st.session_state["sl_datos"], supabase)
+        with col_x:
+            if st.button("🗑️ Descartar", use_container_width=True, key="sl_descartar"):
+                st.session_state.pop("sl_resultado", None)
+                st.session_state.pop("sl_datos",     None)
                 st.rerun()
 
-            except Exception as ex:
-                alert("error", f"❌ Error al guardar: {ex}")
+
+# ─────────────────────────────────────────────
+# GUARDAR EN SUPABASE
+# ─────────────────────────────────────────────
+def _guardar_ruta(r: dict, d: dict, supabase) -> None:
+    try:
+        extras_db         = {
+            f"Extra_{n.replace(' ','_')}": v
+            for n, v in d.get("otros_cargos", {}).items()
+        }
+        extras_cobrado_db = {
+            f"Extra_{n.replace(' ','_')}_Cobrado": v
+            for n, v in d.get("otros_pagados", {}).items()
+        }
+
+        fila = {
+            "ID_Ruta":              d["id_ruta"],
+            "Fecha":                d["fecha"],
+            "Usuario":              d["usuario"],
+            "Tipo_Viaje":           r["Tipo_Viaje"],
+            "Modo":                 r["Modo"],
+            "Direccion":            r["Direccion"],
+            "Modalidad":            r["Modalidad"],
+            "Cliente":              r["Cliente"],
+            "Ruta_USA":             r["Ruta_USA"],
+            "Origen_MX":            d["origen_mx"],
+            "Destino_MX":           d["destino_mx"],
+            "Moneda_Flete":         d["moneda_flete"],
+            "Moneda_Ingreso_Cruce": d["mon_ing_cruce"],
+            "Moneda_Costo_Cruce":   d["mon_costo_cruce"],
+            "Moneda_Ingreso_MX":    d["mon_ing_mx"],
+            "Moneda_Costo_MX":      d["mon_costo_mx"],
+            "Tipo_Carga_Cruce":     d["tipo_carga_cruce"],
+            "Incluye_Cruce":        d["incluye_cruce"],
+            "Miles_Load":           r["Miles_Load"],
+            "Miles_Empty":          r["Miles_Empty"],
+            "Short_Miles":          r["Short_Miles"],
+            "Millas_Totales":       r["Millas_Totales"],
+            "CXM_Flete":            d["cxm_flete_cap"],
+            "CXM_Fuel":             d["cxm_fuel_cap"],
+            "Flete_Flat":           r["Flete_Flat"],
+            "Flete_USA":            r["Flete_USA"],
+            "Fuel":                 r["Fuel"],
+            "Flete_Fuel":           r["Flete_Fuel"],
+            "Ingreso_Cruce":        r["Ingreso_Cruce"],
+            "Tipo_Cruce":           r["Tipo_Cruce"],
+            "Ingreso_MX":           r["Ingreso_MX"],
+            "Extras_Ingreso":       r["Extras_Ingreso"],
+            "Extras_Costo":         r["Extras_Costo"],
+            "Ingreso_Global":       r["Ingreso_Global"],
+            "PxM_Cargado":          r["PxM_Cargado"],
+            "PxM_Vacio":            r["PxM_Vacio"],
+            "Pago_Owner_Cargado":   r["Pago_Owner_Cargado"],
+            "Pago_Owner_Vacio":     r["Pago_Owner_Vacio"],
+            "Pago_Owner_Total":     r["Pago_Owner_Total"],
+            "Fuel_Owner":           r.get("Fuel_Owner", False),
+            "Pago_Fuel_Owner":      r.get("Pago_Fuel_Owner", 0.0),
+            "Costo_Cruce":          r["Costo_Cruce"],
+            "Costo_MX":             r["Costo_MX"],
+            "Costo_Directo":        r["Costo_Directo"],
+            "Costo_Indirecto":      r["Costo_Indirecto"],
+            "Costo_Total":          r["Costo_Total"],
+            "Utilidad_Bruta":       r["Utilidad_Bruta"],
+            "Utilidad_Neta":        r["Utilidad_Neta"],
+            "Pct_Costo_Directo":    r["Pct_Costo_Directo"],
+            "Pct_Costo_Indirecto":  r["Pct_Costo_Indirecto"],
+            "Pct_Ut_Bruta":         r["Pct_Ut_Bruta"],
+            "Pct_Ut_Neta":          r["Pct_Ut_Neta"],
+            "TC_USD_MXP":           r["TC"],
+            **extras_db,
+            **extras_cobrado_db,
+        }
+
+        fila_limpia = limpiar_fila_json(fila)
+        supabase.table(TABLE_RUTAS).insert(fila_limpia).execute()
+
+        st.session_state["sl_ruta_guardada_id"] = d["id_ruta"]
+        st.session_state["sl_mostrar_modal"]    = True
+        st.session_state["sl_resultado"]        = None
+        st.session_state["sl_datos"]            = {}
+        st.rerun()
+
+    except Exception as ex:
+        alert("error", f"❌ Error al guardar: {ex}")
