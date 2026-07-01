@@ -44,6 +44,7 @@ from ._shared import (
     generar_id_ruta,
     now_iso,
     buscar_ubicacion_lincoln,
+    mostrar_resultados_lincoln,
 )
 
 
@@ -282,51 +283,13 @@ def _seccion_extras(fk: int) -> tuple:
 # MOSTRAR RESULTADOS
 # ─────────────────────────────────────────────
 def _mostrar_resultados(r: dict, fd: dict) -> None:
-    tc_usd       = r.get("tc", 18.50)
-    _umbral      = r["umbral_cd"]
-    _costo_ame   = r.get("costo_directo_americana", r["costo_directo"])
-    _tarifa_sug  = _costo_ame / (_umbral / 100)
-    _tarifa_mxp  = _tarifa_sug * tc_usd
-    divider()
-    banner_tarifa_sugerida(
-        _costo_ame, r["ingreso_total"],
-        _umbral, "USD", _tarifa_mxp,
-        modalidad=fd.get("modalidad", "Flat"),
-        miles_load=fd.get("miles_load", 0.0),
-        fuel_capturado=r.get("ingreso_fuel_usa", 0.0),
-    )
-    mostrar_resultados_ruta(r)
-
-    tipo_ruta   = fd.get("tipo_ruta", "NB")
-    es_empty    = (tipo_ruta == "Empty")
-    short_miles = fd.get("short_miles", 0.0)
-    miles_empty = fd.get("miles_empty", 0.0)
-
-    if es_empty:
-        filas_costo = [
-            (f"Operador Vacío ({miles_empty:.0f} mi × ${r['cxm_vacio']:.4f})", r["sueldo_base"]),
-            (f"Diesel ({miles_empty:.0f} mi vacías)", r["diesel_usa"]),
-        ]
-    else:
-        filas_costo = [
-            (f"Sueldo Cargado ({short_miles:.0f} Short Mi × ${r['cxm_cargado']:.4f})",
-             short_miles * r["cxm_cargado"] * (2 if fd.get("modo_viaje") == "Team" else 1)),
-            (f"Sueldo Vacío ({miles_empty:.0f} Mi Vacías × ${r['cxm_vacio']:.4f})",
-             miles_empty * r["cxm_vacio"] * (2 if fd.get("modo_viaje") == "Team" else 1)),
-            (f"Bono ({short_miles:.0f} Short Mi × ${r['bono_por_milla']:.3f})", r["bono_millas"]),
-            (f"Diesel ({short_miles:.0f} SM + {miles_empty:.0f} ME)", r["diesel_usa"]),
-            ("ISR/IMSS", r["isr_imss"]),
-        ]
-        if r.get("otros_cargos_costo", 0) > 0:
-            filas_costo.append(("Otros Conceptos (Lincoln pagó)", r["otros_cargos_costo"]))
-
-    desglose_ruta(
+    mostrar_resultados_lincoln(
         r,
-        filas_costo_americana=filas_costo,
-        modalidad=fd.get("modalidad", "Flat"),
-        cxm_flete=fd.get("cxm_flete", 0.0),
-        cxm_fuel=fd.get("cxm_fuel", 0.0),
-        umbral_cd=r["umbral_cd"],
+        modalidad  = fd.get("modalidad",  "Flat"),
+        miles_load = fd.get("miles_load", 0.0),
+        cxm_flete  = fd.get("cxm_flete",  0.0),
+        cxm_fuel   = fd.get("cxm_fuel",   0.0),
+        modo_viaje = fd.get("modo_viaje", "Sencillo"),
     )
 
 
