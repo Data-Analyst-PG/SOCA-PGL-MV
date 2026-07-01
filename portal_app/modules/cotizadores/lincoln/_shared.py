@@ -232,18 +232,37 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def mostrar_banner_lincoln(r: dict, modalidad: str = "Flat", miles_load: float = 0.0) -> None:
+def mostrar_resultados_lincoln(
+    r:          dict,
+    modalidad:  str   = "Flat",
+    miles_load: float = 0.0,
+    cxm_flete:  float = 0.0,
+    cxm_fuel:   float = 0.0,
+    modo_viaje: str   = "Sencillo",
+    es_simulacion: bool = False,
+) -> None:
     """
-    Banner de tarifa sugerida + resultados para Lincoln.
-    Centraliza la lógica que antes se repetía en captura, consulta,
-    gestión y simulador. Todos los módulos llaman esta función.
+    Muestra banner + KPIs + desglose por tramo para Lincoln.
+    Centraliza lo que antes se repetía en captura, consulta, gestión y simulador.
 
-    r         : dict resultado de calcular_ruta_lincoln()
-    modalidad : "Flat" | "Desglosada" — para el bloque $/mi del banner
-    miles_load: millas de carga para calcular $/mi (solo Desglosada)
+    Parámetros:
+        r            : dict resultado de calcular_ruta_lincoln()
+        modalidad    : "Flat" | "Desglosada" — afecta banner y desglose
+        miles_load   : millas de carga para calcular $/mi en banner Desglosada
+        cxm_flete    : CXM flete capturado — para desglose ingreso americano
+        cxm_fuel     : CXM fuel capturado  — para desglose ingreso americano
+        modo_viaje   : "Sencillo" | "Team" — para filas de costo
+        es_simulacion: True → muestra aviso de simulación
     """
-    from ui.components import banner_tarifa_sugerida, mostrar_resultados_ruta, divider
+    from ui.components import (
+        banner_tarifa_sugerida, mostrar_resultados_ruta,
+        desglose_ruta, divider, alert,
+    )
 
+    if es_simulacion:
+        alert("info", "🔧 Estás viendo una simulación con parámetros ajustados.")
+
+    # ── Banner + KPIs ─────────────────────────────────────────────
     tc_usd      = r.get("tc", 18.50)
     _umbral     = r["umbral_cd"]
     _tarifa_sug = r["costo_directo"] / (_umbral / 100)
@@ -257,6 +276,42 @@ def mostrar_banner_lincoln(r: dict, modalidad: str = "Flat", miles_load: float =
         fuel_capturado=r.get("ingreso_fuel_usa", 0.0),
     )
     mostrar_resultados_ruta(r)
+
+    # ── Desglose por tramo ────────────────────────────────────────
+    tipo_ruta   = str(r.get("tipo_ruta_key", "NB"))   # llave interna del dict
+    es_empty    = (tipo_ruta == "Empty")
+    short_miles = safe(r.get("short_miles", 0.0))
+    miles_empty = safe(r.get("miles_empty", 0.0))
+    factor      = 2 if modo_viaje == "Team" else 1
+
+    if es_empty:
+        filas = [
+            (f"Operador Vacío ({miles_empty:.0f} mi × ${r['cxm_vacio']:.4f})",
+             r["sueldo_base"]),
+            (f"Diesel ({miles_empty:.0f} mi vacías)", r["diesel_usa"]),
+        ]
+    else:
+        filas = [
+            (f"Sueldo Cargado ({short_miles:.0f} Short Mi × ${r['cxm_cargado']:.4f})",
+             short_miles * r["cxm_cargado"] * factor),
+            (f"Sueldo Vacío ({miles_empty:.0f} Mi Vacías × ${r['cxm_vacio']:.4f})",
+             miles_empty * r["cxm_vacio"] * factor),
+            (f"Bono ({short_miles:.0f} Short Mi × ${r['bono_por_milla']:.3f})",
+             r["bono_millas"]),
+            (f"Diesel ({short_miles:.0f} SM + {miles_empty:.0f} ME)", r["diesel_usa"]),
+            ("ISR/IMSS", r["isr_imss"]),
+        ]
+        if safe(r.get("otros_cargos_costo", 0)) > 0:
+            filas.append(("Otros Conceptos (Lincoln pagó)", r["otros_cargos_costo"]))
+
+    desglose_ruta(
+        r,
+        filas_costo_americana=filas,
+        modalidad=modalidad,
+        cxm_flete=cxm_flete,
+        cxm_fuel=cxm_fuel,
+        umbral_cd=_umbral,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -588,6 +643,9 @@ def calcular_ruta_lincoln(
         "miles_load":       miles_load,
         "short_miles":      short_miles,
         "miles_empty":      miles_empty,
+        # Viaje
+        "tipo_ruta_key":    tipo_ruta,
+        "modo_viaje_key":   modo_viaje,
         # ── Alias para desglose_ruta en components.py (espera claves Set Logis) ──
         # Ingresos americanos
         "Flete_USA":        ingreso_flete_usa,
