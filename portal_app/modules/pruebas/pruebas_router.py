@@ -33,36 +33,46 @@ def render():
         "No modifica, elimina ni actualiza información."
     )
 
-    if st.button("Probar Workspaces disponibles"):
-        if not client_id or not client_secret or not refresh_token:
-            st.error("Faltan credenciales de Zoho en secrets.")
-            return
+    if not client_id or not client_secret or not refresh_token:
+        st.error("Faltan credenciales de Zoho en secrets.")
+        return
 
-        try:
-            access_token = get_access_token(
-                client_id=client_id,
-                client_secret=client_secret,
-                refresh_token=refresh_token,
-                accounts_url=accounts_url
-            )
+    try:
+        access_token = get_access_token(
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=refresh_token,
+            accounts_url=accounts_url
+        )
 
-            workspaces = get_workspaces(
-                access_token=access_token,
-                analytics_api_url=analytics_api_url
-            )
+        workspaces = get_workspaces(
+            access_token=access_token,
+            analytics_api_url=analytics_api_url
+        )
 
-            st.write(f"Workspaces encontrados: {len(workspaces)}")
-            st.dataframe(workspaces, use_container_width=True)
+    except Exception as e:
+        st.error("No se pudieron cargar los Workspaces.")
+        st.exception(e)
+        return
 
-        except Exception as e:
-            st.error("Ocurrió un error al consultar los Workspaces.")
-            st.exception(e)
+    st.success(f"Workspaces encontrados: {len(workspaces)}")
 
-    if st.button("Generar inventario Zoho"):
-        if not client_id or not client_secret or not refresh_token:
-            st.error("Faltan credenciales de Zoho en secrets.")
-            return
+    opciones = {
+        ws.get("workspaceName", ""): ws
+        for ws in workspaces
+        if ws.get("workspaceName")
+    }
 
+    workspace_seleccionado = st.selectbox(
+        "Selecciona el Workspace que quieres inventariar",
+        options=list(opciones.keys()),
+        index=list(opciones.keys()).index("Dirección") if "Dirección" in opciones else 0
+    )
+
+    st.write("Workspace seleccionado:")
+    st.json(opciones[workspace_seleccionado])
+
+    if st.button("Generar inventario del Workspace seleccionado"):
         with st.spinner("Consultando Zoho Analytics y generando Excel..."):
             try:
                 df, excel_file = generar_inventario_zoho(
@@ -70,17 +80,20 @@ def render():
                     client_secret=client_secret,
                     refresh_token=refresh_token,
                     accounts_url=accounts_url,
-                    analytics_api_url=analytics_api_url
+                    analytics_api_url=analytics_api_url,
+                    workspace_filtrado=opciones[workspace_seleccionado]
                 )
 
                 st.success(f"✅ Inventario generado correctamente. Registros encontrados: {len(df)}")
 
                 st.dataframe(df, use_container_width=True)
 
+                nombre_archivo = f"Inventario_Zoho_{workspace_seleccionado}.xlsx".replace(" ", "_")
+
                 st.download_button(
                     label="📥 Descargar Excel",
                     data=excel_file,
-                    file_name="Inventario_Zoho_Analytics.xlsx",
+                    file_name=nombre_archivo,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
