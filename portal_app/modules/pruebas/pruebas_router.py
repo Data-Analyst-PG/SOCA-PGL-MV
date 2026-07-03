@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import streamlit as st
 from ui.components import page_banner
-from services.zoho_analytics_inventory import generar_inventario_zoho
+from services.zoho_analytics_inventory import (
+    generar_inventario_zoho,
+    get_access_token,
+    get_workspaces,
+)
 
 
 def render():
@@ -28,6 +32,31 @@ def render():
         "Este proceso solo consulta metadata de Zoho Analytics. "
         "No modifica, elimina ni actualiza información."
     )
+
+    if st.button("Probar Workspaces disponibles"):
+        if not client_id or not client_secret or not refresh_token:
+            st.error("Faltan credenciales de Zoho en secrets.")
+            return
+
+        try:
+            access_token = get_access_token(
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=refresh_token,
+                accounts_url=accounts_url
+            )
+
+            workspaces = get_workspaces(
+                access_token=access_token,
+                analytics_api_url=analytics_api_url
+            )
+
+            st.write(f"Workspaces encontrados: {len(workspaces)}")
+            st.dataframe(workspaces, use_container_width=True)
+
+        except Exception as e:
+            st.error("Ocurrió un error al consultar los Workspaces.")
+            st.exception(e)
 
     if st.button("Generar inventario Zoho"):
         if not client_id or not client_secret or not refresh_token:
