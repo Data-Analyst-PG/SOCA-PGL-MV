@@ -4,7 +4,12 @@ from io import BytesIO
 from datetime import datetime
 import pandas as pd
 import requests
+import time
 
+_ACCESS_TOKEN_CACHE = {
+    "token": None,
+    "expires_at": 0,
+}
 
 def _ms_to_datetime(value):
     try:
@@ -16,6 +21,11 @@ def _ms_to_datetime(value):
 
 
 def get_access_token(client_id, client_secret, refresh_token, accounts_url):
+    ahora = time.time()
+
+    if _ACCESS_TOKEN_CACHE["token"] and ahora < _ACCESS_TOKEN_CACHE["expires_at"]:
+        return _ACCESS_TOKEN_CACHE["token"]
+
     url = f"{accounts_url}/oauth/v2/token"
 
     params = {
@@ -30,6 +40,9 @@ def get_access_token(client_id, client_secret, refresh_token, accounts_url):
 
     if "access_token" not in data:
         raise Exception(f"No se pudo obtener access token: {data}")
+
+    _ACCESS_TOKEN_CACHE["token"] = data["access_token"]
+    _ACCESS_TOKEN_CACHE["expires_at"] = ahora + 3000
 
     return data["access_token"]
 
