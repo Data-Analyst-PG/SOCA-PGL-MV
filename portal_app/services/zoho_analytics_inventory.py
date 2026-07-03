@@ -112,7 +112,8 @@ def generar_inventario_zoho(
     client_secret,
     refresh_token,
     accounts_url="https://accounts.zoho.com",
-    analytics_api_url="https://analyticsapi.zoho.com"
+    analytics_api_url="https://analyticsapi.zoho.com",
+    workspace_filtrado=None
 ):
     access_token = get_access_token(
         client_id=client_id,
@@ -125,6 +126,9 @@ def generar_inventario_zoho(
         access_token=access_token,
         analytics_api_url=analytics_api_url
     )
+
+    if workspace_filtrado:
+        workspaces = [workspace_filtrado]
 
     rows = []
 
