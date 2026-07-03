@@ -157,6 +157,12 @@ def generar_inventario_zoho(
             workspace_id=workspace_id,
             org_id=org_id
         )
+        folder_paths = get_folders(
+            access_token=access_token,
+            analytics_api_url=analytics_api_url,
+            workspace_id=workspace_id,
+            org_id=org_id
+        )
 
         for view in views:
             view_id = view.get("viewId", "")
@@ -175,7 +181,7 @@ def generar_inventario_zoho(
 
             rows.append({
                 "Workspace": workspace_name,
-                "Carpeta": folder_id if folder_id and folder_id != "null" else "",
+                "Carpeta": folder_paths.get(str(folder_id), ""),
                 "Tipo": view_type,
                 "Nombre": view.get("viewName", ""),
                 "Fuente": "",
@@ -206,3 +212,49 @@ def generar_inventario_zoho(
     output.seek(0)
 
     return df, output
+
+def get_folders(access_token, analytics_api_url, workspace_id, org_id):
+    url = f"{analytics_api_url}/restapi/v2/workspaces/{workspace_id}/folders"
+
+    headers = {
+        "Authorization": f"Zoho-oauthtoken {access_token}",
+        "ZANALYTICS-ORGID": str(org_id)
+    }
+
+    response = requests.get(url, headers=headers, timeout=30)
+    data = response.json()
+
+    if data.get("status") != "success":
+        return {}
+
+    folders = data.get("data", {}).get("folders", [])
+
+    folder_by_id = {
+        str(folder.get("folderId")): folder
+        for folder in folders
+    }
+
+    def construir_ruta(folder_id):
+        folder_id = str(folder_id)
+
+        if not folder_id or folder_id == "null" or folder_id == "-1":
+            return ""
+
+        partes = []
+        actual = folder_by_id.get(folder_id)
+
+        while actual:
+            partes.insert(0, actual.get("folderName", ""))
+            parent_id = str(actual.get("parentFolderId", ""))
+
+            if not parent_id or parent_id == "-1":
+                break
+
+            actual = folder_by_id.get(parent_id)
+
+        return " / ".join([p for p in partes if p])
+
+    return {
+        folder_id: construir_ruta(folder_id)
+        for folder_id in folder_by_id.keys()
+    }
