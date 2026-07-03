@@ -42,10 +42,23 @@ def get_workspaces(access_token, analytics_api_url):
     }
 
     response = requests.get(url, headers=headers, timeout=30)
-    data = response.json()
+
+    try:
+        data = response.json()
+    except Exception:
+        raise Exception(
+            f"Zoho no devolvió JSON.\n"
+            f"Status code: {response.status_code}\n"
+            f"Respuesta: {response.text}"
+        )
 
     if data.get("status") != "success":
-        raise Exception(f"Error al obtener workspaces: {data}")
+        raise Exception(
+            f"Error al obtener workspaces.\n"
+            f"Status code: {response.status_code}\n"
+            f"URL usada: {url}\n"
+            f"Respuesta Zoho: {data}"
+        )
 
     owned = data.get("data", {}).get("ownedWorkspaces", [])
     shared = data.get("data", {}).get("sharedWorkspaces", [])
