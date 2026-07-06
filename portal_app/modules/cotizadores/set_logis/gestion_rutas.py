@@ -292,9 +292,8 @@ def render() -> None:
         st.caption(f"📌 Dirección: **{dir_label}** · Tramo MX: **{mx_label}**")
 
         # ── Valores por defecto de secciones opcionales ────────────────────────
-        ruta_usa_val = str(ruta.get("Ruta_USA", ""))
-        origen_actual, destino_actual = (ruta_usa_val.split(" - ", 1)
-                                          if " - " in ruta_usa_val else (ruta_usa_val, ""))
+        origen_actual  = str(ruta.get("Origen",  ""))
+        destino_actual = str(ruta.get("Destino", ""))
         miles_load    = safe(ruta.get("Miles_Load"))
         short_miles   = safe(ruta.get("Short_Miles"))
         miles_empty   = safe(ruta.get("Miles_Empty"))
@@ -582,12 +581,11 @@ def render() -> None:
             extras_ingreso    = sum(v for n, v in otros_cargos.items() if otros_pagados.get(n, False))
             extras_costo_puro = sum(v for n, v in otros_cargos.items() if not otros_pagados.get(n, False))
 
-            ruta_usa = f"{normalizar(origen_usa)} - {normalizar(destino_usa)}"
-
             r_calc = calcular_ruta_setlogis(
                 tipo_ruta            = tipo_ruta_val,
                 modo                 = modo,
-                ruta_usa             = ruta_usa,
+                origen               = normalizar(origen_usa),
+                destino              = normalizar(destino_usa),
                 cliente              = normalizar(cliente),
                 miles_load           = miles_load,
                 miles_empty          = miles_empty,
@@ -717,7 +715,8 @@ def _guardar_edicion(supabase, idx_sel, ruta, r_prev, d_prev, nombre_usuario, hi
             "Modalidad":             d_prev["modalidad"],
             "Modo_Costo_Indirecto":  d_prev["modo_ci"],
             "Cliente":               r_prev["Cliente"],
-            "Ruta_USA":              r_prev["Ruta_USA"],
+            "Origen":                r_prev["Origen"],
+            "Destino":               r_prev["Destino"],
             "Origen_MX":             d_prev["origen_mx"],
             "Destino_MX":            d_prev["destino_mx"],
             "Moneda_Flete":          d_prev["mon_flete"],
