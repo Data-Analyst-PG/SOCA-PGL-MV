@@ -19,7 +19,7 @@ from streamlit_searchbox import st_searchbox
 from services.supabase_client import get_supabase_client, current_user
 from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
-from .helpers import (
+from ._helpers import (
     DEFAULTS,
     TIPOS_RUTA,
     cargar_datos_generales,
