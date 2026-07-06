@@ -295,7 +295,8 @@ def render() -> None:
     r = calcular_ruta_setlogis(
         tipo_ruta            = tipo_ruta,
         modo                 = modo,
-        ruta_usa             = str(ruta.get("Ruta_USA", "")),
+        origen               = str(ruta.get("Origen",  "")),
+        destino              = str(ruta.get("Destino", "")),
         cliente              = str(ruta.get("Cliente", "")),
         miles_load           = safe(ruta.get("Miles_Load")),
         miles_empty          = safe(ruta.get("Miles_Empty")),
