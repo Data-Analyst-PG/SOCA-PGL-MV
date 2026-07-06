@@ -551,12 +551,13 @@ def filtrar_rutas_setlogis(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
 # Todos los módulos llaman esta función en lugar de construir el bloque manualmente
 # ─────────────────────────────────────────────
 def mostrar_resultados_setlogis(
-    r:             dict,
-    modalidad:     str   = "Flat",
-    miles_load:    float = 0.0,
-    cxm_flete:     float = 0.0,
-    cxm_fuel:      float = 0.0,
-    es_simulacion: bool  = False,
+    r:               dict,
+    modalidad:       str   = "Flat",
+    miles_load:      float = 0.0,
+    cxm_flete:       float = 0.0,
+    cxm_fuel:        float = 0.0,
+    es_simulacion:   bool  = False,
+    mostrar_desglose: bool = True,
 ) -> None:
     """
     Muestra banner tarifa sugerida + 5 cards KPI + desglose por tramo.
@@ -622,14 +623,15 @@ def mostrar_resultados_setlogis(
         if safe(r.get("Extras_Costo_Total", 0)) > 0:
             filas_costo.append(("Extras (Set Logis pagó)", r["Extras_Costo_Total"]))
 
-    desglose_ruta(
-        r,
-        filas_costo_americana=filas_costo,
-        modalidad=modalidad,
-        cxm_flete=cxm_flete,
-        cxm_fuel=cxm_fuel,
-        umbral_cd=_umbral,
-    )
+    if mostrar_desglose:
+        desglose_ruta(
+            r,
+            filas_costo_americana=filas_costo,
+            modalidad=modalidad,
+            cxm_flete=cxm_flete,
+            cxm_fuel=cxm_fuel,
+            umbral_cd=_umbral,
+        )
 
 # ─────────────────────────────────────────────
 # CONFIG POR TIPO DE RUTA
