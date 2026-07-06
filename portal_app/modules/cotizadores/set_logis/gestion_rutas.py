@@ -31,6 +31,7 @@ from ui.components import section_header, alert, divider
 from ._shared import (
     TABLE_RUTAS,
     TIPOS_RUTA,
+    obtener_config_tipo_ruta,
     EXTRAS_USA,
     DEFAULTS,
     cargar_datos_generales,
@@ -337,8 +338,10 @@ def render() -> None:
         if not es_empty:
             r1, r2 = st.columns([1, 3])
             mod_idx = 0 if modalidad_val == "Desglosada" else 1
-            modalidad    = r1.selectbox("Modalidad", ["Desglosada", "Flat"],
-                                         index=mod_idx, key=f"sl_ed_mod_{k}")
+            modalidad    = r1.radio(
+                "Modalidad", ["Desglosada", "Flat"],
+                index=mod_idx, horizontal=False, key=f"sl_ed_mod_{k}",
+            )
             moneda_flete = r2.selectbox("Moneda Flete", ["USD", "MXP"],
                                          index=0 if ruta.get("Moneda_Flete","USD") == "USD" else 1,
                                          key=f"sl_ed_mon_flete_{k}")
@@ -541,6 +544,7 @@ def render() -> None:
             st.session_state["sl_edit_datos"] = {
                 "motivo":          motivo,
                 "modalidad":       modalidad,
+                "modo_ci":         modo_ci,
                 "cxm_flete_cap":   safe(cxm_flete_cap) if modalidad == "Desglosada" else 0.0,
                 "cxm_fuel_cap":    safe(cxm_fuel_cap)  if modalidad == "Desglosada" else 0.0,
                 "flete_flat_cap":  flete_flat_cap if modalidad == "Flat" else 0.0,
@@ -700,6 +704,7 @@ def _guardar_edicion(
             "Pct_Ut_Bruta":         r_prev["Pct_Ut_Bruta"],
             "Pct_Ut_Neta":          r_prev["Pct_Ut_Neta"],
             "TC_USD_MXP":           r_prev["TC"],
+            "Modo_Costo_Indirecto": d_prev.get("modo_ci", "CXM"),
             "updated_by":           nombre_usuario,
             "updated_at":           now_iso(),
             "historial":            historial_nuevo,
