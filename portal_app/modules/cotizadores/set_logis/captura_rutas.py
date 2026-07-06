@@ -443,12 +443,11 @@ def render() -> None:
             extras_ingreso    = sum(v for n, v in otros_cargos.items() if otros_cargos_cobrados.get(n, False))
             extras_costo_puro = sum(v for n, v in otros_cargos.items() if not otros_cargos_cobrados.get(n, False))
 
-            ruta_usa = f"{normalizar(origen_usa)} - {normalizar(destino_usa)}"
-
             resultado = calcular_ruta_setlogis(
                 tipo_ruta            = tipo_ruta,
                 modo                 = modo,
-                ruta_usa             = ruta_usa,
+                origen               = normalizar(origen_usa),
+                destino              = normalizar(destino_usa),
                 cliente              = normalizar(cliente),
                 miles_load           = miles_load,
                 miles_empty          = miles_empty,
@@ -548,7 +547,8 @@ def _guardar_ruta(r: dict, fd: dict, supabase) -> None:
             "Direccion":            r["Direccion"],
             "Modalidad":            r["Modalidad"],
             "Cliente":              r["Cliente"],
-            "Ruta_USA":             r["Ruta_USA"],
+            "Origen":               r["Origen"],
+            "Destino":              r["Destino"],
             "Origen_MX":            fd.get("origen_mx",  ""),
             "Destino_MX":           fd.get("destino_mx", ""),
             "Moneda_Flete":         fd.get("moneda_flete",  "USD"),
