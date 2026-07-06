@@ -248,12 +248,6 @@ def render() -> None:
 
     ruta = df_fil[df_fil["ID_Ruta"] == idx_sel].iloc[0].to_dict()
 
-    divider()
-    section_header("🔍", f"Detalle: {ruta.get('ID_Ruta','')} — {ruta.get('Cliente','')}")
-
-    if ruta.get("Usuario"):
-        st.caption(f"👤 Capturado por: **{ruta.get('Usuario')}** · Fecha: **{ruta.get('Fecha','—')}**")
-
     # ── Simulador de PxM — estructura idéntica a Lincoln ──────────────────────
     tipo_ruta = str(ruta.get("Tipo_Viaje", "NB"))
     modo      = str(ruta.get("Modo", "Individual"))
@@ -332,6 +326,9 @@ def render() -> None:
         cxm_fuel      = safe(ruta.get("CXM_Fuel",  0.0)),
         es_simulacion = es_sim,
     )
+
+    if ruta.get("Capturado_Por"):
+        st.caption(f"👤 Capturado por: **{ruta.get('Capturado_Por')}**")
 
     # ── PDF ────────────────────────────────────────────────────────────────────
     divider()
