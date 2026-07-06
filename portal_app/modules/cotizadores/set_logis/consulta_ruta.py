@@ -3,13 +3,14 @@ consulta_ruta.py – Set Logis Plus
 Homologado con Lincoln:
   - Sin funciones locales duplicadas — cache, label y filtros vienen de _shared.py
   - mostrar_resultados_setlogis() de _shared — 5 cards + banner + desglose
-  - Simulador de PxM (ajuste sin modificar la ruta) preservado
-  - PDF profesional con reportlab preservado
+  - Simulador de PxM con section_header + botones Simular / Resetear (igual que Lincoln)
+  - Filtros dentro de st.expander
+  - PDF profesional con reportlab
 
 Diferencias Set Logis que se preservan:
   - Simulador ajusta PxM Owner (no MPG/diesel como Lincoln)
   - Fuel_Owner se lee de la ruta guardada y se mantiene en simulación
-  - PDF contiene millas, pago owner y fuel owner
+  - modo_costo_indirecto se lee de la ruta guardada (no hardcodeado)
 """
 
 from __future__ import annotations
@@ -17,16 +18,13 @@ from __future__ import annotations
 import io
 from datetime import datetime
 
-import pandas as pd
 import streamlit as st
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import (
-    Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
-)
-from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
@@ -51,7 +49,7 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
     doc = SimpleDocTemplate(
         buf, pagesize=letter,
         leftMargin=0.6 * inch, rightMargin=0.6 * inch,
-        topMargin=0.5 * inch, bottomMargin=0.5 * inch,
+        topMargin=0.5 * inch,  bottomMargin=0.5 * inch,
     )
     styles = getSampleStyleSheet()
     sub_s  = ParagraphStyle("S", parent=styles["Heading2"], fontSize=10,
@@ -73,21 +71,20 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING",    (0, 0), (-1, -1), 10),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ("LEFTPADDING",   (0, 0), (0, -1),  12),
+        ("LEFTPADDING",   (0, 0), (0,  -1), 12),
         ("RIGHTPADDING",  (-1, 0), (-1, -1), 12),
     ]))
-    story.append(hdr)
-    story.append(Spacer(1, 10))
+    story += [hdr, Spacer(1, 10)]
 
     # Datos generales
     story.append(Paragraph("Datos de la Ruta", sub_s))
     fo_label = "Sí ⛽" if ruta.get("Fuel_Owner") else "No"
     gen_data = [
-        ["Campo",        "Valor",                          "Campo",         "Valor"],
-        ["ID Ruta",      str(ruta.get("ID_Ruta",  "")),   "Fecha",         str(ruta.get("Fecha",     ""))],
-        ["Tipo",         str(ruta.get("Tipo_Viaje","")),  "Modo",          str(ruta.get("Modo",      ""))],
-        ["Cliente",      str(ruta.get("Cliente",  "")),   "Ruta USA",      str(ruta.get("Ruta_USA",  ""))],
-        ["Modalidad",    str(ruta.get("Modalidad","")),   "Fuel Owner",    fo_label],
+        ["Campo",        "Valor",                            "Campo",          "Valor"],
+        ["ID Ruta",      str(ruta.get("ID_Ruta",   "")),    "Fecha",          str(ruta.get("Fecha",      ""))],
+        ["Tipo",         str(ruta.get("Tipo_Viaje","")),    "Modo",           str(ruta.get("Modo",       ""))],
+        ["Cliente",      str(ruta.get("Cliente",   "")),    "Ruta USA",       str(ruta.get("Ruta_USA",   ""))],
+        ["Modalidad",    str(ruta.get("Modalidad", "")),    "Fuel Owner",     fo_label],
         ["Miles Load",   f"{safe(ruta.get('Miles_Load')):.0f}",
          "Short Miles",  f"{safe(ruta.get('Short_Miles')):.0f}"],
         ["Miles Empty",  f"{safe(ruta.get('Miles_Empty')):.0f}",
@@ -95,18 +92,17 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
     ]
     tbl = Table(gen_data, colWidths=[1.2*inch, 2.0*inch, 1.2*inch, 2.0*inch])
     tbl.setStyle(TableStyle([
-        ("BACKGROUND",  (0, 0), (-1, 0), colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",   (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",    (0, 0), (-1, -1), 8),
+        ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",       (0, 0), (-1, -1), 8),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F0F4FF")]),
-        ("GRID",        (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
-        ("TOPPADDING",  (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("GRID",           (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
+        ("TOPPADDING",     (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 6),
     ]))
-    story.append(tbl)
-    story.append(Spacer(1, 8))
+    story += [tbl, Spacer(1, 8)]
 
     # Ingresos
     story.append(Paragraph("Ingresos (USD)", sub_s))
@@ -121,56 +117,54 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
     ]
     tbl_ing = Table(ing_data, colWidths=[3.5*inch, 2.5*inch])
     tbl_ing.setStyle(TableStyle([
-        ("BACKGROUND",  (0, 0), (-1, 0), colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",   (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME",    (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE",    (0, 0), (-1, -1), 8),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#F0F4FF")]),
-        ("BACKGROUND",  (0, -1), (-1, -1), colors.HexColor("#E8F5E9")),
-        ("GRID",        (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
-        ("TOPPADDING",  (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("BACKGROUND",     (0, 0),  (-1, 0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",      (0, 0),  (-1, 0),  colors.white),
+        ("FONTNAME",       (0, 0),  (-1, 0),  "Helvetica-Bold"),
+        ("FONTNAME",       (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE",       (0, 0),  (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1),  (-1, -2), [colors.white, colors.HexColor("#F0F4FF")]),
+        ("BACKGROUND",     (0, -1), (-1, -1), colors.HexColor("#E8F5E9")),
+        ("GRID",           (0, 0),  (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
+        ("TOPPADDING",     (0, 0),  (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 0),  (-1, -1), 4),
+        ("LEFTPADDING",    (0, 0),  (-1, -1), 6),
     ]))
-    story.append(tbl_ing)
-    story.append(Spacer(1, 8))
+    story += [tbl_ing, Spacer(1, 8)]
 
     # Costos
     story.append(Paragraph("Costos Directos (USD)", sub_s))
     cos_data = [
-        ["Concepto",           "Monto (USD)"],
-        ["Owner Cargado",      f"${safe(r.get('Pago_Owner_Cargado')):,.2f}"],
-        ["Owner Vacío",        f"${safe(r.get('Pago_Owner_Vacio')):,.2f}"],
-        ["Fuel Owner",         f"${safe(r.get('Pago_Fuel_Owner')):,.2f}"],
-        ["Costo Cruce",        f"${safe(r.get('Costo_Cruce')):,.2f}"],
-        ["Costo MX",           f"${safe(r.get('Costo_MX')):,.2f}"],
-        ["Extras Costo",       f"${safe(r.get('Extras_Costo_Total')):,.2f}"],
-        ["Costo Directo",      f"${safe(r.get('Costo_Directo')):,.2f}"],
-        ["Costo Indirecto",    f"${safe(r.get('Costo_Indirecto')):,.2f}"],
-        ["COSTO TOTAL",        f"${safe(r.get('Costo_Total')):,.2f}"],
+        ["Concepto",        "Monto (USD)"],
+        ["Owner Cargado",   f"${safe(r.get('Pago_Owner_Cargado')):,.2f}"],
+        ["Owner Vacío",     f"${safe(r.get('Pago_Owner_Vacio')):,.2f}"],
+        ["Fuel Owner",      f"${safe(r.get('Pago_Fuel_Owner')):,.2f}"],
+        ["Costo Cruce",     f"${safe(r.get('Costo_Cruce')):,.2f}"],
+        ["Costo MX",        f"${safe(r.get('Costo_MX')):,.2f}"],
+        ["Extras Costo",    f"${safe(r.get('Extras_Costo_Total')):,.2f}"],
+        ["Costo Directo",   f"${safe(r.get('Costo_Directo')):,.2f}"],
+        ["Costo Indirecto", f"${safe(r.get('Costo_Indirecto')):,.2f}"],
+        ["COSTO TOTAL",     f"${safe(r.get('Costo_Total')):,.2f}"],
     ]
     tbl_cos = Table(cos_data, colWidths=[3.5*inch, 2.5*inch])
     tbl_cos.setStyle(TableStyle([
-        ("BACKGROUND",  (0, 0), (-1, 0), colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",   (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME",    (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE",    (0, 0), (-1, -1), 8),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#F0F4FF")]),
-        ("BACKGROUND",  (0, -1), (-1, -1), colors.HexColor("#FDECEA")),
-        ("GRID",        (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
-        ("TOPPADDING",  (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("BACKGROUND",     (0, 0),  (-1, 0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",      (0, 0),  (-1, 0),  colors.white),
+        ("FONTNAME",       (0, 0),  (-1, 0),  "Helvetica-Bold"),
+        ("FONTNAME",       (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE",       (0, 0),  (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1),  (-1, -2), [colors.white, colors.HexColor("#F0F4FF")]),
+        ("BACKGROUND",     (0, -1), (-1, -1), colors.HexColor("#FDECEA")),
+        ("GRID",           (0, 0),  (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
+        ("TOPPADDING",     (0, 0),  (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 0),  (-1, -1), 4),
+        ("LEFTPADDING",    (0, 0),  (-1, -1), 6),
     ]))
-    story.append(tbl_cos)
-    story.append(Spacer(1, 8))
+    story += [tbl_cos, Spacer(1, 8)]
 
     # Utilidades
     story.append(Paragraph("Resumen de Utilidades", sub_s))
     ut_data = [
-        ["Concepto",        "Monto (USD)",                    "%"],
+        ["Concepto",        "Monto (USD)",                         "%"],
         ["Ingreso Global",  f"${safe(r.get('Ingreso_Global')):,.2f}", "100.0%"],
         ["Costo Directo",   f"${safe(r.get('Costo_Directo')):,.2f}",
          f"{safe(r.get('Pct_Costo_Directo')):.1f}%"],
@@ -183,26 +177,24 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
     ]
     tbl_ut = Table(ut_data, colWidths=[2.5*inch, 2.0*inch, 1.5*inch])
     tbl_ut.setStyle(TableStyle([
-        ("BACKGROUND",  (0, 0), (-1, 0), colors.HexColor("#1B2266")),
-        ("TEXTCOLOR",   (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTNAME",    (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("FONTSIZE",    (0, 0), (-1, -1), 8),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#F0F4FF")]),
-        ("BACKGROUND",  (0, -1), (-1, -1), colors.HexColor("#E8F5E9")),
-        ("GRID",        (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
-        ("TOPPADDING",  (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("BACKGROUND",     (0, 0),  (-1, 0),  colors.HexColor("#1B2266")),
+        ("TEXTCOLOR",      (0, 0),  (-1, 0),  colors.white),
+        ("FONTNAME",       (0, 0),  (-1, 0),  "Helvetica-Bold"),
+        ("FONTNAME",       (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE",       (0, 0),  (-1, -1), 8),
+        ("ROWBACKGROUNDS", (0, 1),  (-1, -2), [colors.white, colors.HexColor("#F0F4FF")]),
+        ("BACKGROUND",     (0, -1), (-1, -1), colors.HexColor("#E8F5E9")),
+        ("GRID",           (0, 0),  (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
+        ("TOPPADDING",     (0, 0),  (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 0),  (-1, -1), 4),
+        ("LEFTPADDING",    (0, 0),  (-1, -1), 6),
     ]))
-    story.append(tbl_ut)
-    story.append(Spacer(1, 12))
+    story += [tbl_ut, Spacer(1, 12)]
 
     story.append(Paragraph(
         f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} — Set Logis Plus",
         foot_s,
     ))
-
     doc.build(story)
     return buf.getvalue()
 
@@ -216,7 +208,7 @@ def render() -> None:
         alert("error", "⚠️ Supabase no configurado.")
         return
 
-    # Recargar
+    # ── Recargar ───────────────────────────────────────────────────────────────
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button("🔄 Recargar", key="sl_cons_reload"):
@@ -232,16 +224,19 @@ def render() -> None:
 
     valores = cargar_datos_generales()
 
-    # ── Filtros desde _shared.py ───────────────────────────────────────────────
-    df_fil = filtrar_rutas_setlogis(df, "sl_cons")
+    # ── Filtros dentro de expander (igual que Lincoln) ─────────────────────────
+    with st.expander("🔍 Filtros de búsqueda", expanded=False):
+        df_fil = filtrar_rutas_setlogis(df, "sl_cons")
     if df_fil.empty:
         alert("warn", "⚠️ No hay rutas con esos filtros.")
         return
 
     # ── Selector de ruta ───────────────────────────────────────────────────────
     opciones = df_fil["ID_Ruta"].dropna().astype(str).tolist()
-    idx_sel  = st.selectbox(
-        f"Selecciona una ruta ({len(opciones)} disponibles)",
+    st.caption(f"Rutas disponibles: **{len(opciones)}**")
+
+    idx_sel = st.selectbox(
+        "Selecciona la ruta a consultar",
         options=[""] + opciones,
         format_func=lambda i: "— Elige una ruta —" if i == "" else label_ruta_setlogis(
             df_fil[df_fil["ID_Ruta"] == i].iloc[0].to_dict()
@@ -259,37 +254,50 @@ def render() -> None:
     if ruta.get("Usuario"):
         st.caption(f"👤 Capturado por: **{ruta.get('Usuario')}** · Fecha: **{ruta.get('Fecha','—')}**")
 
-    # ── Simulador de PxM — exclusivo de Set Logis ──────────────────────────────
+    # ── Simulador de PxM — estructura idéntica a Lincoln ──────────────────────
     tipo_ruta = str(ruta.get("Tipo_Viaje", "NB"))
     modo      = str(ruta.get("Modo", "Individual"))
 
-    with st.expander("🎛️ Simular cambios de PxM", expanded=False):
-        vals_sim = valores.copy()
-        es_sim   = False
+    divider()
+    section_header("⚙️", "Ajustes para Simulación")
+    st.caption("Ajusta PxM cargado o vacío para ver el impacto sin modificar la ruta guardada.")
 
-        sc1, sc2, sc3 = st.columns(3)
-        if tipo_ruta in {"SB", "D2DSB"}:
-            key_c = "PxM Owner Bajadas Team" if modo == "Team" else "PxM Owner Bajadas"
-        else:
-            key_c = "PxM Owner Subidas Team" if modo == "Team" else "PxM Owner Subidas"
-        key_v = "PxM Owner Vacio Team" if modo == "Team" else "PxM Owner Vacio"
+    # Determinar claves de PxM según tipo y modo
+    if tipo_ruta in {"SB", "D2DSB"}:
+        key_c = "PxM Owner Bajadas Team" if modo == "Team" else "PxM Owner Bajadas"
+    else:
+        key_c = "PxM Owner Subidas Team" if modo == "Team" else "PxM Owner Subidas"
+    key_v = "PxM Owner Vacio Team" if modo == "Team" else "PxM Owner Vacio"
 
-        pxm_cargado_sim = sc1.number_input(
-            "PxM Cargado (simulado)",
-            value=float(valores.get(key_c, 1.60)),
-            step=0.01, format="%.4f", key="sl_cons_sim_pxmc",
-        )
-        pxm_vacio_sim = sc2.number_input(
-            "PxM Vacío (simulado)",
-            value=float(valores.get(key_v, 0.80)),
-            step=0.01, format="%.4f", key="sl_cons_sim_pxmv",
-        )
-        es_sim = sc3.checkbox("Activar simulación", key="sl_cons_sim_activa")
+    sc1, sc2 = st.columns(2)
+    pxm_cargado_sim = sc1.number_input(
+        "PxM Cargado (simulado)",
+        value=float(valores.get(key_c, 1.60)),
+        step=0.01, format="%.4f", key="sl_cons_sim_pxmc",
+    )
+    pxm_vacio_sim = sc2.number_input(
+        "PxM Vacío (simulado)",
+        value=float(valores.get(key_v, 0.80)),
+        step=0.01, format="%.4f", key="sl_cons_sim_pxmv",
+    )
 
+    b1, b2 = st.columns(2)
+    simular  = b1.button("🔁 Simular",        type="primary", use_container_width=True, key="sl_cons_sim_btn")
+    resetear = b2.button("↩️ Valores reales", use_container_width=True,               key="sl_cons_sim_reset")
+
+    if simular:
+        st.session_state["sl_cons_simulacion"] = True
+    if resetear:
+        st.session_state["sl_cons_simulacion"] = False
+
+    es_sim   = st.session_state.get("sl_cons_simulacion", False)
+
+    vals_sim = valores.copy()
+    if es_sim:
         vals_sim[key_c] = pxm_cargado_sim
         vals_sim[key_v] = pxm_vacio_sim
 
-    # ── Recalcular — fuel_owner se lee de la ruta guardada ────────────────────
+    # ── Recalcular — lee modo_costo_indirecto y fuel_owner de la ruta guardada
     r = calcular_ruta_setlogis(
         tipo_ruta            = tipo_ruta,
         modo                 = modo,
@@ -308,38 +316,42 @@ def render() -> None:
         costo_mx             = safe(ruta.get("Costo_MX")),
         extras_ingreso       = safe(ruta.get("Extras_Ingreso")),
         extras_costo         = safe(ruta.get("Extras_Costo")),
-        modo_costo_indirecto = "CXM",
+        modo_costo_indirecto = str(ruta.get("Modo_Costo_Indirecto", "CXM")),  # ← leído de DB
         valores              = vals_sim if es_sim else valores,
         fuel_owner           = bool(ruta.get("Fuel_Owner", False)),
         incluye_cruce        = bool(ruta.get("Incluye_Cruce", False)),
     )
 
-    # ── Resultados — 1 línea reemplaza bloque manual de 4 cards ───────────────
+    # ── Resultados ─────────────────────────────────────────────────────────────
     divider()
     mostrar_resultados_setlogis(
         r,
-        modalidad  = str(ruta.get("Modalidad", "Flat")),
-        miles_load = safe(ruta.get("Miles_Load", 0.0)),
-        cxm_flete  = safe(ruta.get("CXM_Flete", 0.0)),
-        cxm_fuel   = safe(ruta.get("CXM_Fuel",  0.0)),
+        modalidad     = str(ruta.get("Modalidad", "Flat")),
+        miles_load    = safe(ruta.get("Miles_Load", 0.0)),
+        cxm_flete     = safe(ruta.get("CXM_Flete", 0.0)),
+        cxm_fuel      = safe(ruta.get("CXM_Fuel",  0.0)),
         es_simulacion = es_sim,
     )
 
-    # ── Descarga PDF ───────────────────────────────────────────────────────────
+    # ── PDF ────────────────────────────────────────────────────────────────────
     divider()
-    section_header("📥", "Descargar PDF")
-    try:
-        pdf_bytes = _generar_pdf_consulta(ruta, r)
-        nombre_pdf = (
-            f"Consulta_{ruta.get('ID_Ruta','SL')}_"
-            f"{ruta.get('Cliente','').replace(' ','_')}.pdf"
-        )
-        st.download_button(
-            label="📄 Descargar PDF de esta ruta",
-            data=pdf_bytes,
-            file_name=nombre_pdf,
-            mime="application/pdf",
-            use_container_width=True,
-        )
-    except Exception as ex:
-        alert("error", f"❌ Error generando PDF: {ex}")
+    section_header("📥", "Descargar PDF de la Consulta")
+    if st.button("📄 Generar PDF", type="primary", key="sl_cons_pdf_btn"):
+        try:
+            pdf_bytes = _generar_pdf_consulta(ruta, r)
+            nombre_pdf = (
+                f"Consulta_{ruta.get('ID_Ruta','SL')}_"
+                f"{str(ruta.get('Cliente','')).replace(' ','_')}"
+                f"_{ruta.get('Fecha','')}"
+                + ("_SIM" if es_sim else "") + ".pdf"
+            )
+            st.download_button(
+                label="📥 Descargar PDF",
+                data=pdf_bytes,
+                file_name=nombre_pdf,
+                mime="application/pdf",
+                use_container_width=True,
+                key="sl_cons_dl_pdf",
+            )
+        except Exception as ex:
+            alert("error", f"❌ Error generando PDF: {ex}")
