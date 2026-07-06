@@ -6,7 +6,7 @@ Fórmula tarifa americana (Desglosada):
   Flete = Miles_Load × CXM_Flete
   Fuel  = Miles_Load × CXM_Fuel      ← ambos sobre Miles Load
   Total = Flete + Fuel
-
+ruta
 Pago owner:
   Cargado = Short_Miles × PxM_cargado
   Vacío   = Miles_Empty × PxM_vacio
@@ -368,7 +368,8 @@ def calcular_ruta_setlogis(
         "Tipo_Viaje":          tipo_ruta,
         "Modo":                modo,
         "Direccion":           direccion_label(tipo_ruta),
-        "Ruta_USA":            ruta_usa,
+        "Origen":              origen,
+        "Destino":             destino,
         "Cliente":             cliente,
         "Miles_Load":          miles_load,
         "Miles_Empty":         miles_empty,
@@ -504,7 +505,7 @@ def label_ruta_setlogis(row) -> str:
     return (
         f"{row.get('ID_Ruta', '')} | {row.get('Fecha', '')} | "
         f"{row.get('Tipo_Viaje', '')} | {row.get('Cliente', '—')} | "
-        f"{row.get('Ruta_USA', '')}{fo} | "
+        f"{row.get('Origen', '')} → {row.get('Destino', '')}{fo} | "
         f"{pct:.1f}% Ut.B"
     )
 
