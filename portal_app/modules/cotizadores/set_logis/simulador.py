@@ -40,17 +40,16 @@ from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 from services.supabase_client import get_supabase_client
 from ui.components import (
     section_header, alert, divider,
-    mostrar_resultados_ruta, banner_tarifa_sugerida,
 )
 from ._shared import (
     TABLE_RUTAS,
-    TIPOS_SUBIDA,
-    UMBRAL_CD, UMBRAL_UB, UMBRAL_CI, UMBRAL_UN,
+    UMBRAL_CD,
     DEFAULTS,
     safe,
     cargar_datos_generales,
     load_rutas_setlogis,
     label_ruta_setlogis,
+    mostrar_resultados_setlogis,
 )
 
 TIPOS_PRINCIPAL = {"NB", "SB", "D2DNB", "D2DSB"}
@@ -583,35 +582,56 @@ def render() -> None:
     ruta_r_sel = None
 
     if candidatas:
-        labels_cand = [c["label"] for c in candidatas]
+        n_dir   = sum(1 for c in candidatas if c["ruta_e"] is None)
+        n_vacio = len(candidatas) - n_dir
+        st.caption(
+            f"📊 **{len(candidatas)} combinaciones** encontradas — "
+            f"{n_dir} directas · {n_vacio} con tramo vacío · ordenadas por Ut.B combinada"
+        )
+        opciones_labels = ["— Sin regreso —"] + [c["label"] for c in candidatas]
         sel_cand = st.selectbox(
-            f"{len(candidatas)} combinación(es) encontrada(s) — ordenadas por Ut.B combinada",
-            options=[""] + labels_cand,
-            format_func=lambda x: "— Elige un regreso —" if x == "" else x,
+            "Combinación de regreso",
+            options=opciones_labels,
+            label_visibility="collapsed",
             key="sl_sim_sel_r",
         )
-        if sel_cand:
-            cand      = candidatas[labels_cand.index(sel_cand)]
-            ruta_r_d  = cand["ruta_r"]
-            ruta_e_d  = cand["ruta_e"]
-            ruta_r_sel = pd.Series(ruta_r_d) if ruta_r_d else None
-            ruta_e     = pd.Series(ruta_e_d) if ruta_e_d else None
-
-            st.success(
-                f"**Regreso seleccionado** — "
-                f"Ut.B combinada estimada: **${cand['ut_bruta']:,.2f} ({cand['pct_ut_bruta']:.1f}%)**"
-            )
+        if sel_cand == "— Sin regreso —":
+            ruta_e     = None
+            ruta_r_sel = None
+        else:
+            cand       = candidatas[opciones_labels.index(sel_cand) - 1]
+            ruta_r_sel = pd.Series(cand["ruta_r"]) if cand["ruta_r"] else None
+            ruta_e     = pd.Series(cand["ruta_e"]) if cand["ruta_e"] else None
+            with st.expander("📋 Ver detalle de la combinación seleccionada", expanded=False):
+                if ruta_e is not None:
+                    st.markdown(
+                        f"**Tramo vacío:** {ruta_e.get('ID_Ruta','')} · "
+                        f"{_origen_usa(ruta_e)} → {_destino_usa(ruta_e)} · "
+                        f"Ut.B ${safe(ruta_e.get('Utilidad_Bruta')):,.2f} "
+                        f"({safe(ruta_e.get('Pct_Ut_Bruta')):.1f}%)"
+                    )
+                if ruta_r_sel is not None:
+                    st.markdown(
+                        f"**Regreso:** {ruta_r_sel.get('ID_Ruta','')} · "
+                        f"{ruta_r_sel.get('Tipo_Viaje','')} · "
+                        f"{ruta_r_sel.get('Cliente','—')} · "
+                        f"{_origen_usa(ruta_r_sel)} → {_destino_usa(ruta_r_sel)} · "
+                        f"Ut.B ${safe(ruta_r_sel.get('Utilidad_Bruta')):,.2f} "
+                        f"({safe(ruta_r_sel.get('Pct_Ut_Bruta')):.1f}%)"
+                    )
+                st.markdown(f"**Ut.B combinada:** ${cand['ut_bruta']:,.2f} ({cand['pct_ut_bruta']:.1f}%)")
     else:
         alert("info", "No se encontraron combinaciones de regreso compatibles con esta ruta.")
 
     # ══════════════════════════════════════════════════════════════
-    # BOTÓN SIMULAR
+    # BOTÓN SIMULAR — solo cuando NO hay simulación activa
     # ══════════════════════════════════════════════════════════════
-    divider()
-    b1, b2, b3 = st.columns([1, 2, 1])
-    with b2:
-        if st.button("🚛 Simular Vuelta Redonda", type="primary",
-                     use_container_width=True, key="sl_sim_btn"):
+    if not st.session_state.get("sl_sim_realizada"):
+        divider()
+        b1, b2, b3 = st.columns([1, 2, 1])
+        with b2:
+            if st.button("🚛 Simular Vuelta Redonda", type="primary",
+                         use_container_width=True, key="sl_sim_btn"):
 
             rutas_lista: list[dict] = [ruta_p.to_dict()]
             etiq_lista:  list[str]  = ["🚛 Ruta Principal"]
@@ -656,23 +676,8 @@ def render() -> None:
         res = _resumen_vr(rutas_series, valores)
         st.session_state["sl_sim_resultado"] = res
 
-        # Banner tarifa sugerida VR
-        _fuel_vr = sum(safe(r.get("Fuel", 0)) for r in rutas_series)
-        _umbral  = UMBRAL_CD
-        _tarifa_sug = res["costo_directo"] / (_umbral / 100) if _umbral > 0 else 0.0
-        _tarifa_mxp = _tarifa_sug * tc
-
-        divider()
-        banner_tarifa_sugerida(
-            res["costo_directo"], res["ingreso_total"],
-            _umbral, "USD", _tarifa_mxp,
-            modalidad="",
-            miles_load=0.0,
-            fuel_capturado=_fuel_vr,
-        )
-
-        # 5 cards canónicas
-        mostrar_resultados_ruta(res)
+        # 1 línea — igual que Lincoln, sin desglose (ese va en _detalle_tramos)
+        mostrar_resultados_setlogis(res, mostrar_desglose=False)
 
         divider()
         section_header("🗺️", "Secuencia del Road Trip")
