@@ -32,7 +32,7 @@ from reportlab.platypus import (
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
 
-from .helpers import (
+from ._helpers import (
     safe_number,
     calcular_costos_indirectos,
     calcular_utilidades_vuelta_redonda,
