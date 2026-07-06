@@ -164,6 +164,7 @@ def _sugerir_candidatas(df: pd.DataFrame, ruta_p: pd.Series) -> list[dict]:
 # RESUMEN VR
 # ─────────────────────────────────────────────
 def _resumen_vr(rutas: list[pd.Series], valores: dict | None = None) -> dict:
+    from ._shared import UMBRAL_CD, UMBRAL_UB, UMBRAL_CI, UMBRAL_UN
     valores = valores or {}
     ing = sum(safe(r.get("Ingreso_Total",       0)) for r in rutas)
     cd  = sum(safe(r.get("Costo_Directo_Total", 0)) for r in rutas)
@@ -173,41 +174,41 @@ def _resumen_vr(rutas: list[pd.Series], valores: dict | None = None) -> dict:
     mi  = sum(safe(r.get("Miles_Load",  0) or r.get("Millas_USA",    0)) for r in rutas)
     mv  = sum(safe(r.get("Miles_Empty", 0) or r.get("Millas_Vacias", 0)) for r in rutas)
 
-    return {
-        "ing":    ing,
-        "cd":     cd,
-        "ub":     ub,
-        "ci":     ci,
-        "un":     un,
-        "mi":     mi,
-        "mv":     mv,
-        # Campos canónicos para banner_tarifa_sugerida y mostrar_resultados_ruta
-        "ingreso_total":      ing,
-        "costo_directo":      cd,
-        "utilidad_bruta":     ub,
-        "costos_indirectos":  ci,
-        "costos_ind":         ci,
-        "utilidad_neta":      un,
-        "Pct_Costo_Directo":  (cd / ing * 100) if ing else 0.0,
-        "Pct_Ut_Bruta":       (ub / ing * 100) if ing else 0.0,
-        "Pct_Costo_Indirecto":(ci / ing * 100) if ing else 0.0,
-        "Pct_Ut_Neta":        (un / ing * 100) if ing else 0.0,
-        "pct_bruta":          (ub / ing * 100) if ing else 0.0,
-        "pct_neta":           (un / ing * 100) if ing else 0.0,
-        "pct_cd":             (cd / ing * 100) if ing else 0.0,
-        "pct_ub":             (ub / ing * 100) if ing else 0.0,
-        "pct_ci":             (ci / ing * 100) if ing else 0.0,
-        "pct_un":             (un / ing * 100) if ing else 0.0,
-        "Color_Directo":   "#DC2626" if (cd / ing * 100 if ing else 0) > 50.0 else "#059669",
-        "Color_Indirecto": "#D97706" if (ci / ing * 100 if ing else 0) > 35.0 else "#059669",
-        "Color_Ut_Neta":   "#DC2626" if (un / ing * 100 if ing else 0) < 15.0 else "#059669",
-        "moneda_display":  "USD",
-        "umbral_cd": safe(valores.get("umbral_cd", 50.0)),
-        "umbral_ub": safe(valores.get("umbral_ub", 50.0)),
-        "umbral_ci": safe(valores.get("umbral_ci", 35.0)),
-        "umbral_un": safe(valores.get("umbral_un", 15.0)),
-    }
+    def _pct(n, d): return (n / d * 100) if d > 0 else 0.0
+    pct_cd = _pct(cd, ing)
+    pct_ci = _pct(ci, ing)
+    pct_ub = _pct(ub, ing)
+    pct_un = _pct(un, ing)
 
+    return {
+        # Alias canónicos — requeridos por mostrar_resultados_ruta()
+        "ingreso_total":       ing,
+        "costo_directo":       cd,
+        "utilidad_bruta":      ub,
+        "costos_indirectos":   ci,
+        "utilidad_neta":       un,
+        "moneda_display":      "USD",
+        # Porcentajes para sub-labels de las cards
+        "Pct_Costo_Directo":   pct_cd,
+        "Pct_Ut_Bruta":        pct_ub,
+        "Pct_Costo_Indirecto": pct_ci,
+        "Pct_Ut_Neta":         pct_un,
+        # Colores con umbrales Lincoln
+        "Color_Directo":   "#059669" if pct_cd <= 50.0 else "#DC2626",
+        "Color_Indirecto": "#059669" if pct_ci <= 35.0 else "#D97706",
+        "Color_Ut_Neta":   "#059669" if pct_un >= 15.0 else "#DC2626",
+        # Umbrales viajan en el dict
+        "umbral_cd": 50.0,
+        "umbral_ub": 50.0,
+        "umbral_ci": 35.0,
+        "umbral_un": 15.0,
+        # Campos extra para PDF
+        "ing": ing, "cd": cd, "ub": ub, "ci": ci, "un": un,
+        "mi": mi,   "mv": mv,
+        "pct_cd": pct_cd, "pct_ci": pct_ci,
+        "pct_ub": pct_ub, "pct_un": pct_un,
+        "ml_total": mi + mv,
+    }
 
 # ─────────────────────────────────────────────
 # VISUAL DE NODOS DE RUTA
