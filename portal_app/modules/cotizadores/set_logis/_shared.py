@@ -630,3 +630,28 @@ def mostrar_resultados_setlogis(
         cxm_fuel=cxm_fuel,
         umbral_cd=_umbral,
     )
+
+# ─────────────────────────────────────────────
+# CONFIG POR TIPO DE RUTA
+# Orden visual de secciones en el formulario:
+#   NB    → cruce, americana          (cruce primero — igual que Lincoln)
+#   SB    → americana, cruce
+#   D2DNB → mx, cruce, americana
+#   D2DSB → americana, cruce, mx
+#   Empty → americana (sin cruce ni mx)
+# ─────────────────────────────────────────────
+def obtener_config_tipo_ruta(tipo_ruta: str) -> dict:
+    configs = {
+        "NB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
+                  "orden": ["cruce", "americana"]},
+        "SB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
+                  "orden": ["americana", "cruce"]},
+        "D2DNB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
+                  "orden": ["mx", "cruce", "americana"]},
+        "D2DSB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
+                  "orden": ["americana", "cruce", "mx"]},
+        "Empty": {"parte_usa": True,  "cruce": False,      "parte_mx": False,
+                  "orden": ["americana"]},
+    }
+    return configs.get(tipo_ruta, {"parte_usa": True, "cruce": "opcional",
+                                    "parte_mx": False, "orden": ["americana"]})
