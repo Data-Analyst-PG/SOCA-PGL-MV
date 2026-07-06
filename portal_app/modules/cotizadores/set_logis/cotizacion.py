@@ -1,4 +1,3 @@
-from ui.components import section_header, alert, divider
 """
 cotizacion.py  –  Set Logis Plus
 Generador de cotización formal PDF para enviar al cliente.
@@ -13,6 +12,7 @@ import streamlit as st
 from fpdf import FPDF # pyright: ignore[reportMissingModuleSource]
 
 from services.supabase_client import get_supabase_client
+from ui.components import section_header, alert, divider
 from ._shared import TABLE_RUTAS, cargar_datos_generales, safe
 
 
@@ -80,8 +80,8 @@ def estimar_paginas_necesarias(lineas_totales):
 
     return 1 + paginas_adicionales
 
-@st.cache_data(show_spinner=False, ttl=120)
 def _cargar_rutas(table: str) -> pd.DataFrame:
+    """Carga directa sin cache — cotización necesita datos frescos para el PDF."""
     supabase = get_supabase_client()
     if supabase is None:
         return pd.DataFrame()
@@ -99,8 +99,8 @@ def _cargar_rutas(table: str) -> pd.DataFrame:
 CONCEPTOS = {
     "Flete USA":  "Flete_USA",
     "Fuel":       "Fuel",
-    "Cruce":      "Cruce",
-    "Flete MEX":  "Flete_MEX",
+    "Cruce":      "Ingreso_Cruce",
+    "Flete MEX":  "Ingreso_MX",
 }
 
 
@@ -395,18 +395,18 @@ def _generar_pdf(
 
 
 def render():
-    st.title("🗒️ Cotización – Set Logis Plus")
 
     supabase = get_supabase_client()
     if supabase is None:
         alert("warn", "⚠️ Supabase no configurado.")
         return
 
-    cr, _ = st.columns([1, 4])
-    with cr:
+    c1, c2 = st.columns([1, 4])
+    with c1:
         if st.button("🔄 Recargar rutas", key="sl_cot_reload"):
-            _cargar_rutas.clear()
             st.rerun()
+    with c2:
+        st.caption("Siempre carga datos frescos — sin cache.")
 
     df = _cargar_rutas(TABLE_RUTAS)
     if df.empty:
