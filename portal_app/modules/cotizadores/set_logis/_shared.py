@@ -605,28 +605,28 @@ def mostrar_resultados_setlogis(
     mostrar_resultados_ruta(r)
 
     # ── Desglose por tramo ────────────────────────────────────────────────────
-    tipo_ruta   = str(r.get("Tipo_Viaje", "NB"))
-    es_empty    = (tipo_ruta == "Empty")
-    short_m     = safe(r.get("Short_Miles", 0.0))
-    miles_emp   = safe(r.get("Miles_Empty", 0.0))
-    pxm_c       = safe(r.get("PxM_Cargado", 0.0))
-    pxm_v       = safe(r.get("PxM_Vacio",   0.0))
-
-    if es_empty:
-        filas_costo = [
-            (f"Owner Vacío ({miles_emp:.0f} mi × ${pxm_v:.4f})", r["Pago_Owner_Vacio"]),
-        ]
-    else:
-        filas_costo = [
-            (f"Owner Cargado ({short_m:.0f} Short Mi × ${pxm_c:.4f})", r["Pago_Owner_Cargado"]),
-            (f"Owner Vacío ({miles_emp:.0f} Mi Vacías × ${pxm_v:.4f})",  r["Pago_Owner_Vacio"]),
-        ]
-        if r.get("Fuel_Owner"):
-            filas_costo.append(("Fuel pagado al Owner", r.get("Pago_Fuel_Owner", 0.0)))
-        if safe(r.get("Extras_Costo_Total", 0)) > 0:
-            filas_costo.append(("Extras (Set Logis pagó)", r["Extras_Costo_Total"]))
-
     if mostrar_desglose:
+        tipo_ruta   = str(r.get("Tipo_Viaje", "NB"))
+        es_empty    = (tipo_ruta == "Empty")
+        short_m     = safe(r.get("Short_Miles", 0.0))
+        miles_emp   = safe(r.get("Miles_Empty", 0.0))
+        pxm_c       = safe(r.get("PxM_Cargado", 0.0))
+        pxm_v       = safe(r.get("PxM_Vacio",   0.0))
+
+        if es_empty:
+            filas_costo = [
+                (f"Owner Vacío ({miles_emp:.0f} mi × ${pxm_v:.4f})", r.get("Pago_Owner_Vacio", 0.0)),
+            ]
+        else:
+            filas_costo = [
+                (f"Owner Cargado ({short_m:.0f} Short Mi × ${pxm_c:.4f})", r.get("Pago_Owner_Cargado", 0.0)),
+                (f"Owner Vacío ({miles_emp:.0f} Mi Vacías × ${pxm_v:.4f})",  r.get("Pago_Owner_Vacio", 0.0)),
+            ]
+            if r.get("Fuel_Owner"):
+                filas_costo.append(("Fuel pagado al Owner", r.get("Pago_Fuel_Owner", 0.0)))
+            if safe(r.get("Extras_Costo_Total", 0)) > 0:
+                filas_costo.append(("Extras (Set Logis pagó)", r.get("Extras_Costo_Total", 0.0)))
+
         desglose_ruta(
             r,
             filas_costo_americana=filas_costo,
