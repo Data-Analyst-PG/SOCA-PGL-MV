@@ -50,10 +50,6 @@ from ui.components import (
 )
 from ._shared import (
     TABLE_RUTAS,
-    UMBRAL_CD,
-    UMBRAL_UB,
-    UMBRAL_CI,
-    UMBRAL_UN,
     DEFAULTS,
     safe,
     cargar_datos_generales,
