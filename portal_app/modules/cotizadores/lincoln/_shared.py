@@ -287,7 +287,11 @@ def mostrar_resultados_lincoln(
     mostrar_resultados_ruta(r)
 
     # ── Desglose por tramo ────────────────────────────────────────
-    tipo_ruta   = str(r.get("tipo_ruta_key", "NB"))   # llave interna del dict
+    # Si modalidad="" es una vuelta redonda (resumen agregado) — sin desglose
+    if not modalidad:
+        return
+
+    tipo_ruta   = str(r.get("tipo_ruta_key", "NB"))
     es_empty    = (tipo_ruta == "Empty")
     short_miles = safe(r.get("short_miles", 0.0))
     miles_empty = safe(r.get("miles_empty", 0.0))
