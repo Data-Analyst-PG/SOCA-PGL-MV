@@ -72,14 +72,11 @@ def _get(ruta, key: str) -> str:
 
 
 def _origen_usa(ruta) -> str:
-    s = _get(ruta, "Ruta_USA")
-    return s.split(" - ")[0].strip() if " - " in s else s
+    return _get(ruta, "Origen")
 
 
 def _destino_usa(ruta) -> str:
-    s = _get(ruta, "Ruta_USA")
-    parts = s.split(" - ")
-    return parts[-1].strip() if len(parts) > 1 else s
+    return _get(ruta, "Destino")
 
 
 def _primer_punto(ruta) -> str:
