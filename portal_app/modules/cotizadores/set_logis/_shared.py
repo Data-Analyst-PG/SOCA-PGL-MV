@@ -541,7 +541,8 @@ def filtrar_rutas_setlogis(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
     if texto_fil:
         mask = (
             resultado.get("ID_Ruta",  pd.Series(dtype=str)).astype(str).str.upper().str.contains(texto_fil, na=False)
-            | resultado.get("Ruta_USA", pd.Series(dtype=str)).astype(str).str.upper().str.contains(texto_fil, na=False)
+            | resultado.get("Origen",  pd.Series(dtype=str)).astype(str).str.upper().str.contains(texto_fil, na=False)
+            | resultado.get("Destino", pd.Series(dtype=str)).astype(str).str.upper().str.contains(texto_fil, na=False)
         )
         resultado = resultado[mask]
 
