@@ -677,12 +677,12 @@ def calcular_ruta_lincoln(
         "costos_indirectos":   costos_ind,
         "moneda_display":      "USD",
         # ── Colores para kpi_row() — umbrales Lincoln ───────────────────────
-        "Color_Directo":   "#DC2626" if pct_cd       > 50.0 else "#059669",
-        "Color_Indirecto": "#D97706" if pct_ind_real > 35.0 else "#059669",
-        "Color_Ut_Neta":   "#DC2626" if pct_neta     < 15.0 else "#059669",
+        "Color_Directo":   "#DC2626" if pct_cd       > safe(valores.get("umbral_cd", UMBRAL_CD)) else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind_real > safe(valores.get("umbral_ci", UMBRAL_CI)) else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta     < safe(valores.get("umbral_un", UMBRAL_UN)) else "#059669",
         # ── Umbrales Lincoln — viajan con el resultado ───────────────────────
-        "umbral_cd": 50.0,
-        "umbral_ub": 50.0,
-        "umbral_ci": 35.0,
-        "umbral_un": 15.0,
+        "umbral_cd": safe(valores.get("umbral_cd", UMBRAL_CD)),
+        "umbral_ub": safe(valores.get("umbral_ub", UMBRAL_UB)),
+        "umbral_ci": safe(valores.get("umbral_ci", UMBRAL_CI)),
+        "umbral_un": safe(valores.get("umbral_un", UMBRAL_UN)),
     }
