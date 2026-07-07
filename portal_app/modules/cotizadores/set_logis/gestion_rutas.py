@@ -128,7 +128,7 @@ def render() -> None:
         section_header("📋", "Rutas Registradas")
         df_tabla  = filtrar_rutas_setlogis(df, "sl_ver")
         COLS      = [
-            "ID_Ruta", "Fecha", "Tipo_Viaje", "Modo", "Cliente", "Ruta_USA",
+            "ID_Ruta", "Fecha", "Tipo_Viaje", "Modo", "Cliente", "Origen", "Destino",
             "Miles_Load", "Short_Miles", "Miles_Empty",
             "Ingreso_Global", "Costo_Directo", "Utilidad_Bruta",
             "Pct_Ut_Bruta", "Costo_Indirecto", "Utilidad_Neta",
