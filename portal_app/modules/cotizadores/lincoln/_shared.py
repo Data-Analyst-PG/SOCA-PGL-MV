@@ -34,6 +34,14 @@ TABLE_RUTAS    = "Rutas_Lincoln"
 TABLE_TRAFICOS = "Traficos_Lincoln"
 
 # ─────────────────────────────────────────────
+# UMBRALES SEMÁFORO
+# ─────────────────────────────────────────────
+UMBRAL_CD = 50.0   # % máximo de costo directo aceptable
+UMBRAL_UB = 50.0   # % mínimo de utilidad bruta aceptable
+UMBRAL_CI = 35.0   # % máximo de costo indirecto aceptable
+UMBRAL_UN = 15.0   # % mínimo de utilidad neta aceptable
+
+# ─────────────────────────────────────────────
 # TIPOS DE RUTA
 # ─────────────────────────────────────────────
 TIPOS_RUTA   = ["NB", "SB", "D2DNB", "D2DSB", "Empty"]
@@ -78,10 +86,11 @@ DEFAULTS: dict[str, float] = {
     # Costo indirecto (solo %)
     "% Costo Indirecto":           0.35,
     # Umbrales semáforo Lincoln
-    "umbral_cd": 50.0,
-    "umbral_ub": 50.0,
-    "umbral_ci": 35.0,
-    "umbral_un": 15.0,
+    # Umbrales semáforo Lincoln — usan las constantes para consistencia
+    "umbral_cd": UMBRAL_CD,
+    "umbral_ub": UMBRAL_UB,
+    "umbral_ci": UMBRAL_CI,
+    "umbral_un": UMBRAL_UN,
 }
 # ─────────────────────────────────────────────
 # CONFIG POR TIPO DE RUTA
