@@ -452,7 +452,7 @@ def _generar_pdf(
         tramo_data = [
             ["Campo",       "Valor",                                    "Campo",       "Valor"],
             ["Tipo",        str(ruta.get("Tipo_Viaje","")),             "Fecha",       str(ruta.get("Fecha",""))],
-            ["Ruta USA",    str(ruta.get("Ruta_USA","")),               "Modo",        str(ruta.get("Modo",""))],
+            ["Ruta USA",    f"{ruta.get('Origen','')} → {ruta.get('Destino','')}",  "Modo",  str(ruta.get("Modo",""))],
             ["Short Miles", f"{safe(ruta.get('Short_Miles')):.0f} mi",  "Miles Empty", f"{safe(ruta.get('Miles_Empty')):.0f} mi"],
             ["Ingreso",     f"${safe(ruta.get('Ingreso_Global')):,.2f}","Costo Dir.",  f"${safe(ruta.get('Costo_Directo')):,.2f}"],
             ["Ut. Bruta",
@@ -561,7 +561,7 @@ def render() -> None:
                 st.markdown(f"**Origen MX:** {ruta_p.get('Origen_MX','')}")
                 st.markdown(f"**Destino MX:** {ruta_p.get('Destino_MX','')}")
         with d2:
-            st.markdown(f"**Ruta USA:** {ruta_p.get('Ruta_USA','')}")
+            st.markdown(f"**Ruta USA:** {ruta_p.get('Origen','')} → {ruta_p.get('Destino','')}")
             st.markdown(f"**Último punto:** {_ultimo_punto(ruta_p)}")
             st.markdown(f"**Ingreso:** ${safe(ruta_p.get('Ingreso_Global')):,.2f}")
             st.markdown(f"**Costo Dir.:** ${safe(ruta_p.get('Costo_Directo')):,.2f}")
