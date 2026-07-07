@@ -128,7 +128,7 @@ def _sugerir_regresos(
         candidatas.append({
             "label": (
                 f"✅ DIRECTO · {r.get('ID_Ruta','')} | {r.get('Tipo_Viaje','')} | "
-                f"{r.get('Cliente','—')} | {r.get('Ruta_USA','')} · "
+                f"{r.get('Cliente','—')} | {r.get('Origen','')} → {r.get('Destino','')} · "
                 f"Ut.B comb. {pct:.1f}%"
             ),
             "ut_bruta":     ub_t,
@@ -154,9 +154,9 @@ def _sugerir_regresos(
             pct   = (ub_t / ing_t * 100) if ing_t > 0 else 0.0
             candidatas.append({
                 "label": (
-                    f"🔄 CON VACÍO · [{e.get('ID_Ruta','')} {e.get('Ruta_USA','')}] + "
+                    f"🔄 CON VACÍO · [{e.get('ID_Ruta','')} {e.get('Origen','')} → {e.get('Destino','')}] + "
                     f"{r.get('ID_Ruta','')} | {r.get('Tipo_Viaje','')} | "
-                    f"{r.get('Cliente','—')} | {r.get('Ruta_USA','')} · "
+                    f"{r.get('Cliente','—')} | {r.get('Origen','')} → {r.get('Destino','')} · "
                     f"Ut.B comb. {pct:.1f}%"
                 ),
                 "ut_bruta":     ub_t,
@@ -308,7 +308,7 @@ def _detalle_tramos(rutas: list[pd.Series], etiquetas: list[str]) -> None:
     for i, (label, ruta) in enumerate(zip(etiquetas, rutas)):
         titulo = (
             f"{label} — {ruta.get('ID_Ruta','')} · "
-            f"{ruta.get('Cliente','—')} · {ruta.get('Ruta_USA','')}"
+            f"{ruta.get('Cliente','—')} · {ruta.get('Origen','')} → {ruta.get('Destino','')}"
         )
         with st.expander(titulo, expanded=(i == 0)):
             c1, c2, c3 = st.columns(3)
