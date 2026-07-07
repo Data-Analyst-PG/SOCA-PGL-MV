@@ -630,27 +630,27 @@ def render() -> None:
             if st.button("🚛 Simular Vuelta Redonda", type="primary",
                          use_container_width=True, key="sl_sim_btn"):
 
-            rutas_lista: list[dict] = [ruta_p.to_dict()]
-            etiq_lista:  list[str]  = ["🚛 Ruta Principal"]
+                rutas_lista: list[dict] = [ruta_p.to_dict()]
+                etiq_lista:  list[str]  = ["🚛 Ruta Principal"]
 
-            if ruta_e is not None:
-                rutas_lista.append(ruta_e.to_dict())
-                etiq_lista.append("⬜ Tramo Vacío")
+                if ruta_e is not None:
+                    rutas_lista.append(ruta_e.to_dict())
+                    etiq_lista.append("⬜ Tramo Vacío")
 
-            if ruta_r_sel is not None:
-                rutas_lista.append(ruta_r_sel.to_dict())
-                etiq_lista.append("🔁 Regreso")
+                if ruta_r_sel is not None:
+                    rutas_lista.append(ruta_r_sel.to_dict())
+                    etiq_lista.append("🔁 Regreso")
 
-            st.session_state["sl_sim_datos"] = {
-                "rutas":     rutas_lista,
-                "etiquetas": etiq_lista,
-                "ruta_p":    ruta_p.to_dict(),
-                "ruta_e":    ruta_e.to_dict()     if ruta_e     is not None else None,
-                "ruta_r":    ruta_r_sel.to_dict() if ruta_r_sel is not None else None,
-            }
-            st.session_state["sl_sim_realizada"] = True
-            st.session_state["sl_sim_resultado"]  = None  # se calcula abajo
-            st.rerun()
+                st.session_state["sl_sim_datos"] = {
+                    "rutas":     rutas_lista,
+                    "etiquetas": etiq_lista,
+                    "ruta_p":    ruta_p.to_dict(),
+                    "ruta_e":    ruta_e.to_dict()     if ruta_e     is not None else None,
+                    "ruta_r":    ruta_r_sel.to_dict() if ruta_r_sel is not None else None,
+                }
+                st.session_state["sl_sim_realizada"] = True
+                st.session_state["sl_sim_resultado"]  = None
+                st.rerun()
 
     # ══════════════════════════════════════════════════════════════
     # RESULTADOS
