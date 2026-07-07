@@ -489,7 +489,8 @@ def render():
     opciones = (
         df["ID_Ruta"].astype(str) + " | " +
         df.get("Tipo_Viaje", pd.Series([""] * len(df))).astype(str) + " | " +
-        df.get("Ruta_USA", pd.Series([""] * len(df))).astype(str) + " | " +
+        (df.get("Origen", pd.Series([""] * len(df))).astype(str) + " → " +
+         df.get("Destino", pd.Series([""] * len(df))).astype(str)) + " | " +
         df.get("Cliente", pd.Series([""] * len(df))).astype(str)
     )
     seleccionadas = st.multiselect("Selecciona rutas:", opciones.tolist(), key="sl_cot_sel")
@@ -516,8 +517,8 @@ def render():
                 conceptos_sel.append({"nombre": nombre, "valor": val})
 
         ruta_label = {
-            "tipo": str(row.get("Tipo_Viaje", "")),
-            "ruta": str(row.get("Ruta_USA", "")),
+            "tipo":    str(row.get("Tipo_Viaje", "")),
+            "ruta":    f"{row.get('Origen', '')} → {row.get('Destino', '')}",
             "cliente": str(row.get("Cliente", "")),
         }
 
