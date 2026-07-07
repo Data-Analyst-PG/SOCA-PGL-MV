@@ -83,7 +83,7 @@ def _generar_pdf_consulta(ruta: dict, r: dict) -> bytes:
         ["Campo",        "Valor",                            "Campo",          "Valor"],
         ["ID Ruta",      str(ruta.get("ID_Ruta",   "")),    "Fecha",          str(ruta.get("Fecha",      ""))],
         ["Tipo",         str(ruta.get("Tipo_Viaje","")),    "Modo",           str(ruta.get("Modo",       ""))],
-        ["Cliente",      str(ruta.get("Cliente",   "")),    "Ruta USA",       str(ruta.get("Ruta_USA",   ""))],
+        ["Cliente",      str(ruta.get("Cliente",   "")),    "Ruta USA",       f"{ruta.get('Origen','')} → {ruta.get('Destino','')}"],
         ["Modalidad",    str(ruta.get("Modalidad", "")),    "Fuel Owner",     fo_label],
         ["Miles Load",   f"{safe(ruta.get('Miles_Load')):.0f}",
          "Short Miles",  f"{safe(ruta.get('Short_Miles')):.0f}"],
