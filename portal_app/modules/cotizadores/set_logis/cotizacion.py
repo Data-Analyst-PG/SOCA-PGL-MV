@@ -20,7 +20,7 @@ from fpdf import FPDF  # pyright: ignore[reportMissingModuleSource]
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
-from ._shared import (
+from ._helpers import (
     TABLE_RUTAS,
     cargar_datos_generales,
     safe,
