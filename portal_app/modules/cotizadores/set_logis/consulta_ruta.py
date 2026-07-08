@@ -28,7 +28,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
-from ._shared import (
+from ._helpers import (
     TABLE_RUTAS,
     DEFAULTS,
     safe,
