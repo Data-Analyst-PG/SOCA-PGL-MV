@@ -29,7 +29,7 @@ from streamlit_searchbox import st_searchbox
 
 from services.supabase_client import get_supabase_client, current_user
 from ui.components import section_header, alert, divider
-from ._shared import (
+from ._helpers import (
     TABLE_RUTAS,
     TIPOS_RUTA,
     EXTRAS_USA,
