@@ -26,7 +26,7 @@ from ui.components import (
     section_header, alert, divider,
     mostrar_resultados_ruta, banner_tarifa_sugerida, desglose_ruta,
 )
-from ._shared import (
+from ._helpers import (
     TABLE_RUTAS,
     TIPOS_RUTA,
     EXTRAS_USA,
