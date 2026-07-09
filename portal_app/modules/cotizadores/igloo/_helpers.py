@@ -18,6 +18,15 @@ import streamlit as st
 from datetime import datetime
 
 from ui.components import banner_tarifa_sugerida, kpi_row, semaforos_ruta, divider
+
+# ─────────────────────────────────────────────
+# UMBRALES SEMÁFORO — Igloo
+# ─────────────────────────────────────────────
+UMBRAL_CD = 50.0   # % máximo de costo directo aceptable
+UMBRAL_UB = 50.0   # % mínimo de utilidad bruta aceptable
+UMBRAL_CI = 35.0   # % máximo de costo indirecto aceptable
+UMBRAL_UN = 15.0   # % mínimo de utilidad neta aceptable
+
 # ─────────────────────────────────────────────
 # Funciones de seguridad numérica
 # ─────────────────────────────────────────────
@@ -47,10 +56,10 @@ def safe_float(x, default=0.0):
 # Datos generales (CSV)
 # ─────────────────────────────────────────────
 DEFAULTS = {
-    "umbral_cd": 50.0,   # % máximo costo directo aceptable — Igloo
-    "umbral_ub": 50.0,   # % mínimo utilidad bruta aceptable
-    "umbral_ci": 35.0,   # % máximo costos indirectos aceptable
-    "umbral_un": 15.0,   # % mínimo utilidad neta aceptable
+    "umbral_cd": UMBRAL_CD,
+    "umbral_ub": UMBRAL_UB,
+    "umbral_ci": UMBRAL_CI,
+    "umbral_un": UMBRAL_UN,
     "Rendimiento Camion": 2.5,
     "Costo Diesel": 24.0,
     "Rendimiento Termo": 3.0,
@@ -135,6 +144,28 @@ TIPOS_CON_INDIRECTOS = ["IMPORTACION", "EXPORTACION", "DOM MEX"]
 
 
 # ─────────────────────────────────────────────
+# CONFIG POR TIPO DE RUTA
+# Orden visual de secciones en el formulario:
+#   IMPORTACION → Cruce primero, luego Ruta MX
+#   EXPORTACION → Ruta MX primero, luego Cruce
+#   VACIO       → solo Ruta MX (sin cruce, sin indirectos)
+#   DOM MEX     → solo Ruta MX (sin cruce, con indirectos)
+# ─────────────────────────────────────────────
+def obtener_config_tipo_ruta(tipo_ruta: str) -> dict:
+    configs = {
+        "IMPORTACION": {"cruce": True,  "ruta_mx": True,
+                         "orden": ["cruce", "ruta_mx"]},
+        "EXPORTACION": {"cruce": True,  "ruta_mx": True,
+                         "orden": ["ruta_mx", "cruce"]},
+        "VACIO":       {"cruce": False, "ruta_mx": True,
+                         "orden": ["ruta_mx"]},
+        "DOM MEX":     {"cruce": False, "ruta_mx": True,
+                         "orden": ["ruta_mx"]},
+    }
+    return configs.get(tipo_ruta, {"cruce": True, "ruta_mx": True, "orden": ["ruta_mx"]})
+
+
+# ─────────────────────────────────────────────
 # Cálculos centralizados
 # ─────────────────────────────────────────────
 def convertir_a_mxp(valor: float, moneda: str, tc_usd: float) -> float:
@@ -196,7 +227,7 @@ def calcular_costos_indirectos(tipo: str, ingreso_total: float) -> float:
     """
     tipo = (tipo or "").strip().upper()
     if tipo in TIPOS_CON_INDIRECTOS:
-        return ingreso_total * 0.35
+        return ingreso_total * (UMBRAL_CI / 100)
     return 0.0
 
 
@@ -328,14 +359,14 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list):
         "Pct_Ut_Bruta":        pct_bruta,
         "Pct_Costo_Indirecto": pct_ind,
         "Pct_Ut_Neta":         pct_neta,
-        "Color_Directo":   "#DC2626" if pct_cd   > 50.0 else "#059669",
-        "Color_Indirecto": "#D97706" if pct_ind  > 35.0 else "#059669",
-        "Color_Ut_Neta":   "#DC2626" if pct_neta < 15.0 else "#059669",
+        "Color_Directo":   "#DC2626" if pct_cd   > UMBRAL_CD else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind  > UMBRAL_CI else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta < UMBRAL_UN else "#059669",
         # ── Umbrales Igloo ────────────────────────────────────────────────────
-        "umbral_cd": 50.0,
-        "umbral_ub": 50.0,
-        "umbral_ci": 35.0,
-        "umbral_un": 15.0,
+        "umbral_cd": UMBRAL_CD,
+        "umbral_ub": UMBRAL_UB,
+        "umbral_ci": UMBRAL_CI,
+        "umbral_un": UMBRAL_UN,
     }
 
 
@@ -580,3 +611,53 @@ def label_ruta_igloo(row) -> str:
         f"{row.get('Tipo', '')} | {row.get('Cliente', '')} | "
         f"{row.get('Origen', '')} → {row.get('Destino', '')}"
     )
+
+# ─────────────────────────────────────────────
+# MOSTRAR RESULTADOS — función central Igloo
+# ─────────────────────────────────────────────
+def mostrar_resultados_igloo(
+    r: dict,
+    tc_usd: float = 0.0,
+    ingreso_cruce: float = 0.0,
+    costo_cruce: float = 0.0,
+    ingreso_mx: float = 0.0,
+    costo_mx: float = 0.0,
+    es_simulacion: bool = False,
+) -> None:
+    """
+    Centraliza banner + KPIs + desglose por tramo para Igloo.
+    Reemplaza las llamadas sueltas a banner_tarifa_sugerida() + mostrar_resultados_ruta()
+    que hoy están repetidas en captura, gestión y simulador.
+
+    Parámetros:
+        r             : dict resultado de calcular_utilidades() / calcular_utilidades_vuelta_redonda()
+        tc_usd        : tipo de cambio activo — para mostrar tarifa sugerida también en USD
+        ingreso_cruce, costo_cruce : montos del tramo Cruce (0 si no aplica, ej. VACIO/DOM MEX)
+        ingreso_mx, costo_mx       : montos del tramo Ruta MX
+        es_simulacion : True → muestra aviso de simulación
+    """
+    from ui.components import (
+        banner_tarifa_sugerida, mostrar_resultados_ruta,
+        desglose_ruta, divider, alert,
+    )
+
+    if es_simulacion:
+        alert("info", "🔧 Estás viendo una simulación con parámetros ajustados.")
+
+    umbral      = r.get("umbral_cd", UMBRAL_CD)
+    tarifa_sug  = (r.get("costo_directo", 0.0) / (umbral / 100)) if umbral else 0.0
+    tarifa_usd  = (tarifa_sug / tc_usd) if tc_usd > 0 else 0.0
+
+    divider()
+    banner_tarifa_sugerida(r.get("costo_directo", 0.0), r.get("ingreso_total", 0.0), umbral, "MXP", tarifa_usd)
+
+    mostrar_resultados_ruta(r)
+
+    # Desglose por tramo — Igloo no tiene tramo americano, solo Cruce y Ruta MX
+    r_desglose = dict(r)
+    r_desglose["Ingreso_Cruce"] = ingreso_cruce
+    r_desglose["Costo_Cruce"]   = costo_cruce
+    r_desglose["Ingreso_MX"]    = ingreso_mx
+    r_desglose["Costo_MX"]      = costo_mx
+
+    desglose_ruta(r_desglose, moneda_mx="MXP", tc=(tc_usd if tc_usd > 0 else 1.0), umbral_cd=umbral)
