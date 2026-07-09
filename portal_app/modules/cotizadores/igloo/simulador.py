@@ -23,7 +23,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
+from ui.components import section_header, alert, divider, ruta_visual_nodos
 
 from ._helpers import (
     safe_number,
@@ -33,6 +33,7 @@ from ._helpers import (
     load_rutas_igloo,
     filtrar_rutas_igloo,
     label_ruta_igloo,
+    mostrar_resultados_igloo,
 )
 
 
@@ -187,69 +188,15 @@ def generar_pdf_vuelta_redonda(rutas_seleccionadas, ingreso_total, costo_total,
     doc.build(story)
     return tmp.name
 
-
 # ─────────────────────────────────────────────
-# RENDER PRINCIPAL
+# SUGERENCIAS DE REGRESO
 # ─────────────────────────────────────────────
-def render():
-    supabase = get_supabase_client()
-    if supabase is None:
-        alert("warn", "⚠️ Supabase no configurado. No se pueden cargar rutas.")
-        return
-
-    TABLE_RUTAS = "Rutas"
-    st.session_state.setdefault("igloo_simulacion_realizada", False)
-
-    # ── Recargar ──────────────────────────────────────────────────
-    c1, c2 = st.columns([1, 4])
-    with c1:
-        if st.button("🔄 Recargar", key="igloo_sim_reload"):
-            load_rutas_igloo.clear()
-            st.rerun()
-    with c2:
-        st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
-
-    df = load_rutas_igloo(TABLE_RUTAS)
-    if df.empty:
-        alert("warn", "⚠️ No hay rutas registradas en Supabase.")
-        return
-
-    # ── Paso 1: Ruta principal ─────────────────────────────────────
-    divider()
-    section_header("📌", "Paso 1 — Ruta Principal")
-    st.caption("Filtra las rutas disponibles y selecciona la ruta de ida.")
-    df_filtrado_principal = filtrar_rutas_igloo(df, "ig_sim")
-
-    if df_filtrado_principal.empty:
-        alert("warn", "No hay rutas que cumplan con los filtros seleccionados.")
-        return
-
-    opciones_principal = [label_ruta_igloo(row) for _, row in df_filtrado_principal.iterrows()]
-    ruta_principal_label = st.selectbox(
-        f"Selecciona la ruta principal ({len(df_filtrado_principal)} disponibles)",
-        options=opciones_principal,
-        key="sel_ruta_principal",
-    )
-    idx_principal  = opciones_principal.index(ruta_principal_label)
-    ruta_principal = df_filtrado_principal.iloc[idx_principal]
-
-    with st.expander("📋 Ver detalles de la ruta seleccionada", expanded=False):
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown(f"**ID Ruta:** {ruta_principal.get('ID_Ruta', 'N/A')}")
-            st.markdown(f"**Tipo:** {ruta_principal.get('Tipo', 'N/A')}")
-            st.markdown(f"**Cliente:** {ruta_principal.get('Cliente', 'N/A')}")
-            st.markdown(f"**Fecha:** {ruta_principal.get('Fecha', 'N/A')}")
-        with c2:
-            st.markdown(f"**Origen:** {ruta_principal.get('Origen', 'N/A')}")
-            st.markdown(f"**Destino:** {ruta_principal.get('Destino', 'N/A')}")
-            st.markdown(f"**Ingreso Total:** ${safe_number(ruta_principal.get('Ingreso Total', 0)):,.2f}")
-            st.markdown(f"**Costo Directo:** ${safe_number(ruta_principal.get('Costo_Total_Ruta', 0)):,.2f}")
-
-    # ── Paso 2: Sugerir combinaciones ──────────────────────────────
-    divider()
-    section_header("🔄", "Paso 2 — Selecciona el Regreso")
-
+def _sugerir_regresos(ruta_principal, df: pd.DataFrame) -> list[dict]:
+    """
+    Busca combinaciones de vuelta redonda a partir de la ruta principal.
+    Misma lógica de negocio que ya tenía Igloo, ahora extraída como función
+    reutilizable (antes vivía inline dentro de render()).
+    """
     tipo_principal    = str(ruta_principal["Tipo"]).strip().upper()
     destino_principal = str(ruta_principal["Destino"]).strip().upper()
     tipos_conector    = ["VACIO", "DOM MEX"]
@@ -260,7 +207,8 @@ def render():
     # 1) Rutas directas desde el destino principal
     if tipo_principal != "VACIO":
         rutas_directas = df[
-            (df["Tipo"] == tipo_regreso) & (df["Origen"] == destino_principal)
+            (df["Tipo"] == tipo_regreso)
+            & (df["Origen"] == destino_principal)
         ].copy()
         for _, row in rutas_directas.iterrows():
             ingreso_t  = safe_number(ruta_principal["Ingreso Total"]) + safe_number(row["Ingreso Total"])
@@ -327,7 +275,134 @@ def render():
                 "porcentaje": porcentaje,
             })
 
-    sugerencias = sorted(sugerencias, key=lambda x: x["porcentaje"], reverse=True)
+    return sorted(sugerencias, key=lambda x: x["porcentaje"], reverse=True)
+
+
+# ─────────────────────────────────────────────
+# VISUAL DE NODOS — usa ruta_visual_nodos() de components
+# ─────────────────────────────────────────────
+def _ruta_visual(rutas: list[dict]) -> None:
+    """
+    Construye la secuencia Origen → (Cruce) → Destino de cada tramo de la
+    vuelta redonda y la renderiza con el componente compartido de las 4 empresas.
+    """
+    pasos = []
+    for i, r in enumerate(rutas):
+        tipo    = str(r.get("Tipo", "")).strip().upper()
+        origen  = r.get("Origen", "") or "—"
+        destino = r.get("Destino", "") or "—"
+
+        if i > 0:
+            pasos.append("→")
+
+        pasos.append({"icono": "🇲🇽", "ciudad": origen, "etiqueta": f"{tipo} · Origen"})
+
+        if tipo in ("IMPORTACION", "EXPORTACION"):
+            pasos.append("→")
+            pasos.append({"icono": "🛂", "ciudad": "Cruce", "etiqueta": "Cruce"})
+
+        pasos.append("→")
+        pasos.append({"icono": "📍", "ciudad": destino, "etiqueta": f"{tipo} · Destino"})
+
+    ruta_visual_nodos(pasos)
+
+
+# ─────────────────────────────────────────────
+# DETALLE DE TRAMOS POR COLUMNAS
+# ─────────────────────────────────────────────
+def _detalle_tramos(rutas: list[dict]) -> None:
+    section_header("📋", "Detalle de Rutas")
+
+    tipos_orden = ["IMPORTACION", "VACIO", "EXPORTACION", "DOM MEX"]
+    rutas_con_tipo = [r for t in tipos_orden
+                      for r in rutas
+                      if r.get("Tipo") == t]
+
+    if rutas_con_tipo:
+        cols = st.columns(len(rutas_con_tipo))
+        for col, ruta in zip(cols, rutas_con_tipo):
+            with col:
+                st.markdown(f"**{ruta.get('Tipo', '')}**")
+                st.markdown(f"Fecha: {ruta.get('Fecha', 'N/A')}")
+                st.markdown(f"Cliente: {ruta.get('Cliente', 'N/A')}")
+                st.markdown(f"Ruta: {ruta.get('Origen', 'N/A')} → {ruta.get('Destino', 'N/A')}")
+                st.markdown(f"KM: {safe_number(ruta.get('KM')):,.2f}")
+                st.markdown(f"Ingreso Original: ${safe_number(ruta.get('Ingreso_Original')):,.2f}")
+                st.markdown(f"Moneda: {ruta.get('Moneda', 'N/A')}")
+                st.markdown(f"Tipo de cambio: {safe_number(ruta.get('Tipo de cambio')):,.2f}")
+                st.markdown(f"**Ingreso Flete: ${safe_number(ruta.get('Ingreso Flete')):,.2f}**")
+                st.markdown(f"Cruce Original: ${safe_number(ruta.get('Cruce_Original')):,.2f}")
+                st.markdown(f"**Ingreso Total: ${safe_number(ruta.get('Ingreso Total')):,.2f}**")
+                st.markdown(f"Costo Diesel: ${safe_number(ruta.get('Costo Diesel')):,.2f}")
+                st.markdown(f"Diesel Camión: ${safe_number(ruta.get('Costo_Diesel_Camion')):,.2f}")
+                st.markdown(f"Diesel Termo: ${safe_number(ruta.get('Costo_Diesel_Termo')):,.2f}")
+                st.markdown(f"Sueldo: ${safe_number(ruta.get('Sueldo_Operador')):,.2f}")
+                st.markdown(f"Casetas: ${safe_number(ruta.get('Casetas')):,.2f}")
+
+
+# ─────────────────────────────────────────────
+# RENDER PRINCIPAL
+# ─────────────────────────────────────────────
+def render():
+    supabase = get_supabase_client()
+    if supabase is None:
+        alert("warn", "⚠️ Supabase no configurado. No se pueden cargar rutas.")
+        return
+
+    TABLE_RUTAS = "Rutas"
+    st.session_state.setdefault("igloo_simulacion_realizada", False)
+
+    # ── Recargar ──────────────────────────────────────────────────
+    c1, c2 = st.columns([1, 4])
+    with c1:
+        if st.button("🔄 Recargar", key="igloo_sim_reload"):
+            load_rutas_igloo.clear()
+            st.rerun()
+    with c2:
+        st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
+
+    df = load_rutas_igloo(TABLE_RUTAS)
+    if df.empty:
+        alert("warn", "⚠️ No hay rutas registradas en Supabase.")
+        return
+
+    # ── Paso 1: Ruta principal ─────────────────────────────────────
+    divider()
+    section_header("📌", "Paso 1 — Ruta Principal")
+    st.caption("Filtra las rutas disponibles y selecciona la ruta de ida.")
+    df_filtrado_principal = filtrar_rutas_igloo(df, "ig_sim")
+
+    if df_filtrado_principal.empty:
+        alert("warn", "No hay rutas que cumplan con los filtros seleccionados.")
+        return
+
+    opciones_principal = [label_ruta_igloo(row) for _, row in df_filtrado_principal.iterrows()]
+    ruta_principal_label = st.selectbox(
+        f"Selecciona la ruta principal ({len(df_filtrado_principal)} disponibles)",
+        options=opciones_principal,
+        key="sel_ruta_principal",
+    )
+    idx_principal  = opciones_principal.index(ruta_principal_label)
+    ruta_principal = df_filtrado_principal.iloc[idx_principal]
+
+    with st.expander("📋 Ver detalles de la ruta seleccionada", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"**ID Ruta:** {ruta_principal.get('ID_Ruta', 'N/A')}")
+            st.markdown(f"**Tipo:** {ruta_principal.get('Tipo', 'N/A')}")
+            st.markdown(f"**Cliente:** {ruta_principal.get('Cliente', 'N/A')}")
+            st.markdown(f"**Fecha:** {ruta_principal.get('Fecha', 'N/A')}")
+        with c2:
+            st.markdown(f"**Origen:** {ruta_principal.get('Origen', 'N/A')}")
+            st.markdown(f"**Destino:** {ruta_principal.get('Destino', 'N/A')}")
+            st.markdown(f"**Ingreso Total:** ${safe_number(ruta_principal.get('Ingreso Total', 0)):,.2f}")
+            st.markdown(f"**Costo Directo:** ${safe_number(ruta_principal.get('Costo_Total_Ruta', 0)):,.2f}")
+
+    # ── Paso 2: Sugerir combinaciones ──────────────────────────────
+    divider()
+    section_header("🔄", "Paso 2 — Selecciona el Regreso")
+
+    sugerencias = _sugerir_regresos(ruta_principal, df)
 
     if not sugerencias:
         alert("warn", "⚠️ No se encontraron combinaciones posibles.")
@@ -375,43 +450,34 @@ def render():
                 else:
                     st.markdown("- *Costos Indirectos: $0.00 (VACÍO)*")
 
-        # KPIs globales
+        # Secuencia visual de la vuelta redonda
         divider()
-        _umbral     = res["umbral_cd"]
-        _tarifa_sug = res["costo_directo"] / (_umbral / 100)
-        banner_tarifa_sugerida(res["costo_directo"], res["ingreso_total"], _umbral, "MXP", 0.0)
-        mostrar_resultados_ruta(res)
+        section_header("🗺️", "Secuencia de la Vuelta Redonda")
+        _ruta_visual(rutas)
+
+        # KPIs globales + desglose
+        divider()
+        valores_gen = cargar_datos_generales()
+        tc_usd = safe_number(valores_gen.get("Tipo de cambio USD", 19.5))
+
+        ingreso_cruce_total = sum(safe_number(r.get("Ingreso Cruce", 0)) for r in rutas)
+        costo_cruce_total   = sum(safe_number(r.get("Costo Cruce Convertido", 0)) for r in rutas)
+        ingreso_mx_total    = res["ingreso_total"] - ingreso_cruce_total
+        costo_mx_total      = res["costo_directo"] - costo_cruce_total
+
+        mostrar_resultados_igloo(
+            res,
+            tc_usd=tc_usd,
+            ingreso_cruce=ingreso_cruce_total,
+            costo_cruce=costo_cruce_total,
+            ingreso_mx=ingreso_mx_total,
+            costo_mx=costo_mx_total,
+        )
 
         # Detalle completo por columnas
         divider()
-        section_header("📋", "Detalle de Rutas")
-
-        tipos_orden = ["IMPORTACION", "VACIO", "EXPORTACION", "DOM MEX"]
-        rutas_con_tipo = [r for t in tipos_orden
-                          for r in rutas
-                          if r.get("Tipo") == t]
-
-        if rutas_con_tipo:
-            cols = st.columns(len(rutas_con_tipo))
-            for col, ruta in zip(cols, rutas_con_tipo):
-                with col:
-                    st.markdown(f"**{ruta.get('Tipo', '')}**")
-                    st.markdown(f"Fecha: {ruta.get('Fecha', 'N/A')}")
-                    st.markdown(f"Cliente: {ruta.get('Cliente', 'N/A')}")
-                    st.markdown(f"Ruta: {ruta.get('Origen', 'N/A')} → {ruta.get('Destino', 'N/A')}")
-                    st.markdown(f"KM: {safe_number(ruta.get('KM')):,.2f}")
-                    st.markdown(f"Ingreso Original: ${safe_number(ruta.get('Ingreso_Original')):,.2f}")
-                    st.markdown(f"Moneda: {ruta.get('Moneda', 'N/A')}")
-                    st.markdown(f"Tipo de cambio: {safe_number(ruta.get('Tipo de cambio')):,.2f}")
-                    st.markdown(f"**Ingreso Flete: ${safe_number(ruta.get('Ingreso Flete')):,.2f}**")
-                    st.markdown(f"Cruce Original: ${safe_number(ruta.get('Cruce_Original')):,.2f}")
-                    st.markdown(f"**Ingreso Total: ${safe_number(ruta.get('Ingreso Total')):,.2f}**")
-                    st.markdown(f"Costo Diesel: ${safe_number(ruta.get('Costo Diesel')):,.2f}")
-                    st.markdown(f"Diesel Camión: ${safe_number(ruta.get('Costo_Diesel_Camion')):,.2f}")
-                    st.markdown(f"Diesel Termo: ${safe_number(ruta.get('Costo_Diesel_Termo')):,.2f}")
-                    st.markdown(f"Sueldo: ${safe_number(ruta.get('Sueldo_Operador')):,.2f}")
-                    st.markdown(f"Casetas: ${safe_number(ruta.get('Casetas')):,.2f}")
-
+        _detalle_tramos(rutas)
+        
         # ── PDF ────────────────────────────────────────────────────
         divider()
         section_header("📥", "Descargar PDF de la Simulación")
