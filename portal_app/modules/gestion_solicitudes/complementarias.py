@@ -72,8 +72,8 @@ def _to_excel(df: pd.DataFrame) -> bytes:
 def _get_factura_url(factura_path: str) -> str | None:
     """Genera la URL pública del archivo en Supabase Storage."""
     try:
-        from services.supabase_client import get_supabase
-        supabase = get_supabase()
+        from services.supabase_client import get_authed_client
+        supabase = get_authed_client()
         res = supabase.storage.from_("complementarias-evidencias").get_public_url(factura_path)
         return res
     except Exception:
