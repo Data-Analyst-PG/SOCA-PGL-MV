@@ -25,7 +25,7 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
+from ui.components import section_header, alert, divider
 
 from ._helpers import (
     TIPOS_RUTA,
@@ -36,6 +36,7 @@ from ._helpers import (
     load_rutas_igloo,
     filtrar_rutas_igloo,
     label_ruta_igloo,
+    mostrar_resultados_igloo,
 )
 
 # ─────────────────────────────────────────────
@@ -398,12 +399,25 @@ def render():
     # ── Ajustes para simulación ───────────────────────────────────
     divider()
     section_header("⚙️", "Ajustes para Simulación")
-    costo_diesel_input = st.number_input(
+
+    tc_registrado = safe_number(ruta.get("Tipo de cambio", 0)) or safe_number(valores.get("Tipo de cambio USD", 19.5))
+
+    c1, c2 = st.columns(2)
+    costo_diesel_input = c1.number_input(
         "Costo del Diesel ($/L)",
         value=float(valores.get("Costo Diesel", 24.0)),
         key="igloo_cons_diesel",
     )
-    st.markdown(f"> Rendimiento Camión **registrado**: **{rend_reg:.2f} km/L** (solo referencia)")
+    tc_input = c2.number_input(
+        "Tipo de Cambio USD/MXP para Simulación",
+        value=float(tc_registrado),
+        step=0.01,
+        key="igloo_cons_tc_sim",
+    )
+    st.markdown(
+        f"> Rendimiento Camión **registrado**: **{rend_reg:.2f} km/L** (solo referencia) · "
+        f"Tipo de cambio **registrado**: **${tc_registrado:,.4f} MXP**"
+    )
     rendimiento_input = st.number_input(
         "Rendimiento Camión para Simulación (km/L)",
         value=float(rend_reg),
@@ -423,24 +437,52 @@ def render():
         costo_diesel_camion = (km / rendimiento_input) * costo_diesel_input if rendimiento_input else 0
         costo_diesel_termo  = horas_termo * rend_termo * costo_diesel_input
 
-        ingreso_total = safe_number(ruta.get("Ingreso Total", 0))
-        costo_total   = (
+        # Recalcular tramos que dependen del tipo de cambio simulado
+        moneda_flete_r = str(ruta.get("Moneda", "MXP")).strip().upper()
+        moneda_cruce_r = str(ruta.get("Moneda_Cruce", "MXP")).strip().upper()
+        moneda_cc_r    = str(ruta.get("Moneda Costo Cruce", "MXP")).strip().upper()
+
+        ingreso_flete_conv    = safe_number(ruta.get("Ingreso_Original", 0)) * (tc_input if moneda_flete_r == "USD" else 1)
+        ingreso_cruce_conv    = safe_number(ruta.get("Cruce_Original", 0))   * (tc_input if moneda_cruce_r == "USD" else 1)
+        costo_cruce_convertido = safe_number(ruta.get("Costo Cruce", 0))    * (tc_input if moneda_cc_r == "USD" else 1)
+
+        # Extras cobrados no dependen del TC — se conservan del valor guardado
+        ingreso_extras_cobrados = (
+            safe_number(ruta.get("Ingreso Total", 0))
+            - safe_number(ruta.get("Ingreso Flete", 0))
+            - safe_number(ruta.get("Ingreso Cruce", 0))
+        )
+        ingreso_total = ingreso_flete_conv + ingreso_cruce_conv + ingreso_extras_cobrados
+
+        # Costo total completo — incluye TODOS los conceptos de costos fijos
+        costo_total = (
             costo_diesel_camion + costo_diesel_termo
             + safe_number(ruta.get("Sueldo_Operador", 0))
             + safe_number(ruta.get("Bono", 0))
+            + safe_number(ruta.get("Lavado_Termo", 0))
+            + safe_number(ruta.get("Movimiento_Local", 0))
+            + safe_number(ruta.get("Puntualidad", 0))
+            + safe_number(ruta.get("Pension", 0))
+            + safe_number(ruta.get("Estancia", 0))
+            + safe_number(ruta.get("Fianza_Termo", 0))
+            + safe_number(ruta.get("Renta_Termo", 0))
             + safe_number(ruta.get("Casetas", 0))
-            + safe_number(ruta.get("Costo Cruce Convertido", 0))
+            + costo_cruce_convertido
             + safe_number(ruta.get("Costo_Extras", 0))
         )
 
-        alert("success", "🔧 Estás viendo una **simulación** con los valores de diesel/rendimiento ajustados.")
+        alert("success", "🔧 Estás viendo una **simulación** con diesel, rendimiento y/o tipo de cambio ajustados.")
 
         if st.button("🔄 Volver a valores reales", key="igloo_cons_back_real"):
             st.session_state["igloo_simular"] = False
             st.rerun()
     else:
-        ingreso_total = safe_number(ruta.get("Ingreso Total", 0))
-        costo_total   = safe_number(ruta.get("Costo_Total_Ruta", 0))
+        ingreso_total          = safe_number(ruta.get("Ingreso Total", 0))
+        costo_total            = safe_number(ruta.get("Costo_Total_Ruta", 0))
+        ingreso_flete_conv     = safe_number(ruta.get("Ingreso Flete", 0))
+        ingreso_cruce_conv     = safe_number(ruta.get("Ingreso Cruce", 0))
+        costo_cruce_convertido = safe_number(ruta.get("Costo Cruce Convertido", 0))
+        tc_input                = tc_registrado
 
     util              = calcular_utilidades(ingreso_total, costo_total, tipo_ruta)
     utilidad_bruta    = util["utilidad_bruta"]
@@ -449,12 +491,17 @@ def render():
     porcentaje_bruta  = util["porcentaje_bruta"]
     porcentaje_neta   = util["porcentaje_neta"]
 
-    tc_usd      = safe_number(ruta.get("Tipo de cambio", 0)) or safe_number(valores.get("Tipo de cambio USD", 19.5))
-    _umbral     = util["umbral_cd"]
-    _tarifa_sug = util["costo_directo"] / (_umbral / 100)
-    _tarifa_usd = (_tarifa_sug / tc_usd) if tc_usd > 0 else 0.0
-    banner_tarifa_sugerida(util["costo_directo"], ingreso_total, _umbral, "MXP", _tarifa_usd)
-    mostrar_resultados_ruta(util)
+    costo_mx_component = costo_total - costo_cruce_convertido
+
+    mostrar_resultados_igloo(
+        util,
+        tc_usd=tc_input,
+        ingreso_cruce=ingreso_cruce_conv,
+        costo_cruce=costo_cruce_convertido,
+        ingreso_mx=ingreso_flete_conv,
+        costo_mx=costo_mx_component,
+        es_simulacion=simulando,
+    )
 
     # ── Utilidad en USD (UI) ──────────────────────────────────────
     moneda_flete = str(ruta.get("Moneda", "MXP")).strip().upper()
