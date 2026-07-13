@@ -46,7 +46,7 @@ from reportlab.platypus import (
 
 from services.supabase_client import get_supabase_client
 from ui.components import (
-    section_header, alert, divider,
+    section_header, alert, divider, ruta_visual_nodos,
 )
 from ._helpers import (
     TABLE_RUTAS,
@@ -56,6 +56,7 @@ from ._helpers import (
     load_rutas_lincoln,
     label_ruta_lincoln,
     mostrar_resultados_lincoln,
+    calcular_vuelta_redonda_lincoln,
 )
 
 TIPOS_PRINCIPAL = {"NB", "SB", "D2DNB", "D2DSB"}
@@ -162,108 +163,42 @@ def _sugerir_candidatas(df: pd.DataFrame, ruta_p: pd.Series) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
-# RESUMEN VR
+# CONSTRUIR PASOS PARA ruta_visual_nodos()
+# Función auxiliar — solo usada en este módulo
 # ─────────────────────────────────────────────
-def _resumen_vr(rutas: list[pd.Series], valores: dict | None = None) -> dict:
-    from ._shared import UMBRAL_CD, UMBRAL_UB, UMBRAL_CI, UMBRAL_UN
-    valores = valores or {}
-    ing = sum(safe(r.get("Ingreso_Total",       0)) for r in rutas)
-    cd  = sum(safe(r.get("Costo_Directo_Total", 0)) for r in rutas)
-    ub  = sum(safe(r.get("Utilidad_Bruta",      0)) for r in rutas)
-    ci  = sum(safe(r.get("Costos_Indirectos",   0)) for r in rutas)
-    un  = sum(safe(r.get("Utilidad_Neta",       0)) for r in rutas)
-    mi  = sum(safe(r.get("Miles_Load",  0) or r.get("Millas_USA",    0)) for r in rutas)
-    mv  = sum(safe(r.get("Miles_Empty", 0) or r.get("Millas_Vacias", 0)) for r in rutas)
-
-    def _pct(n, d): return (n / d * 100) if d > 0 else 0.0
-    pct_cd = _pct(cd, ing)
-    pct_ci = _pct(ci, ing)
-    pct_ub = _pct(ub, ing)
-    pct_un = _pct(un, ing)
-
-    return {
-        # Alias canónicos — requeridos por mostrar_resultados_ruta()
-        "ingreso_total":       ing,
-        "costo_directo":       cd,
-        "utilidad_bruta":      ub,
-        "costos_indirectos":   ci,
-        "utilidad_neta":       un,
-        "moneda_display":      "USD",
-        # Porcentajes para sub-labels de las cards
-        "Pct_Costo_Directo":   pct_cd,
-        "Pct_Ut_Bruta":        pct_ub,
-        "Pct_Costo_Indirecto": pct_ci,
-        "Pct_Ut_Neta":         pct_un,
-        # Colores con umbrales Lincoln
-        "Color_Directo":   "#059669" if pct_cd <= 50.0 else "#DC2626",
-        "Color_Indirecto": "#059669" if pct_ci <= 35.0 else "#D97706",
-        "Color_Ut_Neta":   "#059669" if pct_un >= 15.0 else "#DC2626",
-        # Umbrales viajan en el dict
-        "umbral_cd": 50.0,
-        "umbral_ub": 50.0,
-        "umbral_ci": 35.0,
-        "umbral_un": 15.0,
-        # Campos extra para PDF
-        "ing": ing, "cd": cd, "ub": ub, "ci": ci, "un": un,
-        "mi": mi,   "mv": mv,
-        "pct_cd": pct_cd, "pct_ci": pct_ci,
-        "pct_ub": pct_ub, "pct_un": pct_un,
-        "ml_total": mi + mv,
-    }
-
-# ─────────────────────────────────────────────
-# VISUAL DE NODOS DE RUTA
-# ─────────────────────────────────────────────
-def _ruta_visual(ruta_p: pd.Series, ruta_e: pd.Series | None, ruta_r: pd.Series | None) -> None:
-    def nodo(icono: str, lugar: str, etiq: str) -> str:
-        lugar = lugar or "—"
-        return (
-            f'<div style="text-align:center;min-width:80px">'
-            f'<div style="font-size:1.4rem">{icono}</div>'
-            f'<div style="font-size:0.7rem;font-weight:700;color:#1B2266">{lugar}</div>'
-            f'<div style="font-size:0.6rem;color:#6c757d">{etiq}</div>'
-            f'</div>'
-        )
-    flecha = '<div style="font-size:1.2rem;color:#adb5bd;padding:0 4px">→</div>'
-
+def _construir_pasos(ruta_p: pd.Series, ruta_e: pd.Series | None, ruta_r: pd.Series | None) -> list:
     tipo_p = _get(ruta_p, "Tipo")
-    pasos  = []
+    pasos: list = []
 
     if tipo_p == "D2DNB":
-        pasos.append(nodo("🇲🇽", _get(ruta_p, "Origen_MX"), "Origen MX"))
-        pasos.append(flecha)
-    pasos.append(nodo("🚦", _get(ruta_p, "Origen"), "Inicio USA"))
-    pasos.append(flecha)
-    pasos.append(nodo("🚛", _get(ruta_p, "Destino"), f"Destino ({tipo_p})"))
+        pasos.append({"icono": "🇲🇽", "ciudad": _get(ruta_p, "Origen_MX") or "—", "etiqueta": "Origen MX"})
+        pasos.append("→")
+    pasos.append({"icono": "🚦", "ciudad": _get(ruta_p, "Origen") or "—", "etiqueta": "Inicio USA"})
+    pasos.append("→")
+    pasos.append({"icono": "🚛", "ciudad": _get(ruta_p, "Destino") or "—", "etiqueta": f"Destino ({tipo_p})"})
     if tipo_p == "D2DSB" and _get(ruta_p, "Destino_MX"):
-        pasos += [flecha, nodo("🇲🇽", _get(ruta_p, "Destino_MX"), "Destino MX")]
+        pasos += ["→", {"icono": "🇲🇽", "ciudad": _get(ruta_p, "Destino_MX"), "etiqueta": "Destino MX"}]
 
     if ruta_e is not None:
         pasos += [
-            flecha,
-            nodo("⬜", _get(ruta_e, "Origen"), "Vacío Origen"),
-            flecha,
-            nodo("⬜", _get(ruta_e, "Destino"), "Vacío Destino"),
+            "→",
+            {"icono": "⬜", "ciudad": _get(ruta_e, "Origen") or "—",  "etiqueta": "Vacío Origen"},
+            "→",
+            {"icono": "⬜", "ciudad": _get(ruta_e, "Destino") or "—", "etiqueta": "Vacío Destino"},
         ]
 
     if ruta_r is not None:
         tipo_r = _get(ruta_r, "Tipo")
         pasos += [
-            flecha,
-            nodo("🔁", _get(ruta_r, "Origen"), f"Regreso ({tipo_r})"),
-            flecha,
-            nodo("🏁", _get(ruta_r, "Destino"), "Destino Final"),
+            "→",
+            {"icono": "🔁", "ciudad": _get(ruta_r, "Origen") or "—",  "etiqueta": f"Regreso ({tipo_r})"},
+            "→",
+            {"icono": "🏁", "ciudad": _get(ruta_r, "Destino") or "—", "etiqueta": "Destino Final"},
         ]
         if tipo_r == "D2DSB" and _get(ruta_r, "Destino_MX"):
-            pasos += [flecha, nodo("🇲🇽", _get(ruta_r, "Destino_MX"), "Destino MX Reg.")]
+            pasos += ["→", {"icono": "🇲🇽", "ciudad": _get(ruta_r, "Destino_MX"), "etiqueta": "Destino MX Reg."}]
 
-    html = (
-        '<div style="display:flex;flex-wrap:wrap;align-items:center;'
-        'gap:4px;padding:12px;background:#f8f9fa;border-radius:8px;'
-        'border:1px solid #dee2e6">' + "".join(pasos) + "</div>"
-    )
-    st.markdown(html, unsafe_allow_html=True)
-
+    return pasos
 
 # ─────────────────────────────────────────────
 # DETALLE DE TRAMOS
@@ -598,14 +533,14 @@ def render() -> None:
 
         divider()
         section_header("📊", "Resumen de Vuelta Redonda")
-        res = _resumen_vr(rutas_series, valores)
+        res = calcular_vuelta_redonda_lincoln(rutas_series, valores)
 
         # Simulador VR — sin $/mi (modalidad=""), sin desglose de tramo
         mostrar_resultados_lincoln(res, modalidad="", miles_load=0.0)
 
         divider()
         section_header("🗺️", "Secuencia del Road Trip")
-        _ruta_visual(ruta_p_s, ruta_e_s, ruta_r_s)
+        ruta_visual_nodos(_construir_pasos(ruta_p_s, ruta_e_s, ruta_r_s))
 
         _detalle_tramos(rutas_series, etiquetas)
 
