@@ -690,3 +690,52 @@ def calcular_ruta_lincoln(
         "umbral_ci": safe(valores.get("umbral_ci", UMBRAL_CI)),
         "umbral_un": safe(valores.get("umbral_un", UMBRAL_UN)),
     }
+
+# ─────────────────────────────────────────────
+# RESUMEN VUELTA REDONDA — combinación de 2-3 rutas guardadas
+# ─────────────────────────────────────────────
+def calcular_vuelta_redonda_lincoln(rutas: list[pd.Series], valores: dict | None = None) -> dict:
+    valores = valores or {}
+    ing = sum(safe(r.get("Ingreso_Total",       0)) for r in rutas)
+    cd  = sum(safe(r.get("Costo_Directo_Total", 0)) for r in rutas)
+    ub  = sum(safe(r.get("Utilidad_Bruta",      0)) for r in rutas)
+    ci  = sum(safe(r.get("Costos_Indirectos",   0)) for r in rutas)
+    un  = sum(safe(r.get("Utilidad_Neta",       0)) for r in rutas)
+    mi  = sum(safe(r.get("Miles_Load",  0) or r.get("Millas_USA",    0)) for r in rutas)
+    mv  = sum(safe(r.get("Miles_Empty", 0) or r.get("Millas_Vacias", 0)) for r in rutas)
+
+    def _pct(n, d): return (n / d * 100) if d > 0 else 0.0
+    pct_cd = _pct(cd, ing)
+    pct_ci = _pct(ci, ing)
+    pct_ub = _pct(ub, ing)
+    pct_un = _pct(un, ing)
+
+    umbral_cd = safe(valores.get("umbral_cd", UMBRAL_CD))
+    umbral_ub = safe(valores.get("umbral_ub", UMBRAL_UB))
+    umbral_ci = safe(valores.get("umbral_ci", UMBRAL_CI))
+    umbral_un = safe(valores.get("umbral_un", UMBRAL_UN))
+
+    return {
+        "ingreso_total":       ing,
+        "costo_directo":       cd,
+        "utilidad_bruta":      ub,
+        "costos_indirectos":   ci,
+        "utilidad_neta":       un,
+        "moneda_display":      "USD",
+        "Pct_Costo_Directo":   pct_cd,
+        "Pct_Ut_Bruta":        pct_ub,
+        "Pct_Costo_Indirecto": pct_ci,
+        "Pct_Ut_Neta":         pct_un,
+        "Color_Directo":   "#059669" if pct_cd <= umbral_cd else "#DC2626",
+        "Color_Indirecto": "#059669" if pct_ci <= umbral_ci else "#D97706",
+        "Color_Ut_Neta":   "#059669" if pct_un >= umbral_un else "#DC2626",
+        "umbral_cd": umbral_cd,
+        "umbral_ub": umbral_ub,
+        "umbral_ci": umbral_ci,
+        "umbral_un": umbral_un,
+        "ing": ing, "cd": cd, "ub": ub, "ci": ci, "un": un,
+        "mi": mi,   "mv": mv,
+        "pct_cd": pct_cd, "pct_ci": pct_ci,
+        "pct_ub": pct_ub, "pct_un": pct_un,
+        "ml_total": mi + mv,
+    }
