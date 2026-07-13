@@ -75,6 +75,33 @@ UMBRAL_UB = 15.0   # % mínimo de utilidad bruta aceptable
 UMBRAL_CI =  9.0   # % máximo de costo indirecto aceptable
 UMBRAL_UN =  6.0   # % mínimo de utilidad neta aceptable
 
+
+# ─────────────────────────────────────────────
+# CONFIG POR TIPO DE RUTA
+# Orden visual de secciones en el formulario:
+#   NB    → cruce, americana          (cruce primero — igual que Lincoln)
+#   SB    → americana, cruce
+#   D2DNB → mx, cruce, americana
+#   D2DSB → americana, cruce, mx
+#   Empty → americana (sin cruce ni mx)
+# ─────────────────────────────────────────────
+def obtener_config_tipo_ruta(tipo_ruta: str) -> dict:
+    configs = {
+        "NB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
+                  "orden": ["cruce", "americana"]},
+        "SB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
+                  "orden": ["americana", "cruce"]},
+        "D2DNB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
+                  "orden": ["mx", "cruce", "americana"]},
+        "D2DSB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
+                  "orden": ["americana", "cruce", "mx"]},
+        "Empty": {"parte_usa": True,  "cruce": False,      "parte_mx": False,
+                  "orden": ["americana"]},
+    }
+    return configs.get(tipo_ruta, {"parte_usa": True, "cruce": "opcional",
+                                    "parte_mx": False, "orden": ["americana"]})
+
+
 # ─────────────────────────────────────────────
 # DEFAULTS
 # ─────────────────────────────────────────────
@@ -429,6 +456,94 @@ def calcular_ruta_setlogis(
 
 
 # ─────────────────────────────────────────────
+# MOSTRAR RESULTADOS — centraliza banner + KPIs + desglose
+# Todos los módulos llaman esta función en lugar de construir el bloque manualmente
+# ─────────────────────────────────────────────
+def mostrar_resultados_setlogis(
+    r:               dict,
+    modalidad:       str   = "Flat",
+    miles_load:      float = 0.0,
+    cxm_flete:       float = 0.0,
+    cxm_fuel:        float = 0.0,
+    es_simulacion:   bool  = False,
+    mostrar_desglose: bool = True,
+) -> None:
+    """
+    Muestra banner tarifa sugerida + 5 cards KPI + desglose por tramo.
+    Centraliza lo que antes se repetía en captura, consulta, gestión y simulador.
+
+    Parámetros:
+        r             : dict resultado de calcular_ruta_setlogis()
+        modalidad     : "Flat" | "Desglosada" — afecta banner y desglose
+        miles_load    : millas de carga para calcular $/mi en banner Desglosada
+        cxm_flete     : CXM flete capturado — para desglose ingreso americano
+        cxm_fuel      : CXM fuel capturado  — para desglose ingreso americano
+        es_simulacion : True → muestra aviso de simulación
+    """
+    from ui.components import (
+        banner_tarifa_sugerida, mostrar_resultados_ruta,
+        desglose_ruta, divider, alert,
+    )
+
+    if es_simulacion:
+        alert("info", "🔧 Estás viendo una simulación con parámetros ajustados.")
+
+    # ── Fuel Owner — aviso visual ─────────────────────────────────────────────
+    if r.get("Fuel_Owner"):
+        st.info(f"⛽ **Fuel pagado al Owner:** ${r.get('Pago_Fuel_Owner', 0):,.2f} USD — incluido en Costo Directo")
+
+    # ── Banner tarifa sugerida ────────────────────────────────────────────────
+    tc_usd      = r.get("TC", safe(DEFAULTS.get("Tipo de Cambio USD/MXP", 18.50)))
+    _umbral     = r["umbral_cd"]
+    _tarifa_sug = r["costo_directo"] / (_umbral / 100)
+    _tarifa_mxp = _tarifa_sug * tc_usd
+
+    divider()
+    banner_tarifa_sugerida(
+        r["costo_directo"], r["ingreso_total"],
+        _umbral, "USD", _tarifa_mxp,
+        modalidad=modalidad,
+        miles_load=miles_load,
+        fuel_capturado=r.get("Fuel", 0.0),
+    )
+
+    # ── 5 cards KPI canónicas ─────────────────────────────────────────────────
+    mostrar_resultados_ruta(r)
+
+    # ── Desglose por tramo ────────────────────────────────────────────────────
+    if mostrar_desglose:
+        tipo_ruta   = str(r.get("Tipo_Viaje", "NB"))
+        es_empty    = (tipo_ruta == "Empty")
+        short_m     = safe(r.get("Short_Miles", 0.0))
+        miles_emp   = safe(r.get("Miles_Empty", 0.0))
+        pxm_c       = safe(r.get("PxM_Cargado", 0.0))
+        pxm_v       = safe(r.get("PxM_Vacio",   0.0))
+
+        if es_empty:
+            filas_costo = [
+                (f"Owner Vacío ({miles_emp:.0f} mi × ${pxm_v:.4f})", r.get("Pago_Owner_Vacio", 0.0)),
+            ]
+        else:
+            filas_costo = [
+                (f"Owner Cargado ({short_m:.0f} Short Mi × ${pxm_c:.4f})", r.get("Pago_Owner_Cargado", 0.0)),
+                (f"Owner Vacío ({miles_emp:.0f} Mi Vacías × ${pxm_v:.4f})",  r.get("Pago_Owner_Vacio", 0.0)),
+            ]
+            if r.get("Fuel_Owner"):
+                filas_costo.append(("Fuel pagado al Owner", r.get("Pago_Fuel_Owner", 0.0)))
+            if safe(r.get("Extras_Costo_Total", 0)) > 0:
+                filas_costo.append(("Extras (Set Logis pagó)", r.get("Extras_Costo_Total", 0.0)))
+
+        desglose_ruta(
+            r,
+            filas_costo_americana=filas_costo,
+            modalidad=modalidad,
+            cxm_flete=cxm_flete,
+            cxm_fuel=cxm_fuel,
+            umbral_cd=_umbral,
+        )
+
+
+# ─────────────────────────────────────────────
 # CARGA DE RUTAS — compartida por consulta, gestión y simulador
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=120)
@@ -547,116 +662,3 @@ def filtrar_rutas_setlogis(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
         resultado = resultado[mask]
 
     return resultado
-
-
-# ─────────────────────────────────────────────
-# MOSTRAR RESULTADOS — centraliza banner + KPIs + desglose
-# Todos los módulos llaman esta función en lugar de construir el bloque manualmente
-# ─────────────────────────────────────────────
-def mostrar_resultados_setlogis(
-    r:               dict,
-    modalidad:       str   = "Flat",
-    miles_load:      float = 0.0,
-    cxm_flete:       float = 0.0,
-    cxm_fuel:        float = 0.0,
-    es_simulacion:   bool  = False,
-    mostrar_desglose: bool = True,
-) -> None:
-    """
-    Muestra banner tarifa sugerida + 5 cards KPI + desglose por tramo.
-    Centraliza lo que antes se repetía en captura, consulta, gestión y simulador.
-
-    Parámetros:
-        r             : dict resultado de calcular_ruta_setlogis()
-        modalidad     : "Flat" | "Desglosada" — afecta banner y desglose
-        miles_load    : millas de carga para calcular $/mi en banner Desglosada
-        cxm_flete     : CXM flete capturado — para desglose ingreso americano
-        cxm_fuel      : CXM fuel capturado  — para desglose ingreso americano
-        es_simulacion : True → muestra aviso de simulación
-    """
-    from ui.components import (
-        banner_tarifa_sugerida, mostrar_resultados_ruta,
-        desglose_ruta, divider, alert,
-    )
-
-    if es_simulacion:
-        alert("info", "🔧 Estás viendo una simulación con parámetros ajustados.")
-
-    # ── Fuel Owner — aviso visual ─────────────────────────────────────────────
-    if r.get("Fuel_Owner"):
-        st.info(f"⛽ **Fuel pagado al Owner:** ${r.get('Pago_Fuel_Owner', 0):,.2f} USD — incluido en Costo Directo")
-
-    # ── Banner tarifa sugerida ────────────────────────────────────────────────
-    tc_usd      = r.get("TC", safe(DEFAULTS.get("Tipo de Cambio USD/MXP", 18.50)))
-    _umbral     = r["umbral_cd"]
-    _tarifa_sug = r["costo_directo"] / (_umbral / 100)
-    _tarifa_mxp = _tarifa_sug * tc_usd
-
-    divider()
-    banner_tarifa_sugerida(
-        r["costo_directo"], r["ingreso_total"],
-        _umbral, "USD", _tarifa_mxp,
-        modalidad=modalidad,
-        miles_load=miles_load,
-        fuel_capturado=r.get("Fuel", 0.0),
-    )
-
-    # ── 5 cards KPI canónicas ─────────────────────────────────────────────────
-    mostrar_resultados_ruta(r)
-
-    # ── Desglose por tramo ────────────────────────────────────────────────────
-    if mostrar_desglose:
-        tipo_ruta   = str(r.get("Tipo_Viaje", "NB"))
-        es_empty    = (tipo_ruta == "Empty")
-        short_m     = safe(r.get("Short_Miles", 0.0))
-        miles_emp   = safe(r.get("Miles_Empty", 0.0))
-        pxm_c       = safe(r.get("PxM_Cargado", 0.0))
-        pxm_v       = safe(r.get("PxM_Vacio",   0.0))
-
-        if es_empty:
-            filas_costo = [
-                (f"Owner Vacío ({miles_emp:.0f} mi × ${pxm_v:.4f})", r.get("Pago_Owner_Vacio", 0.0)),
-            ]
-        else:
-            filas_costo = [
-                (f"Owner Cargado ({short_m:.0f} Short Mi × ${pxm_c:.4f})", r.get("Pago_Owner_Cargado", 0.0)),
-                (f"Owner Vacío ({miles_emp:.0f} Mi Vacías × ${pxm_v:.4f})",  r.get("Pago_Owner_Vacio", 0.0)),
-            ]
-            if r.get("Fuel_Owner"):
-                filas_costo.append(("Fuel pagado al Owner", r.get("Pago_Fuel_Owner", 0.0)))
-            if safe(r.get("Extras_Costo_Total", 0)) > 0:
-                filas_costo.append(("Extras (Set Logis pagó)", r.get("Extras_Costo_Total", 0.0)))
-
-        desglose_ruta(
-            r,
-            filas_costo_americana=filas_costo,
-            modalidad=modalidad,
-            cxm_flete=cxm_flete,
-            cxm_fuel=cxm_fuel,
-            umbral_cd=_umbral,
-        )
-
-# ─────────────────────────────────────────────
-# CONFIG POR TIPO DE RUTA
-# Orden visual de secciones en el formulario:
-#   NB    → cruce, americana          (cruce primero — igual que Lincoln)
-#   SB    → americana, cruce
-#   D2DNB → mx, cruce, americana
-#   D2DSB → americana, cruce, mx
-#   Empty → americana (sin cruce ni mx)
-# ─────────────────────────────────────────────
-def obtener_config_tipo_ruta(tipo_ruta: str) -> dict:
-    configs = {
-        "NB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
-                  "orden": ["cruce", "americana"]},
-        "SB":    {"parte_usa": True,  "cruce": "opcional", "parte_mx": False,
-                  "orden": ["americana", "cruce"]},
-        "D2DNB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
-                  "orden": ["mx", "cruce", "americana"]},
-        "D2DSB": {"parte_usa": True,  "cruce": True,       "parte_mx": True,
-                  "orden": ["americana", "cruce", "mx"]},
-        "Empty": {"parte_usa": True,  "cruce": False,      "parte_mx": False,
-                  "orden": ["americana"]},
-    }
-    return configs.get(tipo_ruta, {"parte_usa": True, "cruce": "opcional",
-                                    "parte_mx": False, "orden": ["americana"]})
