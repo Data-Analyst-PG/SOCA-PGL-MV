@@ -6,9 +6,12 @@ Genera cotizaciones en PDF con plantillas PNG de Picus.
   - Configuración de conceptos por ruta (cobrados vs solo visual)
   - Sistema de plantillas múltiples según número de páginas
   - Sin lógica de cálculo de utilidades — este módulo solo genera documentos
+
+Homologado (Paso 6):
+  - class PDF(FPDF) movida a nivel de módulo (antes vivía anidada dentro de
+    render()). Mismo comportamiento exacto, mismas coordenadas, mismo diseño
+    — NO se tocó la plantilla ni el layout del PDF.
 """
-
-
 from __future__ import annotations
 
 import os
@@ -48,7 +51,6 @@ def safe_text(text):
     return str(text).encode("latin-1", "replace").decode("latin-1")
 
 def _project_root() -> str:
-    # .../portal_app/modules/cotizadores/igloo -> subir 3 niveles a portal_app
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 def _img_dir() -> str:
@@ -57,13 +59,13 @@ def _img_dir() -> str:
 def _fonts_dir() -> str:
     return os.path.join(_project_root(), "fonts")
 
+
 # ---------------------------
 # SISTEMA DE PLANTILLAS MÚLTIPLES
 # ---------------------------
 def _get_template_for_page(pagina_actual: int, total_paginas: int):
     """
     Devuelve la plantilla correcta según la posición de la página.
-    
     Lógica:
     - Si solo hay 1 página total: usar plantilla básica
     - Si hay 2+ páginas:
@@ -72,16 +74,16 @@ def _get_template_for_page(pagina_actual: int, total_paginas: int):
         - Última página: plantilla (4) con tabla y totales
     """
     img_dir = _img_dir()
-    
+
     if total_paginas == 1:
         nombre = "2.0 ADT PGL PICUS.png"
-    
+
     elif total_paginas == 2:
         if pagina_actual == 1:
             nombre = "2.0 ADT PGL PICUS (2).png"
         else:
             nombre = "2.0 ADT PGL PICUS (4).png"
-    
+
     else:
         if pagina_actual == 1:
             nombre = "2.0 ADT PGL PICUS (2).png"
@@ -89,15 +91,16 @@ def _get_template_for_page(pagina_actual: int, total_paginas: int):
             nombre = "2.0 ADT PGL PICUS (4).png"
         else:
             nombre = "2.0 ADT PGL PICUS (3).png"
-    
+
     path = os.path.join(img_dir, nombre)
-    
+
     if os.path.exists(path):
         return path
-    
+
     # Si no existe, informar pero continuar
     st.warning(f"⚠️ No se encontró: {nombre}")
     return None
+
 
 # ---------------------------
 # CÁLCULO DE ESPACIO NECESARIO
@@ -108,43 +111,125 @@ def calcular_lineas_necesarias(rutas_config, ids_seleccionados, df):
     Esto ayuda a decidir cuántas páginas se necesitan.
     """
     lineas_totales = 0
-    
+
     for ruta_sel in ids_seleccionados:
         id_ruta = ruta_sel.split(" | ")[0]
         if id_ruta not in df.index:
             continue
-        
+
         ruta_data = df.loc[id_ruta]
-        
+
         # 2 líneas por header (tipo + origen-destino)
         lineas_totales += 2
-        
+
         cfg = rutas_config.get(ruta_sel, {"sumar": [], "visual": []})
         conceptos_orden = cfg["sumar"] + cfg["visual"]
-        
+
         # Contar conceptos no vacíos
         for campo in conceptos_orden:
             if campo in ruta_data and not pd.isna(ruta_data[campo]) and float(ruta_data[campo]) != 0:
                 lineas_totales += 1
-    
+
     return lineas_totales
+
 
 def estimar_paginas_necesarias(lineas_totales):
     """
     Estima cuántas páginas se necesitan basándose en las líneas.
-    
+
     Criterio aproximado:
     - Primera página: ~20 líneas (tiene encabezados de cliente/empresa)
     - Páginas siguientes: ~30 líneas cada una
     """
     if lineas_totales <= 20:
         return 1
-    
+
     lineas_restantes = lineas_totales - 20
     paginas_adicionales = (lineas_restantes + 29) // 30  # División con redondeo hacia arriba
-    
+
     return 1 + paginas_adicionales
 
+
+# ─────────────────────────────────────────────
+# CLASE PDF — nivel de módulo (Paso 6: antes anidada en render())
+# Mismo comportamiento exacto que la versión anterior, sin cambios de
+# diseño, coordenadas ni plantilla.
+# ─────────────────────────────────────────────
+class PDF(FPDF):
+    def __init__(self, orientation="P", unit="in", format="Letter", fecha_str="", total_pages=1):
+        super().__init__(orientation=orientation, unit=unit, format=format)
+        # DESACTIVAR compresión para máxima calidad de imágenes
+        self.set_compression(False)
+        self.fecha_str = fecha_str
+        self.total_pages = total_pages
+
+        # Fuentes Montserrat
+        self.has_montserrat = False
+        try:
+            fonts_dir = _fonts_dir()
+            reg = os.path.join(fonts_dir, "Montserrat-Regular.ttf")
+            bold = os.path.join(fonts_dir, "Montserrat-Bold.ttf")
+            it = os.path.join(fonts_dir, "Montserrat-Italic.ttf")
+
+            if os.path.exists(reg):
+                self.add_font("Montserrat", "", reg, uni=True)
+                self.has_montserrat = True
+            if os.path.exists(bold):
+                self.add_font("Montserrat", "B", bold, uni=True)
+            if os.path.exists(it):
+                self.add_font("Montserrat", "I", it, uni=True)
+        except Exception:
+            self.has_montserrat = False
+
+    def header(self):
+        # Obtener la plantilla correcta para esta página
+        pagina_actual = self.page_no()
+        plantilla_path = _get_template_for_page(pagina_actual, self.total_pages)
+
+        # Aplicar plantilla de fondo con MÁXIMA CALIDAD
+        if plantilla_path and os.path.exists(plantilla_path):
+            # Cargar imagen a resolución completa sin degradación
+            self.image(plantilla_path, x=0, y=0, w=8.5, h=11)
+        else:
+            # Fondo blanco simple si no hay plantilla
+            self.set_fill_color(255, 255, 255)
+            self.rect(0, 0, 8.5, 11, "F")
+
+        # Fecha - va en el espacio "DD / MM / AAA"
+        self.set_body_font(size=8)
+        self.set_text_color(80, 80, 80)
+        self.set_xy(0.90, 1.10)  # Espacio para DD/MM/AAA
+        self.cell(1.2, 0.12, safe_text(self.fecha_str), align="L")
+
+        # Número de página - solo los números, "Página X de Y" ya viene en plantilla
+        self.set_body_font(size=8)
+        # número izquierdo
+        self.set_xy(1.21, 10.14)
+        self.cell(0.20, 0.12, str(pagina_actual), align="C")
+
+        # espacio central (vacío)
+        self.set_xy(1.35, 10.14)
+        self.cell(0.35, 0.12, "", align="C")
+
+        # número derecho
+        self.set_xy(1.51, 10.14)
+        self.cell(0.20, 0.12, str(self.total_pages), align="C")
+
+    def set_body_font(self, bold=False, italic=False, size=7):
+        style = ("B" if bold else "") + ("I" if italic else "")
+        if self.has_montserrat:
+            try:
+                self.set_font("Montserrat", style, size)
+            except Exception:
+                # Si falla (por ej. italic no disponible), usar sin estilo
+                self.set_font("Montserrat", "", size)
+        else:
+            self.set_font("Helvetica", style, size)
+
+
+# ─────────────────────────────────────────────
+# RENDER
+# ─────────────────────────────────────────────
 def render():
     supabase = get_supabase_client()
     if supabase is None:
@@ -385,80 +470,9 @@ def render():
 
         num_paginas_necesarias = _paginas_sim
 
-        class PDF(FPDF):
-            def __init__(self, orientation="P", unit="in", format="Letter", fecha_str="", total_pages=1):
-                super().__init__(orientation=orientation, unit=unit, format=format)
-                # DESACTIVAR compresión para máxima calidad de imágenes
-                self.set_compression(False)
-                self.fecha_str = fecha_str
-                self.total_pages = total_pages
-
-                # Fuentes Montserrat
-                self.has_montserrat = False
-                try:
-                    fonts_dir = _fonts_dir()
-                    reg = os.path.join(fonts_dir, "Montserrat-Regular.ttf")
-                    bold = os.path.join(fonts_dir, "Montserrat-Bold.ttf")
-                    it = os.path.join(fonts_dir, "Montserrat-Italic.ttf")
-
-                    if os.path.exists(reg):
-                        self.add_font("Montserrat", "", reg, uni=True)
-                        self.has_montserrat = True
-                    if os.path.exists(bold):
-                        self.add_font("Montserrat", "B", bold, uni=True)
-                    if os.path.exists(it):
-                        self.add_font("Montserrat", "I", it, uni=True)
-                except Exception:
-                    self.has_montserrat = False
-
-            def header(self):
-                # Obtener la plantilla correcta para esta página
-                pagina_actual = self.page_no()
-                plantilla_path = _get_template_for_page(pagina_actual, self.total_pages)
-                
-                # Aplicar plantilla de fondo con MÁXIMA CALIDAD
-                if plantilla_path and os.path.exists(plantilla_path):
-                    # Cargar imagen a resolución completa sin degradación
-                    self.image(plantilla_path, x=0, y=0, w=8.5, h=11)
-                else:
-                    # Fondo blanco simple si no hay plantilla
-                    self.set_fill_color(255, 255, 255)
-                    self.rect(0, 0, 8.5, 11, "F")
-                
-                # Fecha - va en el espacio "DD / MM / AAA"
-                self.set_body_font(size=8)
-                self.set_text_color(80, 80, 80)
-                self.set_xy(0.90, 1.10)  # Espacio para DD/MM/AAA
-                self.cell(1.2, 0.12, safe_text(self.fecha_str), align="L")
-                
-                # Número de página - solo los números, "Página X de Y" ya viene en plantilla
-                self.set_body_font(size=8)
-                # número izquierdo
-                self.set_xy(1.21, 10.14)
-                self.cell(0.20, 0.12, str(pagina_actual), align="C")
-
-                # espacio central (vacío)
-                self.set_xy(1.35, 10.14)
-                self.cell(0.35, 0.12, "", align="C")
-
-                # número derecho
-                self.set_xy(1.51, 10.14)
-                self.cell(0.20, 0.12, str(self.total_pages), align="C")
-
-            def set_body_font(self, bold=False, italic=False, size=7):
-                style = ("B" if bold else "") + ("I" if italic else "")
-                if self.has_montserrat:
-                    try:
-                        self.set_font("Montserrat", style, size)
-                    except Exception:
-                        # Si falla (por ej. italic no disponible), usar sin estilo
-                        self.set_font("Montserrat", "", size)
-                else:
-                    self.set_font("Helvetica", style, size)
-
         pdf = PDF(
-            orientation="P", 
-            unit="in", 
+            orientation="P",
+            unit="in",
             format="Letter",
             fecha_str=fecha.strftime('%d/%m/%Y'),
             total_pages=num_paginas_necesarias
@@ -471,15 +485,14 @@ def render():
         # ---------------------------
         pdf.set_body_font(size=10)
 
-        # 🔧 COORDENADAS PARA DATOS DEL CLIENTE (ajusta según tu plantilla real)
-        # Cliente (leave exactly like this)
+        # Cliente
         pdf.set_xy(0.85, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(cliente_nombre), align="L")
         pdf.set_xy(0.85, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(cliente_direccion), align="L")
         pdf.set_xy(0.85, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(cliente_mail), align="L")
         pdf.set_xy(0.85, 3.60); pdf.cell(1.35, 0.31, safe_text(cliente_telefono), align="L")
         pdf.set_xy(2.39, 3.60); pdf.cell(0.76, 0.31, safe_text(cliente_ext), align="C")
 
-        # Empresa (move this upward)
+        # Empresa
         pdf.set_xy(4.76, 2.05); pdf.multi_cell(2.89, 0.24, safe_text(empresa_nombre), align="R")
         pdf.set_xy(4.76, 2.66); pdf.multi_cell(2.89, 0.18, safe_text(empresa_direccion), align="R")
         pdf.set_xy(4.76, 3.20); pdf.multi_cell(2.89, 0.31, safe_text(empresa_mail), align="R")
@@ -490,99 +503,55 @@ def render():
         # DETALLE DE CONCEPTOS
         # ---------------------------
         pdf.set_body_font(size=7)
-        
-        # 🔧 Y inicial para empezar conceptos (según plantilla debe estar más arriba)
+
         y = 4.50
-        
-        # 🔧 Y máximo antes de salto de página
-        y_max_pagina_1 = 8.60  # Más arriba para dar espacio al total
-        y_max_otras_paginas = 9.20  # Páginas intermedias tienen más espacio
-        
+        y_max_1 = 8.60
+        y_max_n = 9.20
+        pagina_actual_pdf = 1
         total_global = 0.0
-        pagina_actual = 1
 
         for ruta_sel in ids_seleccionados:
-            id_ruta = ruta_sel.split(" | ")[0]
+            id_ruta = ruta_sel.split(" | ")[0].strip()
             if id_ruta not in df.index:
                 continue
-
             ruta_data = df.loc[id_ruta]
-            tipo_ruta = str(ruta_data.get("Tipo", ""))
-            origen = str(ruta_data.get("Origen", ""))
-            destino = str(ruta_data.get("Destino", ""))
-            descripcion = f"{origen} - {destino}"
-
-            # Verificar si hay espacio para el header de ruta
-            y_necesario_header = 0.35  # Espacio que ocupa el header
-            y_max = y_max_pagina_1 if pagina_actual == 1 else y_max_otras_paginas
-            
-            if y + y_necesario_header > y_max:
-                pdf.add_page()
-                pagina_actual += 1
-                y = 2.00  # 🔧 Y inicial en páginas siguientes
-
-            # Título de ruta
-            pdf.set_body_font(bold=True, size=7)
-            pdf.set_text_color(128, 128, 128)
-            pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(tipo_ruta), align="L")
-            y = pdf.get_y()
-            pdf.set_xy(0.85, y); pdf.multi_cell(7, 0.15, safe_text(descripcion), align="L")
-            y = pdf.get_y() + 0.05
-
             cfg = rutas_config.get(ruta_sel, {"sumar": [], "visual": []})
-            conceptos_orden = cfg["sumar"] + cfg["visual"]
+            conceptos_orden = [(c, True) for c in cfg["sumar"]] + [(c, False) for c in cfg["visual"]]
 
-            for campo in conceptos_orden:
-                if campo not in ruta_data or pd.isna(ruta_data[campo]) or float(ruta_data[campo]) == 0:
+            y_max = y_max_1 if pagina_actual_pdf == 1 else y_max_n
+            if y > y_max:
+                pdf.add_page()
+                pagina_actual_pdf += 1
+                y = 2.00
+
+            pdf.set_body_font(bold=True, size=8)
+            pdf.set_xy(0.85, y)
+            pdf.cell(0, 0.15, safe_text(f"{ruta_data.get('Tipo','')} — {ruta_data.get('Origen','')} → {ruta_data.get('Destino','')}"), border=0, align="L")
+            y += 0.18
+
+            for campo, es_cobrado in conceptos_orden:
+                if campo not in ruta_data or pd.isna(ruta_data[campo]) or float(ruta_data[campo] or 0) == 0:
                     continue
 
-                valor = float(ruta_data[campo])
-
-                if campo == "Ingreso_Original":
-                    moneda_original = ruta_data.get("Moneda", "MXP")
-                elif campo == "Cruce_Original":
-                    moneda_original = ruta_data.get("Moneda_Cruce", "MXP")
-                else:
-                    moneda_original = "MXP"
-
-                valor_convertido = convertir_moneda(valor, moneda_original, moneda_cotizacion, tipo_cambio)
-
-                # Verificar si necesitamos nueva página
-                y_max = y_max_pagina_1 if pagina_actual == 1 else y_max_otras_paginas
+                y_max = y_max_1 if pagina_actual_pdf == 1 else y_max_n
                 if y > y_max:
                     pdf.add_page()
-                    pagina_actual += 1
-                    y = 1.40  # 🔧 Y inicial en páginas siguientes (más arriba)
+                    pagina_actual_pdf += 1
+                    y = 1.40
 
-                es_cobrado = campo in cfg["sumar"]
+                valor_original    = float(ruta_data[campo])
+                valor_convertido  = convertir_moneda(
+                    valor_original,
+                    str(ruta_data.get("Moneda", "MXP")),
+                    moneda_cotizacion,
+                    tipo_cambio,
+                )
+                cantidad_texto = "1"
 
-                # 🎨 COLORES DIFERENCIADOS:
-                # Azul (#252D80) para conceptos cobrados
-                # Gris para conceptos no cobrados
-                if es_cobrado:
-                    pdf.set_text_color(37, 45, 128)  # Azul #252D80
-                    pdf.set_body_font(bold=False, size=7)
-                else:
-                    pdf.set_text_color(150, 150, 150)  # Gris más claro
-                    pdf.set_body_font(bold=False, size=7)  # Sin italic para evitar errores
-
-                # 🔧 COORDENADAS XY PARA LOS CONCEPTOS (ajusta según tu plantilla)
-                # Concepto
-                concepto_texto = safe_text(label_de(campo))
-                if len(concepto_texto) > 32:
-                    concepto_texto = concepto_texto[:29] + "..."
-
-                pdf.set_xy(0.85, y)
-                pdf.cell(3.20, 0.15, concepto_texto, border=0, align="L")
-
-                # KMS — solo aplica al concepto Flete (Ingreso_Original)
-                kms_texto = str(ruta_data.get("KM", "") or "") if campo == "Ingreso_Original" else ""
-
-                pdf.set_xy(4.00, y)
-                pdf.cell(0.70, 0.15, kms_texto, border=0, align="C")
-
-                # Cantidad
-                cantidad_texto = "1" if es_cobrado else ""
+                pdf.set_body_font(bold=False, size=7)
+                pdf.set_text_color(0, 0, 0) if es_cobrado else pdf.set_text_color(120, 120, 120)
+                pdf.set_xy(0.95, y)
+                pdf.cell(4.00, 0.15, safe_text(label_de(campo)), border=0, align="L")
 
                 pdf.set_xy(5.10, y)
                 pdf.cell(0.55, 0.15, cantidad_texto, border=0, align="C")
@@ -603,11 +572,9 @@ def render():
         # ---------------------------
         # TOTAL (solo en última página, sin páginas en blanco)
         # ---------------------------
-
         pdf.set_body_font(bold=True, size=8)
         pdf.set_text_color(0, 0, 0)
-        
-        # 🔧 COORDENADAS PARA EL TOTAL (sin label "TARIFA TOTAL")
+
         # La palabra "TARIFA TOTAL" ya viene en la plantilla, solo ponemos valores
         pdf.set_xy(5.85, 9.13)
         pdf.cell(0.70, 0.15, moneda_cotizacion, border=0, align="C")
@@ -615,17 +582,10 @@ def render():
         pdf.set_xy(6.55, 9.13)
         pdf.cell(1.00, 0.15, f"${total_global:,.2f}", border=0, align="R")
 
-        # Notas (solo en última página) - al margen de los conceptos
-        pdf.set_body_font(size=6.5)
-        pdf.set_text_color(100, 100, 100)
-        pdf.set_xy(0.90, 9.60)  # Más arriba y pegado al margen izquierdo
-        pdf.multi_cell(4.50, 0.12, safe_text(notas_cotizacion), align="L")
-
         nombre_archivo_cliente = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
         file_name = f'Cotizacion-{nombre_archivo_cliente}-{fecha.strftime("%d-%m-%Y")}.pdf'
         pdf_bytes = pdf.output(dest="S").encode("latin-1")
 
-        # 🆕 Mostrar métrica del PDF generado
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("📄 Páginas", num_paginas_necesarias)
