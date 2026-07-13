@@ -1,17 +1,14 @@
 """
 simulador.py — Cotizador Picus
 Simulador de Vuelta Redonda.
-Diseño homologado con plataforma anterior de Igloo (referencia gerencial):
-  - Sin st.title()
-  - Recargar en col [1,4]
-  - Filtros en expander para ruta principal
-  - Selector con label completo (ID | Fecha | Tipo | Cliente | Origen → Destino)
-  - Expander de detalle ruta seleccionada
-  - Sugerencias con descripcion: ID | Fecha — Cliente Origen → Destino (%)
-  - Botón Simular centrado
-  - Resultado: expanders por ruta (expanded=True) + mostrar_resultados_utilidad
-  - Detalle por columnas con st.markdown (igual al antiguo de Igloo)
-  - PDF con header azul, resumen y detalle de cada ruta con tabla financiera
+Homologado con Igloo:
+  - mostrar_resultados_picus() centraliza banner + KPIs + semáforos (antes
+    banner_tarifa_sugerida() + mostrar_resultados_ruta() sueltos)
+  - ruta_visual_nodos() de components.py agrega la secuencia visual de la
+    vuelta redonda (antes no existía en Picus)
+  - _detalle_tramos() extraído como función reutilizable (antes vivía inline
+    dentro de render(), igual que en Igloo homologado)
+  - PDF con header azul — versión aprobada, NO se toca el diseño
 """
 from __future__ import annotations
 
@@ -30,22 +27,23 @@ from reportlab.platypus import (
 )
 
 from services.supabase_client import get_supabase_client
-from ui.components import section_header, alert, divider, mostrar_resultados_ruta, banner_tarifa_sugerida
+from ui.components import section_header, alert, divider, ruta_visual_nodos
 
 from ._helpers import (
     safe_number,
+    cargar_datos_generales,
     calcular_costos_indirectos,
     calcular_utilidades_vuelta_redonda,
     load_rutas_picus,
     filtrar_rutas_picus,
     label_ruta_picus,
+    mostrar_resultados_picus,
 )
 
 
 # ─────────────────────────────────────────────
-# Sugerencias de regreso
+# Sugerencias de regreso — SIN CAMBIOS
 # ─────────────────────────────────────────────
-
 def _sugerir_regresos(ruta_1: dict, df: pd.DataFrame) -> list[dict]:
     tipo_principal = str(ruta_1.get("Tipo", "")).strip().upper()
     destino_1      = str(ruta_1.get("Destino", "")).strip().upper()
@@ -123,9 +121,41 @@ def _sugerir_regresos(ruta_1: dict, df: pd.DataFrame) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
-# PDF (igual estructura que plataforma anterior de Igloo)
+# Detalle de rutas por columnas — extraído de render() (antes inline)
 # ─────────────────────────────────────────────
+def _detalle_tramos(rutas: list[dict]) -> None:
+    st.subheader("📋 Detalle de Rutas")
 
+    tipos_orden = ["IMPORTACION", "VACIO", "EXPORTACION"]
+    rutas_por_tipo = {
+        tipo: next((r for r in rutas if str(r.get("Tipo", "")).strip().upper() == tipo), None)
+        for tipo in tipos_orden
+    }
+    cols_activas = [t for t in tipos_orden if rutas_por_tipo[t] is not None]
+
+    if not cols_activas:
+        return
+
+    cols = st.columns(len(cols_activas))
+    for idx, tipo in enumerate(cols_activas):
+        r = rutas_por_tipo[tipo]
+        with cols[idx]:
+            st.markdown(f"**{tipo}**")
+            st.markdown(f"Fecha: {r.get('Fecha','')}")
+            st.markdown(f"Cliente: {r.get('Cliente','')}")
+            st.markdown(f"Ruta: {r.get('Origen','')} → {r.get('Destino','')}")
+            st.markdown(f"KM: {safe_number(r.get('KM',0)):,.0f}")
+            st.markdown(f"Ingreso Original: ${safe_number(r.get('Ingreso_Original',0)):,.2f}")
+            st.markdown(f"Moneda: {r.get('Moneda','MXP')}")
+            st.markdown(f"Tipo de cambio: {safe_number(r.get('Tipo de cambio',1)):,.2f}")
+            st.markdown(f"**Ingreso Total: ${safe_number(r.get('Ingreso Total',0)):,.2f}**")
+            st.markdown(f"Costo Directo: ${safe_number(r.get('Costo_Total_Ruta',0)):,.2f}")
+
+
+# ─────────────────────────────────────────────
+# PDF (igual estructura que plataforma anterior de Igloo)
+# — versión aprobada, NO se toca el diseño —
+# ─────────────────────────────────────────────
 def _safe_txt(text: str) -> str:
     try:
         return str(text).encode("latin-1", "replace").decode("latin-1")
@@ -190,119 +220,66 @@ def generar_pdf_vuelta_redonda(
     story.append(Paragraph(_safe_txt("Resumen de Vuelta Redonda"), subtitle_s))
 
     color_un  = colors.HexColor("#28a745") if utilidad_neta >= 0 else colors.HexColor("#dc3545")
-    pct_costo = (costo_total / ingreso_total * 100) if ingreso_total else 0
-    pct_ind   = (costos_indirectos / ingreso_total * 100) if ingreso_total else 0
+    pct_costo = (costo_total / ingreso_total * 100) if ingreso_total else 0.0
 
     resumen_data = [
-        ["Concepto",          "Monto",                          "%"],
-        ["Ingreso Total",     f"${ingreso_total:,.2f} MXP",     "100.00%"],
-        ["Costo Directo",     f"${costo_total:,.2f} MXP",       f"{pct_costo:.2f}%"],
-        ["Utilidad Bruta",    f"${utilidad_bruta:,.2f} MXP",    f"{pct_bruta:.2f}%"],
-        ["Costos Indirectos", f"${costos_indirectos:,.2f} MXP", f"{pct_ind:.2f}%"],
-        ["Utilidad Neta",     f"${utilidad_neta:,.2f} MXP",     f"{pct_neta:.2f}%"],
+        [_safe_txt("Ingreso Total"),     _safe_txt(f"${ingreso_total:,.2f}")],
+        [_safe_txt("Costo Directo"),     _safe_txt(f"${costo_total:,.2f} ({pct_costo:.1f}%)")],
+        [_safe_txt("Utilidad Bruta"),    _safe_txt(f"${utilidad_bruta:,.2f} ({pct_bruta:.1f}%)")],
+        [_safe_txt("Costos Indirectos"), _safe_txt(f"${costos_indirectos:,.2f}")],
+        [_safe_txt("Utilidad Neta"),     _safe_txt(f"${utilidad_neta:,.2f} ({pct_neta:.1f}%)")],
     ]
-    res_t = Table(resumen_data, colWidths=[2.5*inch, 2.5*inch, 2.0*inch])
-    res_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0),  AZUL),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, -1), 7),
+    resumen_t = Table(resumen_data, colWidths=[3.5*inch, 3.5*inch])
+    resumen_t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), AZUL),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
         ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
         ("ALIGN",         (1, 1), (-1, -1), "RIGHT"),
-        ("BACKGROUND",    (0, 5), (-1, 5),  color_un),
-        ("TEXTCOLOR",     (0, 5), (-1, 5),  colors.white),
-        ("FONTNAME",      (0, 5), (-1, 5),  "Helvetica-Bold"),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("TEXTCOLOR",     (1, -1), (1, -1), color_un),
     ]))
-    story.append(res_t)
-    story.append(Spacer(1, 14))
+    story.append(resumen_t)
+    story.append(Spacer(1, 12))
 
-    # ── Detalle de cada ruta ────────────────────────────────────
-    story.append(Paragraph(_safe_txt("Detalle de Rutas"), subtitle_s))
-
-    for i, ruta in enumerate(rutas_seleccionadas, 1):
-        tipo_ruta = str(ruta.get("Tipo", ""))
-
-        # Encabezado de ruta
-        story.append(Paragraph(
-            _safe_txt(f"{i}. {tipo_ruta} -- {ruta.get('Cliente', '')}"),
-            ParagraphStyle("RH", parent=normal_s, fontSize=10,
-                           textColor=AZUL, spaceBefore=8, spaceAfter=4),
-        ))
-
-        # Tabla datos básicos (4 columnas)
-        cliente_p = Paragraph(_safe_txt(str(ruta.get("Cliente", ""))), compact)
-        origen_p  = Paragraph(_safe_txt(str(ruta.get("Origen",  ""))), compact)
-        destino_p = Paragraph(_safe_txt(str(ruta.get("Destino", ""))), compact)
-
-        ruta_info = [
-            [_safe_txt("ID Ruta"), _safe_txt(str(ruta.get("ID_Ruta", ""))),
-             _safe_txt("Fecha"),   _safe_txt(str(ruta.get("Fecha", ""))[:10])],
-            [_safe_txt("Tipo"),    _safe_txt(tipo_ruta),
-             _safe_txt("KM"),      _safe_txt(f"{safe_number(ruta.get('KM', 0)):,.0f}")],
-            [_safe_txt("Cliente"), cliente_p,
-             _safe_txt("Modo"),    _safe_txt(str(ruta.get("Modo de Viaje", "Operador")))],
-            [_safe_txt("Origen"),  origen_p,
-             _safe_txt("Destino"), destino_p],
-        ]
-        ruta_t = Table(ruta_info, colWidths=[1.2*inch, 2.0*inch, 1.2*inch, 2.0*inch])
-        ruta_t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (0, -1), GRIS),
-            ("BACKGROUND", (2, 0), (2, -1), GRIS),
-            ("FONTNAME",   (0, 0), (0, -1), "Helvetica-Bold"),
-            ("FONTNAME",   (2, 0), (2, -1), "Helvetica-Bold"),
-            ("FONTSIZE",   (0, 0), (-1, -1), 7),
-            ("GRID",       (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-            ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING",    (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ]))
-        story.append(ruta_t)
-        story.append(Spacer(1, 6))
-
-        # Tabla financiera (igual que plataforma anterior de Igloo)
-        ing_orig    = safe_number(ruta.get("Ingreso_Original", 0))
-        moneda      = str(ruta.get("Moneda", "MXP"))
-        tc          = safe_number(ruta.get("Tipo de cambio", 1.0))
-        ing_total   = safe_number(ruta.get("Ingreso Total", 0))
-        costo_ruta  = safe_number(ruta.get("Costo_Total_Ruta", 0))
-        ind_ruta    = calcular_costos_indirectos(tipo_ruta, ing_total)
-        label_ind   = "Costos Indirectos (35%)" if ind_ruta > 0 else "Costos Indirectos (0% - VACIO)"
-
+    # ── Detalle de cada ruta ────────────────────────────────────────
+    story.append(Paragraph(_safe_txt("Detalle de Rutas de la Vuelta Redonda"), subtitle_s))
+    for i, r in enumerate(rutas_seleccionadas, 1):
+        tipo_r = str(r.get("Tipo", "")).strip().upper()
         fin_data = [
-            [_safe_txt("Ingreso Original"),    _safe_txt(f"${ing_orig:,.2f}")],
-            [_safe_txt("Moneda"),              _safe_txt(moneda)],
-            [_safe_txt("Tipo de cambio"),      _safe_txt(f"{tc:,.2f}")],
-            [_safe_txt("Ingreso Total"),       _safe_txt(f"${ing_total:,.2f} MXP")],
-            [_safe_txt("Costo Directo Ruta"),  _safe_txt(f"${costo_ruta:,.2f} MXP")],
-            [_safe_txt(label_ind),             _safe_txt(f"${ind_ruta:,.2f} MXP")],
+            [_safe_txt(f"{i}. {tipo_r}"), _safe_txt(str(r.get("Cliente", "")))],
+            [_safe_txt("Ruta"), _safe_txt(f"{r.get('Origen','')} → {r.get('Destino','')}")],
+            [_safe_txt("Ingreso Total"), _safe_txt(f"${safe_number(r.get('Ingreso Total', 0)):,.2f}")],
+            [_safe_txt("Costo Directo"), _safe_txt(f"${safe_number(r.get('Costo_Total_Ruta', 0)):,.2f}")],
         ]
-        fin_t = Table(fin_data, colWidths=[2.5*inch, 3.5*inch])
-        fin_t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (0, -1), AZUL_LIGHT),
+        fin_table = Table(fin_data, colWidths=[2.0*inch, 5.0*inch])
+        fin_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), AZUL_LIGHT),
             ("FONTNAME",   (0, 0), (0, -1), "Helvetica-Bold"),
-            ("FONTSIZE",   (0, 0), (-1, -1), 7),
             ("GRID",       (0, 0), (-1, -1), 0.5, colors.HexColor("#dee2e6")),
-            ("ALIGN",      (1, 0), (1, -1), "RIGHT"),
             ("VALIGN",     (0, 0), (-1, -1), "MIDDLE"),
             ("TOPPADDING",    (0, 0), (-1, -1), 2),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("ALIGN",      (1, 0), (1, -1), "RIGHT"),
         ]))
-        story.append(fin_t)
+        story.append(fin_table)
         story.append(Spacer(1, 10))
 
-    # ── Footer ───────────────────────────────────────────────────
+    # ── Footer ──
+    usuario_nombre = "Usuario"
+    if hasattr(st, "session_state") and "usuario" in st.session_state:
+        usuario_data   = st.session_state.get("usuario", {})
+        usuario_nombre = usuario_data.get("Nombre", "Usuario")
     story.append(Spacer(1, 20))
     story.append(Paragraph(
-        _safe_txt(f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} -- Picus"),
+        f"Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} por {usuario_nombre} — Picus",
         footer_s,
     ))
-
     doc.build(story)
     return tmp.name
 
@@ -310,22 +287,18 @@ def generar_pdf_vuelta_redonda(
 # ─────────────────────────────────────────────
 # Render principal
 # ─────────────────────────────────────────────
-
 def render() -> None:
     supabase = get_supabase_client()
     if supabase is None:
-        alert("warn", "⚠️ Supabase no configurado.")
+        alert("error", "Supabase no configurado.")
         return
 
-    st.session_state.setdefault("pic_sim_realizada", False)
-
-    # ── Recargar ─────────────────────────────────────────────────
-    c1, c2 = st.columns([1, 4])
-    with c1:
-        if st.button("🔄 Recargar", key="pic_sim_reload"):
+    rc1, rc2 = st.columns([1, 4])
+    with rc1:
+        if st.button("🔄 Recargar rutas", key="pic_sim_reload"):
             load_rutas_picus.clear()
             st.rerun()
-    with c2:
+    with rc2:
         st.caption("Carga cacheada 2 min. Usa 'Recargar' si acabas de guardar algo.")
 
     df = load_rutas_picus()
@@ -422,39 +395,28 @@ def render() -> None:
                 else:
                     st.markdown("- *Costos Indirectos: $0.00 (VACÍO)*")
 
-        # Utilidades globales
+        # ── Secuencia visual de la vuelta redonda ───────────────────
+        # NOTA: verificar firma real de ruta_visual_nodos() en components.py.
         divider()
-        _umbral     = res["umbral_cd"]
-        _tarifa_sug = res["costo_directo"] / (_umbral / 100)
-        banner_tarifa_sugerida(res["costo_directo"], res["ingreso_total"], _umbral, "MXP", 0.0)
-        mostrar_resultados_ruta(res, titulo="Resultado de la Vuelta Redonda")
+        section_header("🗺️", "Secuencia de la Vuelta Redonda")
+        pasos = [
+            {
+                "nombre":    r.get("Tipo", ""),
+                "subtitulo": f"{r.get('Origen','')} → {r.get('Destino','')}",
+            }
+            for r in rutas
+        ]
+        ruta_visual_nodos(pasos)
 
-        # Detalle de rutas por columnas (igual que plataforma anterior de Igloo)
+        # Utilidades globales — centralizado con mostrar_resultados_picus()
         divider()
-        st.subheader("📋 Detalle de Rutas")
+        valores_gen = cargar_datos_generales()
+        tc_usd      = safe_number(valores_gen.get("Tipo de cambio USD", 17.5))
+        mostrar_resultados_picus(res, tc_usd=tc_usd)
 
-        tipos_orden = ["IMPORTACION", "VACIO", "EXPORTACION"]
-        rutas_por_tipo = {
-            tipo: next((r for r in rutas if str(r.get("Tipo","")).upper() == tipo), None)
-            for tipo in tipos_orden
-        }
-        cols_activas = [t for t in tipos_orden if rutas_por_tipo[t] is not None]
-
-        if cols_activas:
-            cols = st.columns(len(cols_activas))
-            for idx, tipo in enumerate(cols_activas):
-                r = rutas_por_tipo[tipo]
-                with cols[idx]:
-                    st.markdown(f"**{tipo}**")
-                    st.markdown(f"Fecha: {r.get('Fecha','')}")
-                    st.markdown(f"Cliente: {r.get('Cliente','')}")
-                    st.markdown(f"Ruta: {r.get('Origen','')} → {r.get('Destino','')}")
-                    st.markdown(f"KM: {safe_number(r.get('KM',0)):,.0f}")
-                    st.markdown(f"Ingreso Original: ${safe_number(r.get('Ingreso_Original',0)):,.2f}")
-                    st.markdown(f"Moneda: {r.get('Moneda','MXP')}")
-                    st.markdown(f"Tipo de cambio: {safe_number(r.get('Tipo de cambio',1)):,.2f}")
-                    st.markdown(f"**Ingreso Total: ${safe_number(r.get('Ingreso Total',0)):,.2f}**")
-                    st.markdown(f"Costo Directo: ${safe_number(r.get('Costo_Total_Ruta',0)):,.2f}")
+        # Detalle de rutas por columnas — extraído a _detalle_tramos()
+        divider()
+        _detalle_tramos(rutas)
 
         # ── PDF ───────────────────────────────────────────────────
         divider()
