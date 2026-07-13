@@ -1,7 +1,8 @@
 """
-helpers.py — Funciones centralizadas de cálculo para el cotizador Picus.
+_helpers.py — Cotizador Picus
+Funciones centralizadas de cálculo, datos generales, ubicaciones y resultados.
 
-Reglas de negocio:
+Reglas de negocio (sin cambios respecto a _helpers.py):
   - Costos fijos (nunca se cobran al cliente): movimiento_local, puntualidad,
     pension, estancia, fianza.
   - Casetas: va en el bloque de ruta junto con los KM (igual que americana).
@@ -10,20 +11,151 @@ Reglas de negocio:
   - Costos indirectos 35%: IMPORTACION y EXPORTACION únicamente. VACIO = 0.
   - Ruta_Tipo "Tramo" fuerza sueldo/bono fijo independientemente del tipo.
   - Modo "Team" agrega bono_team al sueldo (excepto Tramo).
+
+Homologado con Igloo / Lincoln:
+  - obtener_config_tipo_ruta() → orden dinámico de secciones en captura/edición
+  - mostrar_resultados_picus() → centraliza banner + KPIs + semáforos
+  - limpiar_fila_json() → sanitiza payload antes de insert/update en Supabase
+  - normalizar() / generar_id_ruta() (antes normalizar_texto / generar_nuevo_id)
 """
 
 from __future__ import annotations
 
 import os
+import re as _re
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
 # ─────────────────────────────────────────────
+# Constantes de umbral — viajan también dentro de DEFAULTS y de cada
+# resultado de calcular_utilidades(), pero se dejan aquí como referencia
+# única para quien lea el módulo.
+# ─────────────────────────────────────────────
+UMBRAL_CD = 50.0
+UMBRAL_UB = 50.0
+UMBRAL_CI = 35.0
+UMBRAL_UN = 15.0
+
+# ─────────────────────────────────────────────
+# Datos generales — defaults
+# ─────────────────────────────────────────────
+DEFAULTS: dict = {
+    "Rendimiento Camion":   2.5,
+    "Costo Diesel":        24.0,
+    "Pago x KM (General)":  1.63,
+    "Bono ISR IMSS RL":   462.66,
+    "Bono ISR IMSS Tramo": 185.06,
+    "Pago Vacio":          100.0,
+    "Pago Tramo":          300.0,
+    "Bono Rendimiento":    250.0,
+    "Bono Modo Team":      650.0,
+    "Tipo de cambio USD":   17.5,
+    "Tipo de cambio MXP":    1.0,
+    "umbral_cd": UMBRAL_CD,
+    "umbral_ub": UMBRAL_UB,
+    "umbral_ci": UMBRAL_CI,
+    "umbral_un": UMBRAL_UN,
+}
+
+# ─────────────────────────────────────────────
+# Tipos de ruta válidos — Picus NO tiene DOM MEX
+# ─────────────────────────────────────────────
+TIPOS_RUTA = ["IMPORTACION", "EXPORTACION", "VACIO"]
+TIPOS_CON_INDIRECTOS = ["IMPORTACION", "EXPORTACION"]
+
+
+# ─────────────────────────────────────────────
+# CONFIG POR TIPO DE RUTA
+# Orden visual de secciones en captura_rutas.py / gestion_rutas.py:
+#   IMPORTACION → Cruce primero, luego Ruta MX
+#   EXPORTACION → Ruta MX primero, luego Cruce
+#   VACIO       → solo Ruta MX (sin cruce, sin indirectos)
+# ─────────────────────────────────────────────
+def obtener_config_tipo_ruta(tipo_ruta: str) -> dict:
+    configs = {
+        "IMPORTACION": {"cruce": True,  "ruta_mx": True,
+                         "orden": ["cruce", "ruta_mx"]},
+        "EXPORTACION": {"cruce": True,  "ruta_mx": True,
+                         "orden": ["ruta_mx", "cruce"]},
+        "VACIO":       {"cruce": False, "ruta_mx": True,
+                         "orden": ["ruta_mx"]},
+    }
+    return configs.get(tipo_ruta, {"cruce": True, "ruta_mx": True, "orden": ["ruta_mx"]})
+
+
+def tiene_cruce(tipo_ruta: str) -> bool:
+    """Atajo sobre obtener_config_tipo_ruta() para checks rápidos en UI."""
+    return obtener_config_tipo_ruta(tipo_ruta).get("cruce", False)
+
+
+# ─────────────────────────────────────────────
+# Rutas de archivos
+# ─────────────────────────────────────────────
+def _project_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+def _datos_generales_path() -> str:
+    base = os.path.join(_project_root(), ".data")
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, "datos_generales_picus.csv")
+
+
+# ─────────────────────────────────────────────
+# Carga / guarda datos generales (CSV + Banxico FIX cacheado 24h)
+# ─────────────────────────────────────────────
+def cargar_datos_generales() -> dict:
+    """
+    Lee el CSV de datos generales y lo fusiona con DEFAULTS.
+    Si Banxico está disponible, sobreescribe "Tipo de cambio USD"
+    con el valor FIX del día (cacheado 24h en services.banxico).
+    """
+    path = _datos_generales_path()
+    if os.path.exists(path):
+        try:
+            df = pd.read_csv(path)
+            if {"Parametro", "Valor"}.issubset(df.columns):
+                d   = df.set_index("Parametro")["Valor"].to_dict()
+                out = DEFAULTS.copy()
+                for k, v in d.items():
+                    try:
+                        out[k] = float(v)
+                    except Exception:
+                        out[k] = v
+                for k, v in DEFAULTS.items():
+                    if k not in out:
+                        out[k] = v
+            else:
+                out = DEFAULTS.copy()
+        except Exception:
+            out = DEFAULTS.copy()
+    else:
+        out = DEFAULTS.copy()
+
+    # TC FIX de Banxico (cache 24h) — misma clave que Igloo: "Tipo de cambio USD"
+    try:
+        from services.banxico import get_tipo_cambio_fix
+        token = st.secrets.get("TOKEN_BMX", "")
+        tc = get_tipo_cambio_fix(token) if token else None
+        if tc:
+            out["Tipo de cambio USD"] = tc
+    except Exception:
+        pass
+
+    return out
+
+
+def guardar_datos_generales(valores: dict) -> None:
+    df = pd.DataFrame(list(valores.items()), columns=["Parametro", "Valor"])
+    df.to_csv(_datos_generales_path(), index=False)
+
+
+# ─────────────────────────────────────────────
 # Utilidades numéricas
 # ─────────────────────────────────────────────
-
 def safe_number(x) -> float:
     """Convierte a float seguro; None / NaN → 0.0."""
     if x is None:
@@ -49,106 +181,260 @@ def safe_float(x, default: float = 0.0) -> float:
         return float(default)
 
 
+def limpiar_fila_json(fila: dict) -> dict:
+    """Sanitiza un payload antes de insert/update en Supabase (igual que Igloo/Lincoln)."""
+    import json
+    limpio: dict = {}
+    for k, v in fila.items():
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            limpio[k] = None
+        elif isinstance(v, (pd.Timestamp, datetime, date, np.datetime64)):
+            limpio[k] = str(v)[:10]
+        elif isinstance(v, np.integer):
+            limpio[k] = int(v)
+        elif isinstance(v, np.floating):
+            limpio[k] = float(v)
+        else:
+            try:
+                json.dumps(v)
+                limpio[k] = v
+            except TypeError:
+                limpio[k] = str(v)
+    return limpio
+
+
 # ─────────────────────────────────────────────
-# Datos generales (CSV)
+# Texto y timestamp
 # ─────────────────────────────────────────────
-
-DEFAULTS: dict = {
-    "Rendimiento Camion":   2.5,
-    "Costo Diesel":        24.0,
-    "Pago x KM (General)":  1.63,
-    "Bono ISR IMSS RL":   462.66,
-    "Bono ISR IMSS Tramo": 185.06,
-    "Pago Vacio":          100.0,
-    "Pago Tramo":          300.0,
-    "Bono Rendimiento":    250.0,
-    "Bono Modo Team":      650.0,
-    "Tipo de cambio USD":   17.5,
-    "Tipo de cambio MXP":    1.0,
-    "umbral_cd": 50.0,
-    "umbral_ub": 50.0,
-    "umbral_ci": 35.0,
-    "umbral_un": 15.0,
-}
-
-TIPOS_RUTA = ["IMPORTACION", "EXPORTACION", "VACIO"]
-TIPOS_CON_INDIRECTOS = ["IMPORTACION", "EXPORTACION"]
+def normalizar(texto: str) -> str:
+    """Normaliza texto a mayúsculas, sin espacios dobles ni comas mal formateadas.
+    (antes: normalizar_texto)"""
+    if not texto:
+        return ""
+    texto = str(texto).upper().strip()
+    texto = _re.sub(r'\s+', ' ', texto)
+    texto = _re.sub(r'\s*,\s*', ', ', texto)
+    return texto
 
 
-def _project_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+def now_iso() -> str:
+    """Timestamp UTC actual en formato ISO. Compartido por captura y gestión."""
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _datos_generales_path() -> str:
-    base = os.path.join(_project_root(), ".data")
-    os.makedirs(base, exist_ok=True)
-    return os.path.join(base, "datos_generales_picus.csv")
-
-
-def cargar_datos_generales() -> dict:
+# ─────────────────────────────────────────────
+# Mostrar resultados — centraliza banner + KPIs + semáforos
+# Reemplaza a mostrar_resultados_utilidad() (legacy, firma de 10 parámetros).
+# Se deja mostrar_resultados_utilidad() abajo, SIN eliminar, hasta que
+# TODOS los módulos de Picus migren a esta función (regla del proyecto).
+# ─────────────────────────────────────────────
+def mostrar_resultados_picus(util: dict, tc_usd: float = 0.0) -> None:
     """
-    Lee el CSV de datos generales y lo fusiona con DEFAULTS.
-    Si Banxico está disponible, sobreescribe el tipo de cambio USD
-    con el valor FIX del día (cacheado 24h).
-    """
-    path = _datos_generales_path()
-    if os.path.exists(path):
-        try:
-            df = pd.read_csv(path)
-            if {"Parametro", "Valor"}.issubset(df.columns):
-                vals = {}
-                for _, row in df.iterrows():
-                    p = str(row["Parametro"])
-                    v = row["Valor"]
-                    try:
-                        v = float(v)
-                    except Exception:
-                        pass
-                    vals[p] = v
-                resultado = {**DEFAULTS, **vals}
-            else:
-                resultado = DEFAULTS.copy()
-        except Exception:
-            resultado = DEFAULTS.copy()
-    else:
-        resultado = DEFAULTS.copy()
+    Muestra banner de tarifa sugerida + KPIs + semáforos para una ruta o
+    grupo de rutas de Picus, a partir del dict canónico de
+    calcular_utilidades() / calcular_utilidades_vuelta_redonda().
 
-    # Sobrescribir TC con Banxico si está disponible (cache 24h)
+    util debe incluir: ingreso_total, costo_directo, utilidad_bruta,
+    costos_indirectos, utilidad_neta, Pct_*, Color_*, umbral_cd/ub/ci/un.
+    """
+    from ui.components import banner_tarifa_sugerida, divider, kpi_row, semaforos_ruta
+
+    ingreso_total = util["ingreso_total"]
+    costo_directo = util["costo_directo"]
+
+    umbral_cd   = util["umbral_cd"]
+    tarifa_base = costo_directo / (umbral_cd / 100) if umbral_cd else 0.0
+    valor_sec   = (tarifa_base / tc_usd) if tc_usd > 0 else 0.0
+    banner_tarifa_sugerida(costo_directo, ingreso_total, umbral_cd, "MXP", valor_sec)
+
+    divider()
+
+    kpi_row([
+        {"icono": "💰", "label": "Ingreso Total",      "valor": f"${ingreso_total:,.2f}",           "sub": "MXP",                                              "color": "#1B2266"},
+        {"icono": "🔧", "label": "Costo Directo",      "valor": f"${costo_directo:,.2f}",           "sub": f"{util['Pct_Costo_Directo']:.1f}% del ingreso",    "color": util["Color_Directo"]},
+        {"icono": "📊", "label": "Utilidad Bruta",     "valor": f"${util['utilidad_bruta']:,.2f}",  "sub": f"{util['Pct_Ut_Bruta']:.1f}%",                     "color": "#059669" if util["Pct_Ut_Bruta"] >= UMBRAL_UB else "#DC2626"},
+        {"icono": "🏢", "label": "Costos Indirectos",  "valor": f"${util['costos_indirectos']:,.2f}","sub": f"{util['Pct_Costo_Indirecto']:.1f}% del ingreso", "color": util["Color_Indirecto"]},
+        {"icono": "✅", "label": "Utilidad Neta",      "valor": f"${util['utilidad_neta']:,.2f}",   "sub": f"{util['Pct_Ut_Neta']:.1f}%",                      "color": util["Color_Ut_Neta"]},
+    ])
+
+    semaforos_ruta(util)
+
+
+# ─────────────────────────────────────────────
+# LEGACY — mantener firma intacta mientras los módulos migran a
+# mostrar_resultados_picus(). No eliminar hasta que TODOS los módulos
+# usen la versión centralizada.
+# ─────────────────────────────────────────────
+def mostrar_resultados_utilidad(
+    st_module,
+    ingreso_total:    float,
+    costo_total:      float,
+    utilidad_bruta:   float,
+    costos_indirectos: float,
+    utilidad_neta:    float,
+    pct_bruta:        float,
+    pct_neta:         float,
+    tipo:             str = "",
+    tc_usd:           float = 0.0,
+) -> None:
+    """LEGACY — usar mostrar_resultados_picus() en módulos nuevos."""
+    util = calcular_utilidades(ingreso_total, costo_total, tipo)
+    mostrar_resultados_picus(util, tc_usd=tc_usd)
+
+
+# ─────────────────────────────────────────────
+# Perfil de usuario
+# ─────────────────────────────────────────────
+def get_profile_name(user_id: str) -> str:
+    """Obtiene el full_name del perfil dado su user_id."""
+    if not user_id:
+        return ""
     try:
-        from services.banxico import get_tipo_cambio_fix
-        token = st.secrets.get("TOKEN_BMX", "")
-        tc = get_tipo_cambio_fix(token) if token else None
-        if tc:
-            resultado["Tipo de cambio USD"] = tc
+        from services.supabase_client import get_authed_client
+        supabase = get_authed_client()
+        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
+        return (res.data or {}).get("full_name") or ""
     except Exception:
-        pass  # Si falla, conserva el valor del CSV sin romper nada
-
-    return resultado
+        return ""
 
 
-def guardar_datos_generales(valores: dict) -> None:
-    """Guarda el diccionario de datos generales como CSV."""
-    df = pd.DataFrame(
-        [{"Parametro": k, "Valor": valores[k]} for k in valores],
-        columns=["Parametro", "Valor"],
+# ─────────────────────────────────────────────
+# Carga de rutas — compartida por consulta, gestión y simulador
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def load_rutas_picus() -> pd.DataFrame:
+    """Carga todas las rutas de Rutas_Picus, ordenadas por Fecha desc."""
+    from services.supabase_client import get_supabase_client
+    supabase = get_supabase_client()
+    if supabase is None:
+        return pd.DataFrame()
+    try:
+        resp = supabase.table("Rutas_Picus").select("*").order("Fecha", desc=True).execute()
+        return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
+# ─────────────────────────────────────────────
+# Pool de ubicaciones — compartido por captura y gestión
+# ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=120)
+def cargar_pool_ubicaciones_picus() -> list[str]:
+    """Une y deduplica Origen + Destino de Rutas_Picus."""
+    from services.supabase_client import get_supabase_client
+    sb = get_supabase_client()
+    if sb is None:
+        return []
+    try:
+        resp = sb.table("Rutas_Picus").select("Origen, Destino").execute()
+        ubicaciones: set[str] = set()
+        for row in (resp.data or []):
+            o = (row.get("Origen") or "").strip().upper()
+            d = (row.get("Destino") or "").strip().upper()
+            if o:
+                ubicaciones.add(o)
+            if d:
+                ubicaciones.add(d)
+        return sorted(ubicaciones)
+    except Exception:
+        return []
+
+
+def buscar_ubicacion_picus(termino: str) -> list[str]:
+    """
+    Filtra el pool por lo que el usuario escribe.
+    Si no hay coincidencias, devuelve el término como opción
+    para permitir ubicaciones nuevas sin que el campo se limpie.
+    """
+    if not termino or len(termino) < 2:
+        return []
+    termino_upper = termino.upper()
+    pool = cargar_pool_ubicaciones_picus()
+    coincidencias = [u for u in pool if termino_upper in u]
+    if not coincidencias:
+        return [termino_upper]
+    return coincidencias
+
+
+# ─────────────────────────────────────────────
+# Filtros y label — compartidos por consulta_ruta, gestion_rutas y simulador
+# ─────────────────────────────────────────────
+def label_ruta_picus(row) -> str:
+    """Ejemplo: 'PIC000001 | IMPORTACION | CLIENTE | MTY → CDM'"""
+    return (
+        f"{row.get('ID_Ruta','?')} | "
+        f"{row.get('Tipo','?')} | "
+        f"{row.get('Cliente','?')} | "
+        f"{row.get('Origen','?')} → {row.get('Destino','?')}"
     )
-    df.to_csv(_datos_generales_path(), index=False)
+
+
+def filtrar_rutas_picus(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """
+    Muestra un expander con filtros opcionales y devuelve el DataFrame filtrado.
+    Usar con un prefix único por módulo:
+      - consulta_ruta → "pic_cons"
+      - gestion ver   → "pic_ver"
+      - gestion del   → "pic_del"
+      - gestion edit  → "pic_ed"
+      - simulador     → "pic_sim"
+    """
+    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
+        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+        tipos_disp    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
+        clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
+        filtro_tipo    = fc1.selectbox("Tipo",              tipos_disp,    key=f"{prefix}_ftipo")
+        filtro_cliente = fc2.selectbox("Cliente",           clientes_disp, key=f"{prefix}_fcli")
+        filtro_origen  = fc3.text_input("Origen contiene",                 key=f"{prefix}_forig")
+        filtro_destino = fc4.text_input("Destino contiene",                key=f"{prefix}_fdest")
+        filtro_id      = fc5.text_input("ID Ruta", placeholder="PIC000001", key=f"{prefix}_fid")
+
+    out = df.copy()
+    if filtro_tipo    != "Todos": out = out[out["Tipo"].astype(str) == filtro_tipo]
+    if filtro_cliente != "Todos": out = out[out["Cliente"].astype(str) == filtro_cliente]
+    if filtro_origen.strip():     out = out[out["Origen"].astype(str).str.upper().str.contains(filtro_origen.strip().upper(), na=False)]
+    if filtro_destino.strip():    out = out[out["Destino"].astype(str).str.upper().str.contains(filtro_destino.strip().upper(), na=False)]
+    if filtro_id.strip():         out = out[out["ID_Ruta"].astype(str).str.upper().str.contains(filtro_id.strip().upper(), na=False)]
+    return out
 
 
 # ─────────────────────────────────────────────
-# Cálculo de diesel
+# Generador de ID — antes generar_nuevo_id()
 # ─────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=60)
+def _get_last_id_picus_cached() -> str | None:
+    from services.supabase_client import get_supabase_client
+    supabase = get_supabase_client()
+    if supabase is None:
+        return None
+    resp = supabase.table("Rutas_Picus").select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
+    if resp.data:
+        return resp.data[0].get("ID_Ruta")
+    return None
 
+
+def generar_id_ruta() -> str:
+    """Genera el siguiente ID_Ruta (PIC000001, PIC000002, ...) para Rutas_Picus.
+    (antes: generar_nuevo_id)"""
+    ultimo = _get_last_id_picus_cached()
+    if ultimo and isinstance(ultimo, str) and len(ultimo) >= 4:
+        try:
+            numero = int(str(ultimo)[3:]) + 1
+        except Exception:
+            numero = 1
+    else:
+        numero = 1
+    return f"PIC{numero:06d}"
+
+
+# ─────────────────────────────────────────────
+# CÁLCULOS — SIN CAMBIOS respecto a _helpers.py
+# ─────────────────────────────────────────────
 def calcular_diesel(km: float, valores: dict) -> float:
-    """Retorna costo_diesel_camion."""
     rend  = safe_float(valores.get("Rendimiento Camion", 2.5), 2.5)
     costo = safe_float(valores.get("Costo Diesel", 24.0), 24.0)
     return (km / max(rend, 0.0001)) * costo
 
-
-# ─────────────────────────────────────────────
-# Cálculo de sueldo y bono
-# ─────────────────────────────────────────────
 
 def calcular_sueldo_bono(
     km: float,
@@ -160,7 +446,7 @@ def calcular_sueldo_bono(
     """
     Retorna dict con: sueldo, bono, modo_viaje_calc, pago_km.
 
-    Reglas:
+    Reglas (NO TOCAR — lógica propia de Picus):
       - Ruta_Tipo == "Tramo"  → sueldo fijo + bono tramo; fuerza modo = "Operador"
       - IMPORTACION/EXPO      → sueldo = km × pago_km + bono RL + bono rendimiento
       - VACIO                 → sueldo fijo si km ≤ 100, else km × pago_km; bono = 0
@@ -203,10 +489,6 @@ def calcular_sueldo_bono(
     }
 
 
-# ─────────────────────────────────────────────
-# Costos fijos (nunca se cobran al cliente)
-# ─────────────────────────────────────────────
-
 def calcular_costos_fijos(
     movimiento_local: float,
     puntualidad: float,
@@ -223,10 +505,6 @@ def calcular_costos_fijos(
         movimiento_local, puntualidad, pension, estancia, fianza,
     ]))
 
-
-# ─────────────────────────────────────────────
-# Extras billables (checkbox individual por concepto)
-# ─────────────────────────────────────────────
 
 def calcular_extras(
     pistas_extra:      float,
@@ -265,42 +543,18 @@ def calcular_extras(
     }
 
 
-# ─────────────────────────────────────────────
-# Costos indirectos
-# ─────────────────────────────────────────────
-
 def calcular_costos_indirectos(tipo: str, ingreso_total: float) -> float:
-    """
-    Aplica 35% solo a IMPORTACION y EXPORTACION.
-    VACIO → 0.
-    """
+    """Aplica 35% solo a IMPORTACION y EXPORTACION. VACIO → 0."""
     tipo = (tipo or "").strip().upper()
     if tipo in TIPOS_CON_INDIRECTOS:
-        return ingreso_total * 0.35
+        return ingreso_total * (UMBRAL_CI / 100)
     return 0.0
 
 
-# ─────────────────────────────────────────────
-# Utilidades
-# ─────────────────────────────────────────────
-
 def calcular_utilidades(ingreso_total: float, costo_total: float, tipo: str) -> dict:
     """
-    Retorna dict con utilidades calculadas + campos para semaforos_ruta() y kpi_row().
-
-    Campos originales (compatibles con módulos existentes):
-        utilidad_bruta, costos_indirectos, utilidad_neta,
-        porcentaje_bruta, porcentaje_neta
-
-    Campos para componentes visuales:
-        Pct_Costo_Directo, Pct_Ut_Bruta, Pct_Costo_Indirecto, Pct_Ut_Neta
-        Color_Directo, Color_Indirecto, Color_Ut_Neta
-
-    Umbrales Picus (igual que Igloo):
-        C. Directos  ≤ 50% → verde
-        Ut. Bruta    ≥ 50% → verde
-        C. Indirecto ≤ 35% → verde
-        Ut. Neta     ≥ 15% → verde
+    Retorna dict canónico con utilidades calculadas + campos para
+    semaforos_ruta() y kpi_row() (SIN CAMBIOS respecto a _helpers.py).
     """
     utilidad_bruta = ingreso_total - costo_total
     costos_ind     = calcular_costos_indirectos(tipo, ingreso_total)
@@ -312,91 +566,32 @@ def calcular_utilidades(ingreso_total: float, costo_total: float, tipo: str) -> 
     pct_ind   = (costos_ind     / ingreso_total * 100) if ingreso_total else 0.0
 
     return {
-        # Campos canónicos
         "ingreso_total":     ingreso_total,
-        "costo_directo":     costo_total,    # alias canónico
-        # Originales — compatibilidad
+        "costo_directo":     costo_total,
         "utilidad_bruta":    utilidad_bruta,
         "costos_indirectos": costos_ind,
         "utilidad_neta":     utilidad_neta,
         "porcentaje_bruta":  pct_bruta,
         "porcentaje_neta":   pct_neta,
-        # Para semaforos_ruta() de components.py
         "Pct_Costo_Directo":   pct_cd,
         "Pct_Ut_Bruta":        pct_bruta,
         "Pct_Costo_Indirecto": pct_ind,
         "Pct_Ut_Neta":         pct_neta,
-        # Colores para kpi_row()
-        "Color_Directo":   "#DC2626" if pct_cd   > 50.0 else "#059669",
-        "Color_Indirecto": "#D97706" if pct_ind  > 35.0 else "#059669",
-        "Color_Ut_Neta":   "#DC2626" if pct_neta < 15.0 else "#059669",
-        # Umbrales Picus — viajan con el resultado
-        "umbral_cd": 50.0,
-        "umbral_ub": 50.0,
-        "umbral_ci": 35.0,
-        "umbral_un": 15.0,
+        "Color_Directo":   "#DC2626" if pct_cd   > UMBRAL_CD else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind  > UMBRAL_CI else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta < UMBRAL_UN else "#059669",
+        "umbral_cd": UMBRAL_CD,
+        "umbral_ub": UMBRAL_UB,
+        "umbral_ci": UMBRAL_CI,
+        "umbral_un": UMBRAL_UN,
     }
 
-
-# ─────────────────────────────────────────────
-# Mostrar resultados — compatible con módulos actuales
-# ─────────────────────────────────────────────
-
-def mostrar_resultados_utilidad(
-    st_module,
-    ingreso_total:    float,
-    costo_total:      float,
-    utilidad_bruta:   float,
-    costos_indirectos: float,
-    utilidad_neta:    float,
-    pct_bruta:        float,
-    pct_neta:         float,
-    tipo:             str = "",
-    tc_usd:           float = 0.0,
-) -> None:
-    """
-    LEGACY — mantener firma intacta mientras los módulos migran a mostrar_resultados_ruta().
-    Sin HTML inline — delega todo el rendering a ui/components.py.
-    tc_usd: tipo de cambio activo; si > 0 muestra equivalente USD en la tarifa sugerida.
-    """
-    from ui.components import (
-        banner_tarifa_sugerida, divider, kpi_row, mostrar_resultados_ruta, semaforos_ruta,
-    )
-
-    util = calcular_utilidades(ingreso_total, costo_total, tipo)
-
-    # ── Tarifa sugerida ──
-    umbral_cd   = util["umbral_cd"]
-    tarifa_base = costo_total / (umbral_cd / 100)
-    valor_sec   = (tarifa_base / tc_usd) if tc_usd > 0 else 0.0
-    banner_tarifa_sugerida(costo_total, ingreso_total, umbral_cd, "MXP", valor_sec)
-
-    divider()
-
-    # ── KPIs principales ──
-    kpi_row([
-        {"icono": "💰", "label": "Ingreso Total",      "valor": f"${ingreso_total:,.2f}",    "sub": "MXP",                                    "color": "#1B2266"},
-        {"icono": "🔧", "label": "Costo Directo",      "valor": f"${costo_total:,.2f}",      "sub": f"{util['Pct_Costo_Directo']:.1f}% del ingreso", "color": util["Color_Directo"]},
-        {"icono": "📊", "label": "Utilidad Bruta",     "valor": f"${utilidad_bruta:,.2f}",   "sub": f"{pct_bruta:.1f}%",                      "color": "#059669" if pct_bruta >= 50 else "#DC2626"},
-        {"icono": "🏢", "label": "Costos Indirectos",  "valor": f"${costos_indirectos:,.2f}","sub": f"{util['Pct_Costo_Indirecto']:.1f}% del ingreso","color": util["Color_Indirecto"]},
-        {"icono": "✅", "label": "Utilidad Neta",      "valor": f"${utilidad_neta:,.2f}",    "sub": f"{pct_neta:.1f}%",                       "color": util["Color_Ut_Neta"]},
-    ])
-
-    # ── Semáforos — firma canónica, umbrales viajan en util ──
-    semaforos_ruta(util)
-
-# ─────────────────────────────────────────────
-# Utilidades Vuelta Redonda (simulador)
-# ─────────────────────────────────────────────
 
 def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
     """
     Calcula utilidades agregadas para una vuelta redonda.
     Aplica 35% de indirectos solo a rutas IMPORTACION / EXPORTACION.
-    VACIO → indirectos = 0 (igual que Igloo).
-
-    Devuelve los mismos campos que calcular_utilidades() para que
-    mostrar_resultados_utilidad() los use directamente.
+    VACIO → indirectos = 0 (SIN CAMBIOS respecto a _helpers.py).
     """
     ingreso_total = sum(safe_number(r.get("Ingreso Total", 0)) for r in rutas_seleccionadas)
     costo_total   = sum(safe_number(r.get("Costo_Total_Ruta", 0)) for r in rutas_seleccionadas)
@@ -415,10 +610,9 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
     pct_ind   = (costos_ind     / ingreso_total * 100) if ingreso_total else 0.0
 
     return {
-        # Campos canónicos
         "ingreso_total":     ingreso_total,
-        "costo_directo":     costo_total,    # alias canónico
-        "costo_total":       costo_total,    # compatibilidad legacy
+        "costo_directo":     costo_total,
+        "costo_total":       costo_total,
         "utilidad_bruta":    utilidad_bruta,
         "costos_indirectos": costos_ind,
         "utilidad_neta":     utilidad_neta,
@@ -428,187 +622,11 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
         "Pct_Ut_Bruta":        pct_bruta,
         "Pct_Costo_Indirecto": pct_ind,
         "Pct_Ut_Neta":         pct_neta,
-        "Color_Directo":   "#DC2626" if pct_cd   > 50.0 else "#059669",
-        "Color_Indirecto": "#D97706" if pct_ind  > 35.0 else "#059669",
-        "Color_Ut_Neta":   "#DC2626" if pct_neta < 15.0 else "#059669",
-        # Umbrales Picus — viajan con el resultado
-        "umbral_cd": 50.0,
-        "umbral_ub": 50.0,
-        "umbral_ci": 35.0,
-        "umbral_un": 15.0,
+        "Color_Directo":   "#DC2626" if pct_cd   > UMBRAL_CD else "#059669",
+        "Color_Indirecto": "#D97706" if pct_ind  > UMBRAL_CI else "#059669",
+        "Color_Ut_Neta":   "#DC2626" if pct_neta < UMBRAL_UN else "#059669",
+        "umbral_cd": UMBRAL_CD,
+        "umbral_ub": UMBRAL_UB,
+        "umbral_ci": UMBRAL_CI,
+        "umbral_un": UMBRAL_UN,
     }
-
-
-# ─────────────────────────────────────────────
-# Funciones compartidas — usadas en 2+ módulos
-# (antes vivían como privadas en captura/gestión)
-# ─────────────────────────────────────────────
-
-import re as _re
-
-
-def get_profile_name(user_id: str) -> str:
-    """Obtiene el full_name del perfil dado su user_id."""
-    if not user_id:
-        return ""
-    try:
-        from services.supabase_client import get_authed_client
-        supabase = get_authed_client()
-        res = supabase.table("profiles").select("full_name").eq("user_id", user_id).single().execute()
-        return (res.data or {}).get("full_name") or ""
-    except Exception:
-        return ""
-
-
-def normalizar_texto(texto: str) -> str:
-    """Normaliza texto a mayúsculas, sin espacios dobles ni comas mal formateadas."""
-    if not texto:
-        return ""
-    texto = str(texto).upper().strip()
-    texto = _re.sub(r'\s+', ' ', texto)
-    texto = _re.sub(r'\s*,\s*', ', ', texto)
-    return texto
-
-
-def now_iso() -> str:
-    """Timestamp UTC actual en formato ISO. Compartido por captura y gestión."""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
-
-
-@st.cache_data(show_spinner=False, ttl=60)
-def _get_last_id_picus_cached() -> str | None:
-    from services.supabase_client import get_supabase_client
-    supabase = get_supabase_client()
-    if supabase is None:
-        return None
-    resp = supabase.table("Rutas_Picus").select("ID_Ruta").order("ID_Ruta", desc=True).limit(1).execute()
-    if resp.data:
-        return resp.data[0].get("ID_Ruta")
-    return None
-
-
-def generar_nuevo_id() -> str:
-    """Genera el siguiente ID_Ruta (PIC000001, PIC000002, ...) para Rutas_Picus."""
-    ultimo = _get_last_id_picus_cached()
-    if ultimo and isinstance(ultimo, str) and len(ultimo) >= 4:
-        try:
-            numero = int(str(ultimo)[3:]) + 1
-        except Exception:
-            numero = 1
-    else:
-        numero = 1
-    return f"PIC{numero:06d}"
-
-
-# ─────────────────────────────────────────────
-# Pool de ubicaciones — compartido por captura y gestión
-# ─────────────────────────────────────────────
-
-@st.cache_data(show_spinner=False, ttl=120)
-def cargar_pool_ubicaciones_picus() -> list[str]:
-    """
-    Une y deduplica Origen + Destino de Rutas_Picus.
-    Compartido por captura_rutas y gestion_rutas.
-    """
-    from services.supabase_client import get_supabase_client
-    sb = get_supabase_client()
-    if sb is None:
-        return []
-    try:
-        resp = sb.table("Rutas_Picus").select("Origen, Destino").execute()
-        ubicaciones: set[str] = set()
-        for row in (resp.data or []):
-            o = (row.get("Origen") or "").strip().upper()
-            d = (row.get("Destino") or "").strip().upper()
-            if o:
-                ubicaciones.add(o)
-            if d:
-                ubicaciones.add(d)
-        return sorted(ubicaciones)
-    except Exception:
-        return []
-
-
-def buscar_ubicacion_picus(termino: str) -> list[str]:
-    """
-    Filtra el pool por lo que el usuario escribe.
-    Si no hay coincidencias, devuelve el término como opción
-    para permitir ubicaciones nuevas sin que el campo se limpie.
-    """
-    if not termino or len(termino) < 2:
-        return []
-    termino_upper = termino.upper()
-    pool = cargar_pool_ubicaciones_picus()
-    coincidencias = [u for u in pool if termino_upper in u]
-    if not coincidencias:
-        return [termino_upper]
-    return coincidencias
-
-
-# ─────────────────────────────────────────────
-# Carga de rutas — compartida por consulta, gestión y simulador
-# ─────────────────────────────────────────────
-
-@st.cache_data(show_spinner=False, ttl=120)
-def load_rutas_picus() -> pd.DataFrame:
-    """
-    Carga todas las rutas de Rutas_Picus, ordenadas por Fecha desc.
-    Compartida por consulta_ruta, gestion_rutas y simulador.
-    """
-    from services.supabase_client import get_supabase_client
-    supabase = get_supabase_client()
-    if supabase is None:
-        return pd.DataFrame()
-    try:
-        resp = supabase.table("Rutas_Picus").select("*").order("Fecha", desc=True).execute()
-        return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
-    except Exception:
-        return pd.DataFrame()
-
-
-# ─────────────────────────────────────────────
-# Filtros y label — compartidos por consulta_ruta,
-# gestion_rutas y simulador para evitar keys duplicadas
-# ─────────────────────────────────────────────
-
-def filtrar_rutas_picus(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    """
-    Muestra un expander con filtros opcionales y devuelve el DataFrame filtrado.
-    Usar con un prefix único por módulo:
-      - consulta_ruta → "pic_cons"
-      - gestion ver   → "pic_ver"
-      - gestion del   → "pic_del"
-      - gestion edit  → "pic_ed"
-      - simulador     → "pic_sim"
-    """
-    with st.expander("🔎 Filtros de búsqueda (opcional)", expanded=False):
-        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-        tipos_disp    = ["Todos"] + sorted(df["Tipo"].dropna().unique().tolist()) if "Tipo" in df.columns else ["Todos"]
-        clientes_disp = ["Todos"] + sorted(df["Cliente"].dropna().astype(str).unique().tolist()) if "Cliente" in df.columns else ["Todos"]
-        filtro_tipo    = fc1.selectbox("Tipo",              tipos_disp,    key=f"{prefix}_ftipo")
-        filtro_cliente = fc2.selectbox("Cliente",           clientes_disp, key=f"{prefix}_fcli")
-        filtro_origen  = fc3.text_input("Origen contiene",                 key=f"{prefix}_forig")
-        filtro_destino = fc4.text_input("Destino contiene",                key=f"{prefix}_fdest")
-        filtro_id      = fc5.text_input("ID Ruta", placeholder="PIC000001", key=f"{prefix}_fid")
-
-    out = df.copy()
-    if filtro_tipo    != "Todos": out = out[out["Tipo"].astype(str) == filtro_tipo]
-    if filtro_cliente != "Todos": out = out[out["Cliente"].astype(str) == filtro_cliente]
-    if filtro_origen.strip():     out = out[out["Origen"].astype(str).str.upper().str.contains(filtro_origen.strip().upper(), na=False)]
-    if filtro_destino.strip():    out = out[out["Destino"].astype(str).str.upper().str.contains(filtro_destino.strip().upper(), na=False)]
-    if filtro_id.strip():         out = out[out["ID_Ruta"].astype(str).str.upper().str.contains(filtro_id.strip().upper(), na=False)]
-    return out
-
-
-def label_ruta_picus(row) -> str:
-    """
-    Formatea una fila de ruta para selectboxes.
-    Ejemplo: 'PIC000001 | IMPORTACION | CLIENTE | MTY → CDM'
-    """
-    return (
-        f"{row.get('ID_Ruta','?')} | "
-        f"{row.get('Tipo','?')} | "
-        f"{row.get('Cliente','?')} | "
-        f"{row.get('Origen','?')} → {row.get('Destino','?')}"
-    )
