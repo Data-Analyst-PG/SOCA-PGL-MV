@@ -94,25 +94,6 @@ def _recalcular(ruta: pd.Series, valores: dict) -> dict:
 # ─────────────────────────────────────────────
 # MOSTRAR KPIs + DESGLOSE
 # ─────────────────────────────────────────────
-def _mostrar_kpis(r: dict, es_simulacion: bool = False) -> None:
-    if es_simulacion:
-        alert("info", "🔧 Estás viendo una simulación con parámetros ajustados.")
-    tc_usd       = r.get("tc", 18.50)
-    _umbral      = r["umbral_cd"]
-    _costo_ame   = r.get("costo_directo_americana", r["costo_directo"])
-    _tarifa_sug  = _costo_ame / (_umbral / 100)
-    _tarifa_mxp  = _tarifa_sug * tc_usd
-    divider()
-    banner_tarifa_sugerida(
-        _costo_ame, r["ingreso_total"],
-        _umbral, "USD", _tarifa_mxp,
-        modalidad=str(r.get("modalidad") or "Flat"),
-        miles_load=safe(r.get("miles_load", 0.0)),
-        fuel_capturado=r.get("ingreso_fuel_usa", 0.0),
-    )
-    mostrar_resultados_ruta(r)
-
-
 def _mostrar_kpis(r: dict, ruta: pd.Series, es_simulacion: bool = False) -> None:
     mostrar_resultados_lincoln(
         r,
