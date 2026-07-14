@@ -590,11 +590,12 @@ def render():
             f"{ruta.get('Origen','')}_{ruta.get('Destino','')}.pdf"
         ).replace("/", "-")
         with open(pdf_path, "rb") as f:
-            st.download_button(
+            descargado = st.download_button(
                 label="📄 Descargar PDF Profesional",
                 data=f,
                 file_name=file_name,
                 mime="application/pdf",
+                key=f"igloo_cons_download_{ruta.get('ID_Ruta','')}",
             )
         if descargado:
             log_accion("descargar_archivo", {"id_ruta": ruta.get("ID_Ruta", "")})
