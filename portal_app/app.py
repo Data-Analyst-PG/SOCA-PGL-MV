@@ -32,6 +32,11 @@ nombre_usuario = p.get("full_name") or u.get("email", "Usuario")
 rol_usuario    = p.get("job_title") or p.get("role") or ""
 user_id        = u.get("id") or u.get("sub") or ""
 
+from services.auditoria import registrar_login, registrar_acceso_modulo
+st.session_state["_auditoria_full_name"]  = nombre_usuario
+st.session_state["_auditoria_company_id"] = p.get("company_id")
+registrar_login()
+
 user_header(nombre_usuario, rol_usuario)
 
 # ── Precargar permisos en caché una sola vez por sesión ──────────────────────
@@ -146,6 +151,7 @@ def construir_navegacion() -> dict:
 nav = construir_navegacion()
 if nav:
     pg = st.navigation(nav, position="top")
+    registrar_acceso_modulo(pg.url_path or "home", titulo=pg.title)
     pg.run()
 else:
     st.error("Tu usuario no tiene módulos asignados. Contacta al administrador.")
