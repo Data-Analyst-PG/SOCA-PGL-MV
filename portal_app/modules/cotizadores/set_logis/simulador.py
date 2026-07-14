@@ -8,7 +8,7 @@ Homologado con Lincoln:
   - Prefijos sl_sim_* en todos los keys
 
 Funciones locales que se CONSERVAN (complejas, únicas para Set Logis):
-  - _ruta_visual()       → HTML geográfico específico de este simulador
+  - _construir_pasos()   → arma la lista de nodos para ruta_visual_nodos()
   - _sugerir_regresos()  → lógica de candidatas NB↔SB/D2D
   - _detalle_tramos()    → expanders por tramo con campos propios
   - _generar_pdf()       → reportlab VR
@@ -39,7 +39,7 @@ from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 
 from services.supabase_client import get_supabase_client
 from ui.components import (
-    section_header, alert, divider,
+    section_header, alert, divider, ruta_visual_nodos,
 )
 from ._helpers import (
     TABLE_RUTAS,
@@ -173,65 +173,64 @@ def _sugerir_regresos(
 
 
 # ─────────────────────────────────────────────
-# RUTA VISUAL — HTML local, complejo y específico
-# Conservado igual que en Lincoln (no migrar a ruta_visual_nodos aún)
+# CONSTRUIR PASOS PARA ruta_visual_nodos()
+# Función auxiliar — solo usada en este módulo
 # ─────────────────────────────────────────────
-def _ruta_visual(ruta_p: pd.Series, ruta_e: pd.Series | None, ruta_r: pd.Series | None) -> None:
+def _construir_pasos(ruta_p: pd.Series, ruta_e: pd.Series | None, ruta_r: pd.Series | None) -> list:
     tipo_p = _get(ruta_p, "Tipo_Viaje")
-
-    def nodo(icono: str, ciudad: str, etiqueta: str) -> str:
-        return (
-            f'<div style="text-align:center;min-width:90px">'
-            f'<div style="font-size:1.4rem">{icono}</div>'
-            f'<div style="font-weight:700;font-size:.78rem;color:#1B2266">{ciudad}</div>'
-            f'<div style="font-size:.68rem;color:#6B7280">{etiqueta}</div>'
-            f'</div>'
-        )
-    flecha = '<div style="font-size:1.3rem;padding:0 4px;align-self:center">→</div>'
-    pasos: list[str] = []
+    pasos: list = []
 
     if tipo_p == "D2DNB":
         om = _get(ruta_p, "Origen_MX"); dm = _get(ruta_p, "Destino_MX")
-        if om: pasos += [nodo("🇲🇽", om, "Origen MX"), flecha]
-        if dm: pasos += [nodo("📍", dm, "Destino MX"), flecha]
+        if om:
+            pasos += [{"icono": "🇲🇽", "ciudad": om, "etiqueta": "Origen MX"}, "→"]
+        if dm:
+            pasos += [{"icono": "📍", "ciudad": dm, "etiqueta": "Destino MX"}, "→"]
 
-    pasos += [nodo("🇺🇸", _origen_usa(ruta_p), f"Origen USA ({tipo_p})"), flecha,
-              nodo("📍", _destino_usa(ruta_p), "Destino USA")]
+    pasos += [
+        {"icono": "🇺🇸", "ciudad": _origen_usa(ruta_p),  "etiqueta": f"Origen USA ({tipo_p})"},
+        "→",
+        {"icono": "📍",  "ciudad": _destino_usa(ruta_p), "etiqueta": "Destino USA"},
+    ]
 
     if tipo_p == "D2DSB":
         om = _get(ruta_p, "Origen_MX"); dm = _get(ruta_p, "Destino_MX")
-        if om: pasos += [flecha, nodo("🛂", om, "Origen MX")]
-        if dm: pasos += [flecha, nodo("🇲🇽", dm, "Destino MX")]
+        if om:
+            pasos += ["→", {"icono": "🛂", "ciudad": om, "etiqueta": "Origen MX"}]
+        if dm:
+            pasos += ["→", {"icono": "🇲🇽", "ciudad": dm, "etiqueta": "Destino MX"}]
 
     if ruta_e is not None:
-        pasos += [flecha,
-                  nodo("⬜", _origen_usa(ruta_e), f"Empty · {_get(ruta_e,'ID_Ruta')}"),
-                  flecha, nodo("⬜", _destino_usa(ruta_e), "Fin Empty")]
+        pasos += [
+            "→",
+            {"icono": "⬜", "ciudad": _origen_usa(ruta_e),  "etiqueta": f"Empty · {_get(ruta_e,'ID_Ruta')}"},
+            "→",
+            {"icono": "⬜", "ciudad": _destino_usa(ruta_e), "etiqueta": "Fin Empty"},
+        ]
 
     if ruta_r is not None:
         tipo_r = _get(ruta_r, "Tipo_Viaje")
         if tipo_r == "D2DNB":
             om = _get(ruta_r, "Origen_MX")
-            if om: pasos += [flecha, nodo("🇲🇽", om, "Origen MX Reg.")]
-            pasos += [flecha, nodo("🇺🇸", _origen_usa(ruta_r), f"Origen USA ({tipo_r})"),
-                      flecha, nodo("🏁", _destino_usa(ruta_r), "Destino USA Reg.")]
+            if om:
+                pasos += ["→", {"icono": "🇲🇽", "ciudad": om, "etiqueta": "Origen MX Reg."}]
+            pasos += [
+                "→",
+                {"icono": "🇺🇸", "ciudad": _origen_usa(ruta_r),  "etiqueta": f"Origen USA ({tipo_r})"},
+                "→",
+                {"icono": "🏁",  "ciudad": _destino_usa(ruta_r), "etiqueta": "Destino USA Reg."},
+            ]
         else:
-            pasos += [flecha, nodo("🇺🇸", _origen_usa(ruta_r), f"Origen USA ({tipo_r})"), flecha]
+            pasos += ["→", {"icono": "🇺🇸", "ciudad": _origen_usa(ruta_r), "etiqueta": f"Origen USA ({tipo_r})"}, "→"]
             if tipo_r == "D2DSB":
-                pasos.append(nodo("📍", _destino_usa(ruta_r), "Destino USA Reg."))
+                pasos.append({"icono": "📍", "ciudad": _destino_usa(ruta_r), "etiqueta": "Destino USA Reg."})
                 dm = _get(ruta_r, "Destino_MX")
-                if dm: pasos += [flecha, nodo("🏁", dm, "Destino MX Reg.")]
+                if dm:
+                    pasos += ["→", {"icono": "🏁", "ciudad": dm, "etiqueta": "Destino MX Reg."}]
             else:
-                pasos.append(nodo("🏁", _destino_usa(ruta_r), "Destino Reg."))
+                pasos.append({"icono": "🏁", "ciudad": _destino_usa(ruta_r), "etiqueta": "Destino Reg."})
 
-    html = (
-        '<div style="display:flex;flex-wrap:wrap;align-items:center;'
-        'gap:4px;padding:12px 8px;background:#F8FAFF;border-radius:8px;'
-        'border:1px solid #E0E7FF">'
-        + "".join(pasos) + '</div>'
-    )
-    st.markdown(html, unsafe_allow_html=True)
-
+    return pasos
 
 # ─────────────────────────────────────────────
 # RESUMEN VR — devuelve dict canónico para mostrar_resultados_ruta()
@@ -681,7 +680,7 @@ def render() -> None:
 
         divider()
         section_header("🗺️", "Secuencia del Road Trip")
-        _ruta_visual(ruta_p_s, ruta_e_s, ruta_r_s)
+        ruta_visual_nodos(_construir_pasos(ruta_p_s, ruta_e_s, ruta_r_s))
 
         _detalle_tramos(rutas_series, etiquetas)
 
