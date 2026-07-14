@@ -31,15 +31,24 @@ from ui.components import section_header, alert, divider
 from ._helpers import (
     DEFAULTS, TIPOS_RUTA,
     cargar_datos_generales,
-    safe_number, safe_float,
-    calcular_sueldo_y_bono, calcular_diesel,
-    calcular_costos_fijos, calcular_extras,
+    safe_number, 
+    safe_float,
+    calcular_sueldo_y_bono, 
+    calcular_diesel,
+    calcular_costos_fijos, 
+    calcular_extras,
     calcular_utilidades,
-    get_profile_name, normalizar_texto, now_iso,
+    get_profile_name, 
+    normalizar_texto,  
+    now_iso,
     load_rutas_igloo,
-    cargar_pool_ubicaciones_igloo, buscar_ubicacion_igloo,
-    filtrar_rutas_igloo, label_ruta_igloo,
-    obtener_config_tipo_ruta, mostrar_resultados_igloo,
+    cargar_pool_ubicaciones_igloo,  
+    buscar_ubicacion_igloo,
+    filtrar_rutas_igloo, 
+    label_ruta_igloo,
+    obtener_config_tipo_ruta, 
+    mostrar_resultados_igloo,
+    log_accion,
 )
 
 
@@ -439,6 +448,7 @@ def _guardar_edicion(supabase, ruta: dict, nombre_usuario: str, valores: dict) -
 
     try:
         supabase.table(TABLE_RUTAS).update(ruta_actualizada).eq("ID_Ruta", d["id_ruta"]).execute()
+        log_accion("editar_ruta", {"id_ruta": d["id_ruta"]})
         st.session_state.igloo_ruta_editada_id       = d["id_ruta"]
         st.session_state.igloo_mostrar_modal_edicion = True
         load_rutas_igloo.clear()
@@ -505,13 +515,15 @@ def render():
         st.caption(f"Mostrando {len(df_tabla)} de {len(df)} rutas")
 
         divider()
-        st.download_button(
+        descargado_excel = st.download_button(
             "📥 Descargar Excel",
             data=_to_excel_bytes(df_tabla[cols_mostrar] if cols_mostrar else df_tabla),
             file_name=f"rutas_igloo_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="ig_dl_excel",
         )
+        if descargado_excel:
+            log_accion("exportar_excel", {"filas": len(df_tabla)})
 
     # ── TAB ELIMINAR ──────────────────────────────────────────────
     with tab_del:
@@ -540,6 +552,7 @@ def render():
                 if st.button("🗑️ Confirmar Eliminación", key="ig_del_confirm", type="primary"):
                     try:
                         supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", idx_del).execute()
+                        log_accion("eliminar_ruta", {"id_ruta": idx_del})
                         alert("success", f"✅ Ruta **{idx_del}** eliminada.")
                         load_rutas_igloo.clear()
                         cargar_pool_ubicaciones_igloo.clear()
