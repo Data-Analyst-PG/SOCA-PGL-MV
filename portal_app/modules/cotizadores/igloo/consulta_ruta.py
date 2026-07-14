@@ -37,6 +37,7 @@ from ._helpers import (
     filtrar_rutas_igloo,
     label_ruta_igloo,
     mostrar_resultados_igloo,
+    log_accion,
 )
 
 # ─────────────────────────────────────────────
@@ -595,6 +596,7 @@ def render():
                 file_name=file_name,
                 mime="application/pdf",
             )
+            log_accion("descargar_archivo", {"id_ruta": ruta.get("ID_Ruta", "")})
     except Exception as e:
         alert("error", f"Error generando PDF: {e}")
         st.caption("Asegúrate de tener instalado `reportlab`.")
