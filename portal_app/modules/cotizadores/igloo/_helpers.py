@@ -18,6 +18,7 @@ import streamlit as st
 from datetime import datetime
 
 from ui.components import banner_tarifa_sugerida, kpi_row, semaforos_ruta, divider
+from services.auditoria import registrar_accion
 
 # ─────────────────────────────────────────────
 # UMBRALES SEMÁFORO — Igloo
@@ -661,3 +662,11 @@ def mostrar_resultados_igloo(
     r_desglose["Costo_MX"]      = costo_mx
 
     desglose_ruta(r_desglose, moneda_mx="MXP", tc=(tc_usd if tc_usd > 0 else 1.0), umbral_cd=umbral)
+
+
+# ─────────────────────────────────────────────
+# AUDITORÍA
+# ─────────────────────────────────────────────
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'cot-igloo'."""
+    registrar_accion("cot-igloo", accion, detalle)
