@@ -426,6 +426,7 @@ def render():
             st.session_state["igloo_sim_resultado"]      = res
             st.session_state["igloo_sim_rutas"]          = rutas_seleccionadas
             st.session_state.igloo_simulacion_realizada  = True
+            log_accion("simular_ruta", {"id_ruta": ruta_principal.get("ID_Ruta", "")})
             st.rerun()
 
     # ── Resultados ─────────────────────────────────────────────────
