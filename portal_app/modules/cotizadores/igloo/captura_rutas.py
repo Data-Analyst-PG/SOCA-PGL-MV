@@ -24,17 +24,27 @@ from streamlit_searchbox import st_searchbox
 from ui.components import section_header, alert, divider
 from services.supabase_client import get_supabase_client, current_user
 from ._helpers import (
-    DEFAULTS, TIPOS_RUTA,
-    cargar_datos_generales, guardar_datos_generales,
+    DEFAULTS, 
+    TIPOS_RUTA,
+    cargar_datos_generales, 
+    guardar_datos_generales,
     safe_number, safe_float,
-    calcular_sueldo_y_bono, calcular_diesel,
-    calcular_costos_fijos, calcular_extras,
+    calcular_sueldo_y_bono, 
+    calcular_diesel,
+    calcular_costos_fijos, 
+    calcular_extras,
     calcular_utilidades,
-    generar_nuevo_id, get_profile_name, normalizar_texto,
-    now_iso, _datos_generales_path,
-    cargar_pool_ubicaciones_igloo, buscar_ubicacion_igloo,
-    obtener_config_tipo_ruta, mostrar_resultados_igloo,
+    generar_nuevo_id, 
+    get_profile_name,  
+    normalizar_texto,
+    now_iso, 
+    _datos_generales_path,
+    cargar_pool_ubicaciones_igloo, 
+    buscar_ubicacion_igloo,
+    obtener_config_tipo_ruta, 
+    mostrar_resultados_igloo,
     _get_last_id_igloo_cached,
+    log_accion,
 )
 
 TABLE_RUTAS = "Rutas"
@@ -405,6 +415,7 @@ def _guardar_ruta(supabase, nombre_usuario: str) -> None:
         _get_last_id_igloo_cached.clear()
         # Refrescar pool para incluir las nuevas ubicaciones
         cargar_pool_ubicaciones_igloo.clear()
+        log_accion("crear_ruta", {"id_ruta": nuevo_id})
         st.session_state.igloo_ruta_guardada_id = nuevo_id
         st.session_state.igloo_mostrar_modal    = True
         st.rerun()
