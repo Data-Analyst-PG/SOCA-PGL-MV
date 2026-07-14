@@ -499,8 +499,9 @@ def render():
                     )
                     primer_ruta = rutas[0]
                     nombre_pdf   = f"Simulacion_VueltaRedonda_{primer_ruta.get('ID_Ruta', 'SinID')}.pdf"
+                    log_accion("generar_pdf", {"id_ruta": primer_ruta.get("ID_Ruta", "SinID")})
                     with open(pdf_path, "rb") as f:
-                        st.download_button(
+                        descargado = st.download_button(
                             label="📥 Descargar PDF",
                             data=f.read(),
                             file_name=nombre_pdf,
@@ -509,6 +510,8 @@ def render():
                             use_container_width=True,
                             key="igloo_sim_dl_pdf",
                         )
+                    if descargado:
+                        log_accion("descargar_archivo", {"id_ruta": primer_ruta.get("ID_Ruta", "SinID")})
                     alert("success", "✅ PDF generado exitosamente.")
                 except Exception as e:
                     alert("error", f"❌ Error generando PDF: {e}")
