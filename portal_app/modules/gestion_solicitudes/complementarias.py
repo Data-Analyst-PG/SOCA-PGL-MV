@@ -82,7 +82,7 @@ def _get_factura_url(factura_path: str) -> str | None:
 
 # ── Modal de edición ──────────────────────────────────────────────────────────
 @st.dialog("Actualizar complementaria", width="large")
-def _modal_edicion(comp: dict, gestor: str):
+def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
     folio = comp.get("folio")
     est   = comp.get("estatus", "Pendiente")
     badge = status_badge_html(est)
@@ -187,6 +187,13 @@ def _modal_edicion(comp: dict, gestor: str):
     historial_timeline(comp.get("historial") or [])
     st.divider()
 
+    if solo_lectura:
+        col_x, _ = st.columns([1, 3])
+        with col_x:
+            if st.button("Cerrar", key=f"gc_comp_close_{folio}"):
+                st.rerun()
+        return
+
     st.markdown("**✏️ Registrar actualización:**")
 
     col_a, col_b = st.columns(2)
@@ -198,7 +205,6 @@ def _modal_edicion(comp: dict, gestor: str):
         nuevo_aud  = gestor
         st.text_input("Auditor", value=gestor, disabled=True,
                       help="Se asigna automáticamente al usuario que gestiona la solicitud.")
-
     comentario = st.text_area(
         "Comentario del auditor",
         value=comp.get("comentarios_auditor") or "",
@@ -326,6 +332,7 @@ def render():
 
     # ── ③ HISTORIAL COMPLETO ──────────────────────────────────────────────────
     st.markdown("#### 📋 Historial completo")
+    st.caption("Incluye solicitudes cerradas (Resuelto / Cancelado). Ajusta los filtros y genera el reporte.")
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -344,36 +351,61 @@ def render():
             "Tráfico o solicitante", placeholder="Buscar...", key="gc_comp_h_q"
         )
 
-    filtrados = list(comps)
-    if filtro_est != "Todos":
-        filtrados = [c for c in filtrados if c.get("estatus") == filtro_est]
-    if filtro_emp != "Todas":
-        filtrados = [c for c in filtrados if c.get("empresa", "") == filtro_emp]
-    if filtro_desde:
-        filtrados = [
-            c for c in filtrados
-            if str(c.get("fecha_captura", ""))[:10] >= str(filtro_desde)
-        ]
-    if filtro_q.strip():
-        q = filtro_q.strip().lower()
-        filtrados = [
-            c for c in filtrados
-            if q in str(c.get("numero_trafico", "")).lower()
-            or q in str(c.get("solicitante", "")).lower()
-        ]
+    col_btn, _ = st.columns([1, 3])
+    with col_btn:
+        generar = st.button("🔎 Generar reporte", type="primary",
+                             key="gc_comp_h_generar", use_container_width=True)
 
-    st.caption(f"Mostrando {len(filtrados)} de {len(comps)} solicitud(es)")
+    if generar:
+        filtrados = list(comps)
+        if filtro_est != "Todos":
+            filtrados = [c for c in filtrados if c.get("estatus") == filtro_est]
+        if filtro_emp != "Todas":
+            filtrados = [c for c in filtrados if c.get("empresa", "") == filtro_emp]
+        if filtro_desde:
+            filtrados = [
+                c for c in filtrados
+                if str(c.get("fecha_captura", ""))[:10] >= str(filtro_desde)
+            ]
+        if filtro_q.strip():
+            q = filtro_q.strip().lower()
+            filtrados = [
+                c for c in filtrados
+                if q in str(c.get("numero_trafico", "")).lower()
+                or q in str(c.get("solicitante", "")).lower()
+            ]
+        st.session_state["gc_comp_h_resultados"] = filtrados
 
-    if filtrados:
+    resultados = st.session_state.get("gc_comp_h_resultados")
+
+    if resultados is None:
+        st.info("Aplica tus filtros y presiona **Generar reporte** para consultar el historial.")
+    elif not resultados:
+        st.info("No hay resultados con los filtros aplicados.")
+    else:
+        st.caption(f"Mostrando {len(resultados)} de {len(comps)} solicitud(es) · haz clic en una fila para ver el detalle")
+
         df = pd.DataFrame([
             {label: c.get(col, "") for col, label in COLS_TABLA}
-            for c in filtrados
+            for c in resultados
         ])
         for fecha_col in ["Fecha captura", "Fecha resolución"]:
             if fecha_col in df.columns:
                 df[fecha_col] = df[fecha_col].astype(str).str[:10]
 
-        solicitudes_table(df)
+        evento = st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="gc_comp_h_tabla",
+        )
+
+        filas_sel = evento.selection.rows if evento and evento.selection else []
+        if filas_sel:
+            comp_sel = resultados[filas_sel[0]]
+            _modal_edicion(comp_sel, gestor, solo_lectura=True)
 
         excel_bytes = _to_excel(df)
         st.download_button(
@@ -383,5 +415,3 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="gc_comp_dl_excel",
         )
-    else:
-        st.info("No hay resultados con los filtros aplicados.")
