@@ -596,6 +596,7 @@ def render():
                 file_name=file_name,
                 mime="application/pdf",
             )
+        if descargado:
             log_accion("descargar_archivo", {"id_ruta": ruta.get("ID_Ruta", "")})
     except Exception as e:
         alert("error", f"Error generando PDF: {e}")
