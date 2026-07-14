@@ -82,6 +82,148 @@ def _modal_edicion(id_ruta: str) -> None:
 
 
 # ─────────────────────────────────────────────
+# PREVIEW EDICIÓN
+# ─────────────────────────────────────────────
+def _preview_edicion(r: dict, fd: dict) -> None:
+    # Función auxiliar — solo usada en este módulo
+    mostrar_resultados_setlogis(
+        r,
+        modalidad  = fd.get("modalidad", "Flat"),
+        miles_load = safe(r.get("Miles_Load", 0.0)),
+        cxm_flete  = fd.get("cxm_flete_cap", 0.0),
+        cxm_fuel   = fd.get("cxm_fuel_cap",  0.0),
+    )
+
+
+# ─────────────────────────────────────────────
+# GUARDAR EDICIÓN EN SUPABASE
+# ─────────────────────────────────────────────
+def _guardar_edicion(supabase, idx_sel, ruta, r_prev, d_prev, nombre_usuario, historial_ant):
+    try:
+        entrada_historial = {
+            "timestamp": now_iso(),
+            "usuario":   nombre_usuario,
+            "motivo":    d_prev["motivo"],
+            "valores_anteriores": {
+                "Ingreso_Global":      ruta.get("Ingreso_Global"),
+                "Flete_USA":           ruta.get("Flete_USA"),
+                "Fuel":                ruta.get("Fuel"),
+                "Ingreso_Cruce":       ruta.get("Ingreso_Cruce"),
+                "Ingreso_MX":          ruta.get("Ingreso_MX"),
+                "Extras_Ingreso":      ruta.get("Extras_Ingreso"),
+                "Costo_Directo":       ruta.get("Costo_Directo"),
+                "Pago_Owner_Cargado":  ruta.get("Pago_Owner_Cargado"),
+                "Pago_Owner_Vacio":    ruta.get("Pago_Owner_Vacio"),
+                "Fuel_Owner":          ruta.get("Fuel_Owner"),
+                "Pago_Fuel_Owner":     ruta.get("Pago_Fuel_Owner"),
+                "Costo_Cruce":         ruta.get("Costo_Cruce"),
+                "Costo_MX":            ruta.get("Costo_MX"),
+                "Costo_Indirecto":     ruta.get("Costo_Indirecto"),
+                "Costo_Total":         ruta.get("Costo_Total"),
+                "Utilidad_Bruta":      ruta.get("Utilidad_Bruta"),
+                "Utilidad_Neta":       ruta.get("Utilidad_Neta"),
+                "Pct_Costo_Directo":   ruta.get("Pct_Costo_Directo"),
+                "Pct_Costo_Indirecto": ruta.get("Pct_Costo_Indirecto"),
+                "Pct_Ut_Bruta":        ruta.get("Pct_Ut_Bruta"),
+                "Pct_Ut_Neta":         ruta.get("Pct_Ut_Neta"),
+                "Miles_Load":          ruta.get("Miles_Load"),
+                "Short_Miles":         ruta.get("Short_Miles"),
+                "Miles_Empty":         ruta.get("Miles_Empty"),
+                "Modalidad":           ruta.get("Modalidad"),
+                "CXM_Flete":           ruta.get("CXM_Flete"),
+                "CXM_Fuel":            ruta.get("CXM_Fuel"),
+                "Modo_Costo_Indirecto":ruta.get("Modo_Costo_Indirecto"),
+                "Tipo_Viaje":          ruta.get("Tipo_Viaje"),
+                "Modo":                ruta.get("Modo"),
+                "Fecha":               ruta.get("Fecha"),
+                "TC_USD_MXP":          ruta.get("TC_USD_MXP"),
+            },
+        }
+        historial_nuevo = list(historial_ant) + [entrada_historial]
+
+        extras_db         = {f"Extra_{n.replace(' ','_')}": v
+                             for n, v in d_prev.get("otros_cargos", {}).items()}
+        extras_cobrado_db = {f"Extra_{n.replace(' ','_')}_Cobrado": v
+                             for n, v in d_prev.get("otros_pagados", {}).items()}
+
+        fila = {
+            "Tipo_Viaje":            r_prev["Tipo_Viaje"],
+            "Modo":                  r_prev["Modo"],
+            "Direccion":             r_prev["Direccion"],
+            "Modalidad":             d_prev["modalidad"],
+            "Modo_Costo_Indirecto":  d_prev["modo_ci"],
+            "Cliente":               r_prev["Cliente"],
+            "Origen":                r_prev["Origen"],
+            "Destino":               r_prev["Destino"],
+            "Origen_MX":             d_prev["origen_mx"],
+            "Destino_MX":            d_prev["destino_mx"],
+            "Moneda_Flete":          d_prev["mon_flete"],
+            "Moneda_Ingreso_Cruce":  d_prev["mon_ing_cruce"],
+            "Moneda_Costo_Cruce":    d_prev["mon_costo_cruce"],
+            "Moneda_Ingreso_MX":     d_prev["mon_ing_mx"],
+            "Moneda_Costo_MX":       d_prev["mon_costo_mx"],
+            "Tipo_Carga_Cruce":      d_prev["tipo_carga_cruce"],
+            "Incluye_Cruce":         d_prev["incluye_cruce"],
+            "Miles_Load":            r_prev["Miles_Load"],
+            "Miles_Empty":           r_prev["Miles_Empty"],
+            "Short_Miles":           r_prev["Short_Miles"],
+            "Millas_Totales":        r_prev["Millas_Totales"],
+            "CXM_Flete":             d_prev["cxm_flete_cap"],
+            "CXM_Fuel":              d_prev["cxm_fuel_cap"],
+            "Flete_Flat":            r_prev.get("Flete_Flat", d_prev["flete_flat_cap"]),
+            "Flete_USA":             r_prev["Flete_USA"],
+            "Fuel":                  r_prev["Fuel"],
+            "Flete_Fuel":            r_prev["Flete_Fuel"],
+            "Ingreso_Cruce":         r_prev["Ingreso_Cruce"],
+            "Tipo_Cruce":            r_prev["Tipo_Cruce"],
+            "Ingreso_MX":            r_prev["Ingreso_MX"],
+            "Extras_Ingreso":        r_prev["Extras_Ingreso"],
+            "Extras_Costo":          r_prev["Extras_Costo"],
+            "Ingreso_Global":        r_prev["Ingreso_Global"],
+            "PxM_Cargado":           r_prev["PxM_Cargado"],
+            "PxM_Vacio":             r_prev["PxM_Vacio"],
+            "Pago_Owner_Cargado":    r_prev["Pago_Owner_Cargado"],
+            "Pago_Owner_Vacio":      r_prev["Pago_Owner_Vacio"],
+            "Pago_Owner_Total":      r_prev["Pago_Owner_Total"],
+            "Fuel_Owner":            r_prev.get("Fuel_Owner", False),
+            "Pago_Fuel_Owner":       r_prev.get("Pago_Fuel_Owner", 0.0),
+            "Costo_Cruce":           r_prev["Costo_Cruce"],
+            "Costo_MX":              r_prev["Costo_MX"],
+            "Costo_Directo":         r_prev["Costo_Directo"],
+            "Costo_Indirecto":       r_prev["Costo_Indirecto"],
+            "Costo_Total":           r_prev["Costo_Total"],
+            "Utilidad_Bruta":        r_prev["Utilidad_Bruta"],
+            "Utilidad_Neta":         r_prev["Utilidad_Neta"],
+            "Pct_Costo_Directo":     r_prev["Pct_Costo_Directo"],
+            "Pct_Costo_Indirecto":   r_prev["Pct_Costo_Indirecto"],
+            "Pct_Ut_Bruta":          r_prev["Pct_Ut_Bruta"],
+            "Pct_Ut_Neta":           r_prev["Pct_Ut_Neta"],
+            "TC_USD_MXP":            r_prev["TC"],
+            "updated_by":            nombre_usuario,
+            "updated_at":            now_iso(),
+            "historial":             historial_nuevo,
+            **extras_db,
+            **extras_cobrado_db,
+        }
+
+        fila_limpia = limpiar_fila_json(fila)
+        supabase.table(TABLE_RUTAS).update(fila_limpia).eq("ID_Ruta", idx_sel).execute()
+
+        load_rutas_setlogis.clear()
+        cargar_pool_ubicaciones_setlogis.clear()
+
+        st.session_state["sl_ed_ruta_id"] = idx_sel
+        st.session_state["sl_ed_modal"]   = True
+        st.session_state.pop("sl_edit_resultado", None)
+        st.session_state.pop("sl_edit_datos",     None)
+        st.session_state.pop("sl_edit_id_rev",    None)
+        st.rerun()
+
+    except Exception as ex:
+        alert("error", f"❌ Error al guardar cambios: {ex}")
+
+
+# ─────────────────────────────────────────────
 # RENDER PRINCIPAL
 # ─────────────────────────────────────────────
 def render() -> None:
@@ -636,13 +778,7 @@ def render() -> None:
 
         if r_prev and d_prev and id_rev == idx_sel:
             divider()
-            mostrar_resultados_setlogis(
-                r_prev,
-                modalidad  = d_prev.get("modalidad", "Flat"),
-                miles_load = safe(r_prev.get("Miles_Load", 0.0)),
-                cxm_flete  = d_prev.get("cxm_flete_cap", 0.0),
-                cxm_fuel   = d_prev.get("cxm_fuel_cap",  0.0),
-            )
+            _preview_edicion(r_prev, d_prev)
             divider()
             if st.button("💾 Guardar Cambios en Base de Datos", key=f"sl_guardar_ed_{k}",
                          type="primary", use_container_width=True):
@@ -655,131 +791,3 @@ def render() -> None:
                     nombre_usuario = nombre_usuario,
                     historial_ant  = historial,
                 )
-
-
-# ─────────────────────────────────────────────
-# GUARDAR EDICIÓN EN SUPABASE
-# ─────────────────────────────────────────────
-def _guardar_edicion(supabase, idx_sel, ruta, r_prev, d_prev, nombre_usuario, historial_ant):
-    try:
-        entrada_historial = {
-            "timestamp": now_iso(),
-            "usuario":   nombre_usuario,
-            "motivo":    d_prev["motivo"],
-            "valores_anteriores": {
-                "Ingreso_Global":      ruta.get("Ingreso_Global"),
-                "Flete_USA":           ruta.get("Flete_USA"),
-                "Fuel":                ruta.get("Fuel"),
-                "Ingreso_Cruce":       ruta.get("Ingreso_Cruce"),
-                "Ingreso_MX":          ruta.get("Ingreso_MX"),
-                "Extras_Ingreso":      ruta.get("Extras_Ingreso"),
-                "Costo_Directo":       ruta.get("Costo_Directo"),
-                "Pago_Owner_Cargado":  ruta.get("Pago_Owner_Cargado"),
-                "Pago_Owner_Vacio":    ruta.get("Pago_Owner_Vacio"),
-                "Fuel_Owner":          ruta.get("Fuel_Owner"),
-                "Pago_Fuel_Owner":     ruta.get("Pago_Fuel_Owner"),
-                "Costo_Cruce":         ruta.get("Costo_Cruce"),
-                "Costo_MX":            ruta.get("Costo_MX"),
-                "Costo_Indirecto":     ruta.get("Costo_Indirecto"),
-                "Costo_Total":         ruta.get("Costo_Total"),
-                "Utilidad_Bruta":      ruta.get("Utilidad_Bruta"),
-                "Utilidad_Neta":       ruta.get("Utilidad_Neta"),
-                "Pct_Costo_Directo":   ruta.get("Pct_Costo_Directo"),
-                "Pct_Costo_Indirecto": ruta.get("Pct_Costo_Indirecto"),
-                "Pct_Ut_Bruta":        ruta.get("Pct_Ut_Bruta"),
-                "Pct_Ut_Neta":         ruta.get("Pct_Ut_Neta"),
-                "Miles_Load":          ruta.get("Miles_Load"),
-                "Short_Miles":         ruta.get("Short_Miles"),
-                "Miles_Empty":         ruta.get("Miles_Empty"),
-                "Modalidad":           ruta.get("Modalidad"),
-                "CXM_Flete":           ruta.get("CXM_Flete"),
-                "CXM_Fuel":            ruta.get("CXM_Fuel"),
-                "Modo_Costo_Indirecto":ruta.get("Modo_Costo_Indirecto"),
-                "Tipo_Viaje":          ruta.get("Tipo_Viaje"),
-                "Modo":                ruta.get("Modo"),
-                "Fecha":               ruta.get("Fecha"),
-                "TC_USD_MXP":          ruta.get("TC_USD_MXP"),
-            },
-        }
-        historial_nuevo = list(historial_ant) + [entrada_historial]
-
-        extras_db         = {f"Extra_{n.replace(' ','_')}": v
-                             for n, v in d_prev.get("otros_cargos", {}).items()}
-        extras_cobrado_db = {f"Extra_{n.replace(' ','_')}_Cobrado": v
-                             for n, v in d_prev.get("otros_pagados", {}).items()}
-
-        fila = {
-            "Tipo_Viaje":            r_prev["Tipo_Viaje"],
-            "Modo":                  r_prev["Modo"],
-            "Direccion":             r_prev["Direccion"],
-            "Modalidad":             d_prev["modalidad"],
-            "Modo_Costo_Indirecto":  d_prev["modo_ci"],
-            "Cliente":               r_prev["Cliente"],
-            "Origen":                r_prev["Origen"],
-            "Destino":               r_prev["Destino"],
-            "Origen_MX":             d_prev["origen_mx"],
-            "Destino_MX":            d_prev["destino_mx"],
-            "Moneda_Flete":          d_prev["mon_flete"],
-            "Moneda_Ingreso_Cruce":  d_prev["mon_ing_cruce"],
-            "Moneda_Costo_Cruce":    d_prev["mon_costo_cruce"],
-            "Moneda_Ingreso_MX":     d_prev["mon_ing_mx"],
-            "Moneda_Costo_MX":       d_prev["mon_costo_mx"],
-            "Tipo_Carga_Cruce":      d_prev["tipo_carga_cruce"],
-            "Incluye_Cruce":         d_prev["incluye_cruce"],
-            "Miles_Load":            r_prev["Miles_Load"],
-            "Miles_Empty":           r_prev["Miles_Empty"],
-            "Short_Miles":           r_prev["Short_Miles"],
-            "Millas_Totales":        r_prev["Millas_Totales"],
-            "CXM_Flete":             d_prev["cxm_flete_cap"],
-            "CXM_Fuel":              d_prev["cxm_fuel_cap"],
-            "Flete_Flat":            r_prev.get("Flete_Flat", d_prev["flete_flat_cap"]),
-            "Flete_USA":             r_prev["Flete_USA"],
-            "Fuel":                  r_prev["Fuel"],
-            "Flete_Fuel":            r_prev["Flete_Fuel"],
-            "Ingreso_Cruce":         r_prev["Ingreso_Cruce"],
-            "Tipo_Cruce":            r_prev["Tipo_Cruce"],
-            "Ingreso_MX":            r_prev["Ingreso_MX"],
-            "Extras_Ingreso":        r_prev["Extras_Ingreso"],
-            "Extras_Costo":          r_prev["Extras_Costo"],
-            "Ingreso_Global":        r_prev["Ingreso_Global"],
-            "PxM_Cargado":           r_prev["PxM_Cargado"],
-            "PxM_Vacio":             r_prev["PxM_Vacio"],
-            "Pago_Owner_Cargado":    r_prev["Pago_Owner_Cargado"],
-            "Pago_Owner_Vacio":      r_prev["Pago_Owner_Vacio"],
-            "Pago_Owner_Total":      r_prev["Pago_Owner_Total"],
-            "Fuel_Owner":            r_prev.get("Fuel_Owner", False),
-            "Pago_Fuel_Owner":       r_prev.get("Pago_Fuel_Owner", 0.0),
-            "Costo_Cruce":           r_prev["Costo_Cruce"],
-            "Costo_MX":              r_prev["Costo_MX"],
-            "Costo_Directo":         r_prev["Costo_Directo"],
-            "Costo_Indirecto":       r_prev["Costo_Indirecto"],
-            "Costo_Total":           r_prev["Costo_Total"],
-            "Utilidad_Bruta":        r_prev["Utilidad_Bruta"],
-            "Utilidad_Neta":         r_prev["Utilidad_Neta"],
-            "Pct_Costo_Directo":     r_prev["Pct_Costo_Directo"],
-            "Pct_Costo_Indirecto":   r_prev["Pct_Costo_Indirecto"],
-            "Pct_Ut_Bruta":          r_prev["Pct_Ut_Bruta"],
-            "Pct_Ut_Neta":           r_prev["Pct_Ut_Neta"],
-            "TC_USD_MXP":            r_prev["TC"],
-            "updated_by":            nombre_usuario,
-            "updated_at":            now_iso(),
-            "historial":             historial_nuevo,
-            **extras_db,
-            **extras_cobrado_db,
-        }
-
-        fila_limpia = limpiar_fila_json(fila)
-        supabase.table(TABLE_RUTAS).update(fila_limpia).eq("ID_Ruta", idx_sel).execute()
-
-        load_rutas_setlogis.clear()
-        cargar_pool_ubicaciones_setlogis.clear()
-
-        st.session_state["sl_ed_ruta_id"] = idx_sel
-        st.session_state["sl_ed_modal"]   = True
-        st.session_state.pop("sl_edit_resultado", None)
-        st.session_state.pop("sl_edit_datos",     None)
-        st.session_state.pop("sl_edit_id_rev",    None)
-        st.rerun()
-
-    except Exception as ex:
-        alert("error", f"❌ Error al guardar cambios: {ex}")
