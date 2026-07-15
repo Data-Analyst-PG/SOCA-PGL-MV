@@ -45,6 +45,7 @@ from ._helpers import (
     now_iso,
     buscar_ubicacion_lincoln,
     mostrar_resultados_lincoln,
+    log_accion,
 )
 
 
@@ -360,6 +361,7 @@ def _guardar_ruta(r: dict, fd: dict, id_ruta: str, user_id: str, nombre_usuario:
 
     try:
         supabase.table(TABLE_RUTAS).insert(limpiar_fila_json(fila)).execute()
+        log_accion("crear_ruta", {"id_ruta": id_ruta})
         # Refrescar cache de rutas y pool de ubicaciones
         try:
             from ._shared import load_rutas_lincoln, cargar_pool_ubicaciones_lincoln
