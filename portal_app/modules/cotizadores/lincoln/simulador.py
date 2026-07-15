@@ -515,6 +515,7 @@ def render() -> None:
                     "ruta_r":    ruta_r_sel.to_dict() if ruta_r_sel is not None else None,
                 }
                 st.session_state["ln_sim_realizada"] = True
+                log_accion("simular_ruta", {"id_ruta": ruta_p.get("ID_Ruta", "")})
                 st.rerun()
 
     # ══════════════════════════════════════════════════════════════
@@ -552,7 +553,7 @@ def render() -> None:
                 f"VR_Lincoln_{datos['ruta_p'].get('ID_Ruta','')}_"
                 f"{datos['ruta_p'].get('Cliente','').replace(' ','_')}.pdf"
             )
-            st.download_button(
+            descargado = st.download_button(
                 label="📄 Descargar PDF Vuelta Redonda",
                 data=pdf_bytes,
                 file_name=nombre_pdf,
@@ -560,6 +561,8 @@ def render() -> None:
                 use_container_width=True,
                 key="ln_sim_dl_pdf",
             )
+            if descargado:
+                log_accion("descargar_archivo", {"id_ruta": datos["ruta_p"].get("ID_Ruta", "")})
         except Exception as ex:
             alert("error", f"Error generando PDF: {ex}")
 
