@@ -44,6 +44,7 @@ from ._helpers import (
     buscar_ubicacion_lincoln,
     cargar_pool_ubicaciones_lincoln,
     mostrar_resultados_lincoln,
+    log_accion,
 )
 
 
@@ -172,13 +173,15 @@ def render() -> None:
         st.caption(f"Mostrando **{len(df_tabla)}** de **{len(df)}** rutas")
 
         divider()
-        st.download_button(
+        descargado_excel = st.download_button(
             "📥 Descargar Excel",
             data=_to_excel_bytes(df_tabla[cols_disp] if cols_disp else df_tabla),
             file_name=f"rutas_lincoln_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="ln_dl_excel",
         )
+        if descargado_excel:
+            log_accion("exportar_excel", {"filas": len(df_tabla)})
 
     # ══════════════════════════════════════════════════════════════
     # TAB ELIMINAR
@@ -199,6 +202,7 @@ def render() -> None:
                 try:
                     for idr in ids_eliminar:
                         sb.table(TABLE_RUTAS).delete().eq("ID_Ruta", idr).execute()
+                    log_accion("eliminar_ruta", {"ids_ruta": ids_eliminar})
                     load_rutas_lincoln.clear()
                     cargar_pool_ubicaciones_lincoln.clear()
                     alert("success", f"✅ {len(ids_eliminar)} ruta(s) eliminada(s).")
@@ -703,6 +707,7 @@ def render() -> None:
                         sb.table(TABLE_RUTAS).update(
                             limpiar_fila_json(payload)
                         ).eq("ID_Ruta", idx_sel).execute()
+                        log_accion("editar_ruta", {"id_ruta": idx_sel})
                         load_rutas_lincoln.clear()
                         cargar_pool_ubicaciones_lincoln.clear()
                         st.session_state["ln_gest_editado_id"]   = idx_sel
