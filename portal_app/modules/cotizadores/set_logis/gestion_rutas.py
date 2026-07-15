@@ -50,6 +50,7 @@ from ._helpers import (
     buscar_ubicacion_setlogis,
     cargar_pool_ubicaciones_setlogis,
     mostrar_resultados_setlogis,
+    log_accion,
 )
 
 
@@ -208,6 +209,7 @@ def _guardar_edicion(supabase, idx_sel, ruta, r_prev, d_prev, nombre_usuario, hi
 
         fila_limpia = limpiar_fila_json(fila)
         supabase.table(TABLE_RUTAS).update(fila_limpia).eq("ID_Ruta", idx_sel).execute()
+        log_accion("editar_ruta", {"id_ruta": idx_sel})
 
         load_rutas_setlogis.clear()
         cargar_pool_ubicaciones_setlogis.clear()
@@ -283,13 +285,15 @@ def render() -> None:
         )
         st.caption(f"Mostrando **{len(df_tabla)}** de **{len(df)}** rutas")
         divider()
-        st.download_button(
+        descargado_excel = st.download_button(
             "📥 Descargar Excel",
             data=_to_excel_bytes(df_tabla[cols_disp] if cols_disp else df_tabla),
             file_name=f"rutas_setlogis_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="sl_dl_excel",
         )
+        if descargado_excel:
+            log_accion("exportar_excel", {"filas": len(df_tabla)})
 
     # ══════════════════════════════════════════════════════════════
     # TAB ELIMINAR
@@ -310,6 +314,7 @@ def render() -> None:
                 try:
                     for idr in ids_eliminar:
                         supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", idr).execute()
+                    log_accion("eliminar_ruta", {"ids_ruta": ids_eliminar})
                     load_rutas_setlogis.clear()
                     cargar_pool_ubicaciones_setlogis.clear()
                     alert("success", f"✅ {len(ids_eliminar)} ruta(s) eliminada(s).")
