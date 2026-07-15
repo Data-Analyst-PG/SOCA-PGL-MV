@@ -457,14 +457,17 @@ def render() -> None:
                     .replace("/", "-").replace(" ", "_") +
                     ("_SIM" if simular else "") + ".pdf"
                 )
+                log_accion("generar_pdf", {"id_ruta": ruta.get("ID_Ruta", "")})
                 with open(pdf_path, "rb") as f:
-                    st.download_button(
+                    descargado = st.download_button(
                         "📥 Descargar PDF",
                         data=f.read(),
                         file_name=nombre,
                         mime="application/pdf",
                         key="pic_cons_dl_pdf",
                     )
+                if descargado:
+                    log_accion("descargar_archivo", {"id_ruta": ruta.get("ID_Ruta", "")})
                 alert("success", "PDF generado exitosamente.")
             except Exception as e:
                 alert("error", f"Error al generar PDF: {e}")
