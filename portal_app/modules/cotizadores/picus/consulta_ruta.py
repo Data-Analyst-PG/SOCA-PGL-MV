@@ -36,6 +36,7 @@ from ._helpers import (
     filtrar_rutas_picus,
     label_ruta_picus,
     mostrar_resultados_picus,
+    log_accion,
 )
 
 
