@@ -47,6 +47,7 @@ from ._helpers import (
     buscar_ubicacion_setlogis,
     cargar_pool_ubicaciones_setlogis,
     mostrar_resultados_setlogis,
+    log_accion,
 )
 
 
@@ -597,6 +598,7 @@ def _guardar_ruta(r: dict, fd: dict, supabase) -> None:
 
         fila_limpia = limpiar_fila_json(fila)
         supabase.table(TABLE_RUTAS).insert(fila_limpia).execute()
+        log_accion("crear_ruta", {"id_ruta": fd["id_ruta"]})
 
         # Invalidar cache de ubicaciones para que aparezcan las nuevas
         cargar_pool_ubicaciones_setlogis.clear()
