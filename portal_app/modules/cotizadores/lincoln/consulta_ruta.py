@@ -37,6 +37,7 @@ from ._helpers import (
     filtrar_rutas_lincoln,
     label_ruta_lincoln,
     mostrar_resultados_lincoln,
+    log_accion,
 )
 
 
@@ -399,7 +400,8 @@ def render() -> None:
                 f"_{ruta.get('Fecha', '')}"
                 + ("_SIM" if es_simulacion else "") + ".pdf"
             )
-            st.download_button(
+            log_accion("generar_pdf", {"id_ruta": ruta.get("ID_Ruta", "")})
+            descargado = st.download_button(
                 "📥 Descargar PDF",
                 data=pdf_bytes,
                 file_name=fname,
@@ -407,5 +409,7 @@ def render() -> None:
                 use_container_width=True,
                 key="ln_cons_dl_pdf",
             )
+            if descargado:
+                log_accion("descargar_archivo", {"id_ruta": ruta.get("ID_Ruta", "")})
         except Exception as e:
             alert("error", f"Error generando PDF: {e}")
