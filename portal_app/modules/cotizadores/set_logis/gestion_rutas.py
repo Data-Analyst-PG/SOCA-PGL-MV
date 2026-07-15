@@ -177,7 +177,8 @@ def _guardar_edicion(supabase, idx_sel, ruta, r_prev, d_prev, nombre_usuario, hi
             "Flete_Fuel":            r_prev["Flete_Fuel"],
             "Ingreso_Cruce":         r_prev["Ingreso_Cruce"],
             "Tipo_Cruce":            r_prev["Tipo_Cruce"],
-            "Ingreso_MX":            r_prev["Ingreso_MX"],
+            "Ingreso_MX":            d_prev.get("ingreso_mx", 0.0),
+            "Flete_MEX":             r_prev["Ingreso_MX"],
             "Extras_Ingreso":        r_prev["Extras_Ingreso"],
             "Extras_Costo":          r_prev["Extras_Costo"],
             "Ingreso_Global":        r_prev["Ingreso_Global"],
@@ -189,7 +190,8 @@ def _guardar_edicion(supabase, idx_sel, ruta, r_prev, d_prev, nombre_usuario, hi
             "Fuel_Owner":            r_prev.get("Fuel_Owner", False),
             "Pago_Fuel_Owner":       r_prev.get("Pago_Fuel_Owner", 0.0),
             "Costo_Cruce":           r_prev["Costo_Cruce"],
-            "Costo_MX":              r_prev["Costo_MX"],
+            "Costo_MX":              d_prev.get("costo_mx", 0.0),
+            "Costo_MEX":             r_prev["Costo_MX"],
             "Costo_Directo":         r_prev["Costo_Directo"],
             "Costo_Indirecto":       r_prev["Costo_Indirecto"],
             "Costo_Total":           r_prev["Costo_Total"],
@@ -459,9 +461,9 @@ def render() -> None:
         costo_cruce_raw   = safe(ruta.get("Costo_Cruce"))
         origen_mx_val  = str(ruta.get("Origen_MX",  ""))
         destino_mx_val = str(ruta.get("Destino_MX", ""))
-        mon_ing_mx  = str(ruta.get("Moneda_Ingreso_MX", "MXP"))
+        mon_ing_mx  = str(ruta.get("Moneda_Ingreso_MX", "USD"))
         ingreso_mx_raw = safe(ruta.get("Ingreso_MX"))
-        mon_costo_mx   = str(ruta.get("Moneda_Costo_MX", "MXP"))
+        mon_costo_mx   = str(ruta.get("Moneda_Costo_MX", "USD"))
         costo_mx_raw   = safe(ruta.get("Costo_MX"))
 
         # ── SECCIONES EN ORDEN según tipo — idéntico a captura ────────────────
@@ -644,14 +646,19 @@ def render() -> None:
                     destino_mx_val = str(destino_mx_sel or "").strip() or destino_mx_val
 
                     mon_ing_mx  = mx2.selectbox(
-                        "💱 Moneda MX", ["MXP", "USD"],
-                        index=0 if mon_ing_mx == "MXP" else 1,
-                        key=f"sl_ed_mon_mx_{k}",
+                        "💱 Moneda Ingreso MX", ["USD", "MXP"],
+                        index=0 if mon_ing_mx == "USD" else 1,
+                        key=f"sl_ed_mon_ing_mx_{k}",
                     )
                     ingreso_mx_raw = mx2.number_input(
                         "Ingreso Flete MX", value=safe(ruta.get("Ingreso_MX")),
                         min_value=0.0, step=100.0, format="%.2f",
                         key=f"sl_ed_ing_mx_{k}",
+                    )
+                    mon_costo_mx = mx2.selectbox(
+                        "💱 Moneda Costo MX", ["USD", "MXP"],
+                        index=0 if mon_costo_mx == "USD" else 1,
+                        key=f"sl_ed_mon_costo_mx_{k}",
                     )
                     costo_mx_raw = mx2.number_input(
                         "Costo Flete MX", value=safe(ruta.get("Costo_MX")),
@@ -767,6 +774,8 @@ def render() -> None:
                 "mon_costo_cruce":  mon_costo_cruce,
                 "mon_ing_mx":       mon_ing_mx,
                 "mon_costo_mx":     mon_costo_mx,
+                "ingreso_mx":       ingreso_mx_raw if aplica_mx else 0.0,
+                "costo_mx":         costo_mx_raw   if aplica_mx else 0.0,
                 "origen_mx":        normalizar(origen_mx_val)  if aplica_mx else "",
                 "destino_mx":       normalizar(destino_mx_val) if aplica_mx else "",
                 "tipo_carga_cruce": tipo_carga_c if incluye_cruce and not es_empty else "",
