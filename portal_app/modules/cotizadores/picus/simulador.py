@@ -38,6 +38,7 @@ from ._helpers import (
     filtrar_rutas_picus,
     label_ruta_picus,
     mostrar_resultados_picus,
+    log_accion,
 )
 
 
@@ -369,6 +370,7 @@ def render() -> None:
             st.session_state["pic_sim_realizada"]  = True
             st.session_state["pic_sim_rutas"]      = rutas_seleccionadas
             st.session_state["pic_sim_resultado"]  = res
+            log_accion("simular_ruta", {"id_ruta": ruta_1.get("ID_Ruta", "")})
             st.rerun()
 
     # ── Resultados ────────────────────────────────────────────────
@@ -433,9 +435,10 @@ def render() -> None:
                     )
                     primer_ruta = rutas[0]
                     nombre_pdf  = f"Simulacion_VueltaRedonda_{primer_ruta.get('ID_Ruta','SinID')}.pdf"
+                    log_accion("generar_pdf", {"id_ruta": primer_ruta.get("ID_Ruta", "SinID")})
                     with open(pdf_path, "rb") as f:
                         pdf_bytes = f.read()
-                    st.download_button(
+                    descargado = st.download_button(
                         "📥 Descargar PDF",
                         data=pdf_bytes,
                         file_name=nombre_pdf,
@@ -444,6 +447,8 @@ def render() -> None:
                         use_container_width=True,
                         key="pic_sim_dl_pdf",
                     )
+                    if descargado:
+                        log_accion("descargar_archivo", {"id_ruta": primer_ruta.get("ID_Ruta", "SinID")})
                     alert("success", "✅ PDF generado exitosamente.")
                 except Exception as e:
                     alert("error", f"❌ Error generando PDF: {e}")
