@@ -26,6 +26,7 @@ import pandas as pd
 import streamlit as st
 
 from services.supabase_client import get_supabase_client, get_authed_client
+from services.auditoria import registrar_accion
 
 # ─────────────────────────────────────────────
 # TABLAS SUPABASE
@@ -739,3 +740,11 @@ def calcular_vuelta_redonda_lincoln(rutas: list[pd.Series], valores: dict | None
         "pct_ub": pct_ub, "pct_un": pct_un,
         "ml_total": mi + mv,
     }
+
+
+# ─────────────────────────────────────────────
+# AUDITORÍA
+# ─────────────────────────────────────────────
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'cot-lincoln'."""
+    registrar_accion("cot-lincoln", accion, detalle)
