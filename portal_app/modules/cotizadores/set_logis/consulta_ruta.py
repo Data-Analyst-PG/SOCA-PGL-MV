@@ -37,7 +37,8 @@ from ._helpers import (
     load_rutas_setlogis,
     filtrar_rutas_setlogis,
     label_ruta_setlogis,
-    mostrar_resultados_setlogis,
+    mostrar_resultados_setlogis, 
+    log_accion,
 )
 
 
@@ -343,7 +344,8 @@ def render() -> None:
                 f"_{ruta.get('Fecha','')}"
                 + ("_SIM" if es_sim else "") + ".pdf"
             )
-            st.download_button(
+            log_accion("generar_pdf", {"id_ruta": ruta.get("ID_Ruta", "")})
+            descargado = st.download_button(
                 label="📥 Descargar PDF",
                 data=pdf_bytes,
                 file_name=nombre_pdf,
@@ -351,5 +353,7 @@ def render() -> None:
                 use_container_width=True,
                 key="sl_cons_dl_pdf",
             )
+            if descargado:
+                log_accion("descargar_archivo", {"id_ruta": ruta.get("ID_Ruta", "")})
         except Exception as ex:
             alert("error", f"❌ Error generando PDF: {ex}")
