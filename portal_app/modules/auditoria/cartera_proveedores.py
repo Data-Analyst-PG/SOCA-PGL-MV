@@ -488,6 +488,14 @@ def render():
                     key="proveedores_faltantes_editor",
                 )
 
+                # Streamlit 1.52.0: SelectboxColumn a veces devuelve el valor
+                # envuelto en una lista (ej. ['TRANSPORTE'] en vez de 'TRANSPORTE').
+                # Lo desempacamos aquí para que el resto del flujo trabaje con strings.
+                proveedores_editados = proveedores_editados.copy()
+                proveedores_editados['TIPO'] = proveedores_editados['TIPO'].apply(
+                    lambda v: (v[0] if v else None) if isinstance(v, list) else v
+                )
+
                 proveedores_sin_tipo = proveedores_editados[proveedores_editados['TIPO'].isna()]
 
                 if not proveedores_sin_tipo.empty:
