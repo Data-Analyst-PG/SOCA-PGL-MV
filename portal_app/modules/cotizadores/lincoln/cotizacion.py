@@ -20,7 +20,7 @@ from fpdf import FPDF
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
-from ._helpers import TABLE_RUTAS, cargar_datos_generales, safe, load_rutas_lincoln
+from ._helpers import TABLE_RUTAS, cargar_datos_generales, safe, load_rutas_lincoln, log_accion
 
 
 # ─────────────────────────────────────────────
@@ -496,6 +496,7 @@ def render() -> None:
         nombre_cli = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
         file_name  = f"Cotizacion_Lincoln_{nombre_cli}_{fecha.strftime('%d-%m-%Y')}.pdf"
         pdf_bytes  = pdf.output(dest="S").encode("latin-1")
+        log_accion("generar_cotizacion", {"cliente": cliente_nombre, "rutas": len(ids_sel)})
 
         c1, c2, c3 = st.columns(3)
         c1.metric("📄 Páginas", num_paginas)
@@ -503,7 +504,7 @@ def render() -> None:
         c3.metric("💾 Tamaño",  f"{len(pdf_bytes)/1024:.1f} KB")
 
         st.success("✅ PDF generado exitosamente.")
-        st.download_button(
+        descargado_cot = st.download_button(
             "📥 Descargar Cotización PDF",
             data=pdf_bytes,
             file_name=file_name,
@@ -511,3 +512,5 @@ def render() -> None:
             type="primary",
             key="ln_cot_dl",
         )
+        if descargado_cot:
+            log_accion("descargar_archivo", {"cliente": cliente_nombre})
