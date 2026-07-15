@@ -24,17 +24,26 @@ from streamlit_searchbox import st_searchbox
 from ui.components import section_header, alert, divider
 from services.supabase_client import get_supabase_client, current_user
 from ._helpers import (
-    DEFAULTS, TIPOS_RUTA,
-    cargar_datos_generales, guardar_datos_generales,
+    DEFAULTS, 
+    TIPOS_RUTA,
+    cargar_datos_generales, 
+    guardar_datos_generales,
     safe_float,
-    calcular_diesel, calcular_sueldo_bono,
-    calcular_costos_fijos, calcular_extras,
+    calcular_diesel, 
+    calcular_sueldo_bono,
+    calcular_costos_fijos, 
+    calcular_extras,
     calcular_utilidades,
-    generar_id_ruta, get_profile_name, normalizar,
-    now_iso, _datos_generales_path,
-    cargar_pool_ubicaciones_picus, buscar_ubicacion_picus,
-    obtener_config_tipo_ruta, mostrar_resultados_picus,
+    generar_id_ruta,  
+    get_profile_name, normalizar,
+    now_iso, 
+    _datos_generales_path,
+    cargar_pool_ubicaciones_picus, 
+    buscar_ubicacion_picus,
+    obtener_config_tipo_ruta, 
+    mostrar_resultados_picus,
     _get_last_id_picus_cached,
+    log_accion,
 )
 
 TABLE_RUTAS = "Rutas_Picus"
@@ -327,6 +336,7 @@ def _guardar_ruta(supabase, nombre_usuario: str) -> None:
         supabase.table(TABLE_RUTAS).insert(nueva_ruta).execute()
         _get_last_id_picus_cached.clear()
         cargar_pool_ubicaciones_picus.clear()  # refrescar pool con nuevas ubicaciones
+        log_accion("crear_ruta", {"id_ruta": nuevo_id})
         st.session_state["pic_ruta_guardada_id"] = nuevo_id
         st.session_state["pic_mostrar_modal"]    = True
         st.rerun()
