@@ -258,6 +258,7 @@ def _seccion_tramo_mx(fk: int) -> tuple:
             key=f"sl_ori_mx_{fk}",
             clear_on_submit=False,
         )
+    with mx2:
         destino_mx_sel = st_searchbox(
             buscar_ubicacion_setlogis,
             label="📍 Destino MX",
@@ -268,15 +269,15 @@ def _seccion_tramo_mx(fk: int) -> tuple:
     origen_mx  = str(origen_mx_sel  or "").strip()
     destino_mx = str(destino_mx_sel or "").strip()
 
-    with mx2:
-        moneda_ingreso_mx = st.selectbox("💱 Moneda Ingreso MX", ["USD", "MXP"], key=f"sl_mon_ing_mx_{fk}")
-        ingreso_mx = st.number_input(
-            "Ingreso Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_ing_mx_{fk}"
-        )
-        moneda_costo_mx = st.selectbox("💱 Moneda Costo MX", ["USD", "MXP"], key=f"sl_mon_costo_mx_{fk}")
-        costo_mx = st.number_input(
-            "Costo Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_costo_mx_{fk}"
-        )
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    moneda_ingreso_mx = mc1.selectbox("💱 Moneda Ingreso MX", ["USD", "MXP"], key=f"sl_mon_ing_mx_{fk}")
+    ingreso_mx = mc2.number_input(
+        "Ingreso Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_ing_mx_{fk}"
+    )
+    moneda_costo_mx = mc3.selectbox("💱 Moneda Costo MX", ["USD", "MXP"], key=f"sl_mon_costo_mx_{fk}")
+    costo_mx = mc4.number_input(
+        "Costo Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_costo_mx_{fk}"
+    )
 
     return origen_mx, destino_mx, moneda_ingreso_mx, ingreso_mx, moneda_costo_mx, costo_mx
 
