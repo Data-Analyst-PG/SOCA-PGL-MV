@@ -25,6 +25,7 @@ from fpdf import FPDF  # pyright: ignore[reportMissingModuleSource]
 
 from services.supabase_client import get_supabase_client
 from ui.components import section_header, alert, divider
+from ._helpers import log_accion
 
 
 # ---------------------------
@@ -585,6 +586,7 @@ def render():
         nombre_archivo_cliente = re.sub(r"[^\w\-]", "_", cliente_nombre or "Cliente")
         file_name = f'Cotizacion-{nombre_archivo_cliente}-{fecha.strftime("%d-%m-%Y")}.pdf'
         pdf_bytes = pdf.output(dest="S").encode("latin-1")
+        log_accion("generar_cotizacion", {"cliente": cliente_nombre, "rutas": len(ids_seleccionados)})
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -597,10 +599,13 @@ def render():
 
         st.success(f"✅ PDF generado exitosamente con {num_paginas_necesarias} página(s)")
 
-        st.download_button(
+        descargado_cot = st.download_button(
             "📥 Descargar Cotización en PDF",
             data=pdf_bytes,
             file_name=file_name,
             mime="application/pdf",
-            type="primary"
+            type="primary",
+            key="picus_cot_dl_pdf",
         )
+        if descargado_cot:
+            log_accion("descargar_archivo", {"cliente": cliente_nombre})
