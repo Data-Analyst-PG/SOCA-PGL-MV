@@ -34,6 +34,7 @@ import pandas as pd
 import streamlit as st
 
 from services.supabase_client import get_supabase_client
+from services.auditoria import registrar_accion
 
 # ─────────────────────────────────────────────
 # TABLAS SUPABASE
@@ -662,3 +663,11 @@ def filtrar_rutas_setlogis(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
         resultado = resultado[mask]
 
     return resultado
+
+
+# ─────────────────────────────────────────────
+# AUDITORÍA
+# ─────────────────────────────────────────────
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'cot-set-logis'."""
+    registrar_accion("cot-set-logis", accion, detalle)
