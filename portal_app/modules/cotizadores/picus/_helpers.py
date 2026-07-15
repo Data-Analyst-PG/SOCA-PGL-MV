@@ -28,6 +28,7 @@ from datetime import date, datetime, timezone
 import numpy as np
 import pandas as pd
 import streamlit as st
+from services.auditoria import registrar_accion
 
 # ─────────────────────────────────────────────
 # Constantes de umbral — viajan también dentro de DEFAULTS y de cada
@@ -630,3 +631,11 @@ def calcular_utilidades_vuelta_redonda(rutas_seleccionadas: list) -> dict:
         "umbral_ci": UMBRAL_CI,
         "umbral_un": UMBRAL_UN,
     }
+
+
+# ─────────────────────────────────────────────
+# AUDITORÍA
+# ─────────────────────────────────────────────
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'cot-picus'."""
+    registrar_accion("cot-picus", accion, detalle)
