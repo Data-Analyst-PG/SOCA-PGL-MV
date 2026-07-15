@@ -29,17 +29,27 @@ from services.supabase_client import get_supabase_client, current_user
 from ui.components import section_header, alert, divider
 
 from ._helpers import (
-    DEFAULTS, TIPOS_RUTA,
+    DEFAULTS, 
+    TIPOS_RUTA,
     cargar_datos_generales,
-    safe_number, safe_float,
-    calcular_diesel, calcular_sueldo_bono,
-    calcular_costos_fijos, calcular_extras,
+    safe_number, 
+    safe_float,
+    calcular_diesel, 
+    calcular_sueldo_bono,
+    calcular_costos_fijos, 
+    calcular_extras,
     calcular_utilidades,
-    get_profile_name, normalizar, now_iso,
+    get_profile_name, 
+    normalizar, 
+    now_iso,
     load_rutas_picus,
-    cargar_pool_ubicaciones_picus, buscar_ubicacion_picus,
-    filtrar_rutas_picus, label_ruta_picus,
-    obtener_config_tipo_ruta, mostrar_resultados_picus,
+    cargar_pool_ubicaciones_picus, 
+    buscar_ubicacion_picus,
+    filtrar_rutas_picus, 
+    label_ruta_picus,
+    obtener_config_tipo_ruta, 
+    mostrar_resultados_picus,
+    log_accion,
 )
 
 TABLE_RUTAS = "Rutas_Picus"
@@ -156,13 +166,15 @@ def render() -> None:
 
         divider()
         excel_bytes = _to_excel_bytes(df_filtrado)
-        st.download_button(
+        descargado_excel = st.download_button(
             "📥 Descargar Excel",
             data=excel_bytes,
             file_name="rutas_picus.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="pic_dl_excel",
         )
+        if descargado_excel:
+            log_accion("exportar_excel", {"filas": len(df_filtrado)})
 
     # ═══════════════════════════════════════════
     # TAB ELIMINAR
@@ -179,6 +191,7 @@ def render() -> None:
             try:
                 for idr in ids_eliminar:
                     supabase.table(TABLE_RUTAS).delete().eq("ID_Ruta", idr).execute()
+                log_accion("eliminar_ruta", {"ids_ruta": ids_eliminar})
                 alert("success", f"✅ {len(ids_eliminar)} ruta(s) eliminada(s).")
                 load_rutas_picus.clear()
                 st.rerun()
@@ -585,6 +598,7 @@ def render() -> None:
 
                 try:
                     supabase.table(TABLE_RUTAS).update(ruta_actualizada).eq("ID_Ruta", id_editar).execute()
+                    log_accion("editar_ruta", {"id_ruta": id_editar})
                     load_rutas_picus.clear()
                     cargar_pool_ubicaciones_picus.clear()
                     st.session_state["pic_gest_editado_id"]    = id_editar
