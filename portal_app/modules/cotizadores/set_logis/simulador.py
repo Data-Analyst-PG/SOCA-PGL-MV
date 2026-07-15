@@ -53,6 +53,7 @@ from ._helpers import (
     load_rutas_setlogis,
     label_ruta_setlogis,
     mostrar_resultados_setlogis,
+    log_accion,
 )
 
 TIPOS_PRINCIPAL = {"NB", "SB", "D2DNB", "D2DSB"}
@@ -652,6 +653,7 @@ def render() -> None:
                 }
                 st.session_state["sl_sim_realizada"] = True
                 st.session_state["sl_sim_resultado"]  = None
+                log_accion("simular_ruta", {"id_ruta": ruta_p.get("ID_Ruta", "")})
                 st.rerun()
 
     # ══════════════════════════════════════════════════════════════
@@ -692,7 +694,7 @@ def render() -> None:
                 f"VR_SetLogis_{datos['ruta_p'].get('ID_Ruta','')}_"
                 f"{datos['ruta_p'].get('Cliente','').replace(' ','_')}.pdf"
             )
-            st.download_button(
+            descargado = st.download_button(
                 label="📄 Descargar PDF Vuelta Redonda",
                 data=pdf_bytes,
                 file_name=nombre_pdf,
@@ -700,6 +702,8 @@ def render() -> None:
                 use_container_width=True,
                 key="sl_sim_dl_pdf",
             )
+            if descargado:
+                log_accion("descargar_archivo", {"id_ruta": datos["ruta_p"].get("ID_Ruta", "")})
         except Exception as ex:
             alert("error", f"Error generando PDF: {ex}")
 
