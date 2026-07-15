@@ -506,20 +506,44 @@ def render():
                         try:
                             supabase = st.session_state.supabase
                             exito = 0
+                            duplicados = 0
+                            fallidos = []
+
                             for _, row in proveedores_editados.iterrows():
-                                if pd.notna(row['TIPO']):
-                                    try:
-                                        supabase.table('catalogo_proveedores').insert({
-                                            'empresa':   empresa,
-                                            'proveedor': row['PROVEEDOR'],
-                                            'tipo':      row['TIPO'],
-                                        }).execute()
-                                        exito += 1
-                                    except Exception as e:
-                                        if 'duplicate' not in str(e).lower():
-                                            pass
-                            alert("success", f"✅ {exito} proveedores guardados en el catálogo.")
-                            st.rerun()
+                                tipo_val = str(row['TIPO']).strip().upper() if pd.notna(row['TIPO']) else None
+
+                                if tipo_val is None:
+                                    continue
+
+                                if tipo_val not in TIPOS_VALIDOS:
+                                    fallidos.append((row['PROVEEDOR'], f"tipo inválido: '{tipo_val}'"))
+                                    continue
+
+                                try:
+                                    supabase.table('catalogo_proveedores').insert({
+                                        'empresa':   empresa,
+                                        'proveedor': row['PROVEEDOR'],
+                                        'tipo':      tipo_val,
+                                    }).execute()
+                                    exito += 1
+                                except Exception as e:
+                                    if 'duplicate' in str(e).lower():
+                                        duplicados += 1
+                                    else:
+                                        fallidos.append((row['PROVEEDOR'], str(e)))
+
+                            if exito:
+                                alert("success", f"✅ {exito} proveedores guardados en el catálogo.")
+                            if duplicados:
+                                alert("warn", f"⚠️ {duplicados} ya existían en el catálogo.")
+                            if fallidos:
+                                alert("error", f"❌ {len(fallidos)} no se pudieron guardar.")
+                                with st.expander("Ver detalle de errores"):
+                                    for prov, err in fallidos:
+                                        st.write(f"**{prov}**: {err}")
+
+                            if not fallidos:
+                                st.rerun()
                         except Exception as e:
                             alert("error", f"❌ Error: {str(e)}")
 
