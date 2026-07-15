@@ -633,6 +633,7 @@ def render() -> None:
                             clear_on_submit=False,
                         )
                         st.caption(f"Actual: **{origen_mx_val}**")
+                    with mx2:
                         destino_mx_sel = st_searchbox(
                             buscar_ubicacion_setlogis,
                             label="📍 Destino MX",
@@ -645,22 +646,23 @@ def render() -> None:
                     origen_mx_val  = str(origen_mx_sel  or "").strip() or origen_mx_val
                     destino_mx_val = str(destino_mx_sel or "").strip() or destino_mx_val
 
-                    mon_ing_mx  = mx2.selectbox(
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    mon_ing_mx  = mc1.selectbox(
                         "💱 Moneda Ingreso MX", ["USD", "MXP"],
                         index=0 if mon_ing_mx == "USD" else 1,
                         key=f"sl_ed_mon_ing_mx_{k}",
                     )
-                    ingreso_mx_raw = mx2.number_input(
+                    ingreso_mx_raw = mc2.number_input(
                         "Ingreso Flete MX", value=safe(ruta.get("Ingreso_MX")),
                         min_value=0.0, step=100.0, format="%.2f",
                         key=f"sl_ed_ing_mx_{k}",
                     )
-                    mon_costo_mx = mx2.selectbox(
+                    mon_costo_mx = mc3.selectbox(
                         "💱 Moneda Costo MX", ["USD", "MXP"],
                         index=0 if mon_costo_mx == "USD" else 1,
                         key=f"sl_ed_mon_costo_mx_{k}",
                     )
-                    costo_mx_raw = mx2.number_input(
+                    costo_mx_raw = mc4.number_input(
                         "Costo Flete MX", value=safe(ruta.get("Costo_MX")),
                         min_value=0.0, step=100.0, format="%.2f",
                         key=f"sl_ed_costo_mx_{k}",
