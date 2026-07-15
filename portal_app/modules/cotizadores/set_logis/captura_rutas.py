@@ -246,7 +246,7 @@ def _seccion_cruce(tipo_ruta: str, config: dict, fk: int) -> tuple:
 
 
 def _seccion_tramo_mx(fk: int) -> tuple:
-    """Devuelve: origen_mx, destino_mx, moneda_mx, ingreso_mx, costo_mx"""
+    """Devuelve: origen_mx, destino_mx, moneda_ingreso_mx, ingreso_mx, moneda_costo_mx, costo_mx"""
     st.markdown("### 🇲🇽 Parte Mexicana")
 
     mx1, mx2 = st.columns(2)
@@ -268,15 +268,17 @@ def _seccion_tramo_mx(fk: int) -> tuple:
     origen_mx  = str(origen_mx_sel  or "").strip()
     destino_mx = str(destino_mx_sel or "").strip()
 
-    moneda_mx  = mx2.selectbox("💱 Moneda MX", ["MXP", "USD"], key=f"sl_moneda_mx_{fk}")
-    ingreso_mx = mx2.number_input(
-        "Ingreso Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_ing_mx_{fk}"
-    )
-    costo_mx = mx2.number_input(
-        "Costo Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_costo_mx_{fk}"
-    )
+    with mx2:
+        moneda_ingreso_mx = st.selectbox("💱 Moneda Ingreso MX", ["USD", "MXP"], key=f"sl_mon_ing_mx_{fk}")
+        ingreso_mx = st.number_input(
+            "Ingreso Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_ing_mx_{fk}"
+        )
+        moneda_costo_mx = st.selectbox("💱 Moneda Costo MX", ["USD", "MXP"], key=f"sl_mon_costo_mx_{fk}")
+        costo_mx = st.number_input(
+            "Costo Flete MX", min_value=0.0, step=100.0, format="%.2f", key=f"sl_costo_mx_{fk}"
+        )
 
-    return origen_mx, destino_mx, moneda_mx, ingreso_mx, costo_mx
+    return origen_mx, destino_mx, moneda_ingreso_mx, ingreso_mx, moneda_costo_mx, costo_mx
 
 
 def _seccion_extras(fk: int) -> tuple:
@@ -371,7 +373,8 @@ def render() -> None:
     moneda_cruce = "USD"
     ingreso_cruce = costo_cruce_terc = 0.0
     origen_mx  = destino_mx = ""
-    moneda_mx  = "MXP"
+    moneda_ingreso_mx = "USD"
+    moneda_costo_mx   = "USD"
     ingreso_mx = costo_mx = 0.0
 
     # ── Secciones en orden según tipo — idéntico al patrón de Lincoln ──────
@@ -392,7 +395,8 @@ def render() -> None:
         elif seccion == "mx":
             if config.get("parte_mx") and not es_empty:
                 (origen_mx, destino_mx,
-                 moneda_mx, ingreso_mx, costo_mx) = _seccion_tramo_mx(_k)
+                 moneda_ingreso_mx, ingreso_mx,
+                 moneda_costo_mx, costo_mx) = _seccion_tramo_mx(_k)
 
     # ── Extras — siempre al final antes de costo indirecto ──────────────────
     divider()
@@ -437,8 +441,8 @@ def render() -> None:
                 ing_cruce_usd   = ingreso_cruce if moneda_cruce == "USD" else a_usd(ingreso_cruce, moneda_cruce, tc)
                 costo_cruce_usd = costo_cruce_terc if tipo_cruce == "Tercero" else 0.0
 
-            ing_mx_usd   = a_usd(ingreso_mx, moneda_mx, tc)
-            costo_mx_usd = a_usd(costo_mx,   moneda_mx, tc)
+            ing_mx_usd   = a_usd(ingreso_mx, moneda_ingreso_mx, tc)
+            costo_mx_usd = a_usd(costo_mx,   moneda_costo_mx,   tc)
 
             # Extras: cobrado = ingreso; no cobrado = costo puro
             extras_ingreso    = sum(v for n, v in otros_cargos.items() if otros_cargos_cobrados.get(n, False))
@@ -486,7 +490,10 @@ def render() -> None:
                 "destino_mx":        normalizar(destino_mx),
                 "moneda_flete":      moneda_flete,
                 "moneda_cruce":      moneda_cruce,
-                "moneda_mx":         moneda_mx,
+                "moneda_ingreso_mx": moneda_ingreso_mx,
+                "moneda_costo_mx":   moneda_costo_mx,
+                "ingreso_mx":        ingreso_mx,
+                "costo_mx":          costo_mx,
                 "tipo_carga_cruce":  tipo_carga if aplica_cruce and not es_empty else "",
                 "incluye_cruce":     aplica_cruce and not es_empty,
                 "otros_cargos":      otros_cargos,
@@ -554,7 +561,8 @@ def _guardar_ruta(r: dict, fd: dict, supabase) -> None:
             "Destino_MX":           fd.get("destino_mx", ""),
             "Moneda_Flete":         fd.get("moneda_flete",  "USD"),
             "Moneda_Ingreso_Cruce": fd.get("moneda_cruce",  "USD"),
-            "Moneda_MX":            fd.get("moneda_mx",     "MXP"),
+            "Moneda_Ingreso_MX":    fd.get("moneda_ingreso_mx", "USD"),
+            "Moneda_Costo_MX":      fd.get("moneda_costo_mx",   "USD"),
             "Tipo_Carga_Cruce":     fd.get("tipo_carga_cruce", ""),
             "Incluye_Cruce":        fd.get("incluye_cruce", False),
             "Miles_Load":           r["Miles_Load"],
@@ -569,7 +577,8 @@ def _guardar_ruta(r: dict, fd: dict, supabase) -> None:
             "Flete_Fuel":           r["Flete_Fuel"],
             "Ingreso_Cruce":        r["Ingreso_Cruce"],
             "Tipo_Cruce":           r["Tipo_Cruce"],
-            "Ingreso_MX":           r["Ingreso_MX"],
+            "Ingreso_MX":           fd.get("ingreso_mx", 0.0),
+            "Flete_MEX":            r["Ingreso_MX"],
             "Extras_Ingreso":       r["Extras_Ingreso"],
             "Extras_Costo":         r["Extras_Costo"],
             "Ingreso_Global":       r["Ingreso_Global"],
@@ -581,7 +590,8 @@ def _guardar_ruta(r: dict, fd: dict, supabase) -> None:
             "Fuel_Owner":           r.get("Fuel_Owner", False),
             "Pago_Fuel_Owner":      r.get("Pago_Fuel_Owner", 0.0),
             "Costo_Cruce":          r["Costo_Cruce"],
-            "Costo_MX":             r["Costo_MX"],
+            "Costo_MX":             fd.get("costo_mx", 0.0),
+            "Costo_MEX":            r["Costo_MX"],
             "Costo_Directo":        r["Costo_Directo"],
             "Costo_Indirecto":      r["Costo_Indirecto"],
             "Costo_Total":          r["Costo_Total"],
