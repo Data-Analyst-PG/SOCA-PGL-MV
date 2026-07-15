@@ -359,9 +359,20 @@ def _procesar_sac_nuevo(archivo_bytes, catalogo_df):
 
 def _procesar_sac(archivo_bytes, formato, catalogo_df):
     if formato == 'anterior':
-        return _procesar_sac_anterior(archivo_bytes, catalogo_df)
+        df = _procesar_sac_anterior(archivo_bytes, catalogo_df)
     else:
-        return _procesar_sac_nuevo(archivo_bytes, catalogo_df)
+        df = _procesar_sac_nuevo(archivo_bytes, catalogo_df)
+
+    # Las columnas de montos deben venir en 0 cuando el archivo trae la celda
+    # vacía, en vez de None — así el equipo no tiene que asignarlo a mano.
+    columnas_numericas = [
+        'SALDO', 'POR VENCER', '1-15 DIAS', '16-30 DIAS', '31-60 DIAS', '+60',
+    ]
+    for col in columnas_numericas:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+    return df
 
 
 def _exportar_excel(cartera_df, catalogo_df):
