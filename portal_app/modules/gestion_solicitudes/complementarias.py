@@ -17,11 +17,15 @@ import pandas as pd
 import streamlit as st
 
 from ui.components import (
-    section_header, kpi_row, alert,
-    solicitud_card, historial_timeline, status_badge_html,
-    solicitudes_table, page_banner,
+    section_header, 
+    kpi_row, alert,
+    solicitud_card, 
+    historial_timeline, 
+    status_badge_html,
+    solicitudes_table, 
+    page_banner,
 )
-from .shared import get_complementarias, update_complementaria, now_iso_utc
+from .shared import get_complementarias, update_complementaria, now_iso_utc, log_accion
 
 # ── Catálogos ─────────────────────────────────────────────────────────────────
 ESTATUSES        = ["Pendiente", "En revisión", "Resuelto", "Cancelado"]
@@ -254,6 +258,7 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                 changes["fecha_resuelto"] = now[:10]
 
         if update_complementaria(folio, changes):
+            log_accion("seg-complementarias", "editar_solicitud", {"folio": folio, "estatus": nuevo_est})
             st.success("✅ Cambios guardados.")
             st.cache_data.clear()
             st.rerun()
@@ -408,10 +413,12 @@ def render():
             _modal_edicion(comp_sel, gestor, solo_lectura=True)
 
         excel_bytes = _to_excel(df)
-        st.download_button(
+        descargado_excel = st.download_button(
             "⬇️ Descargar Excel",
             data=excel_bytes,
             file_name="complementarias.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="gc_comp_dl_excel",
         )
+        if descargado_excel:
+            log_accion("seg-complementarias", "exportar_excel", {"filas": len(df)})
