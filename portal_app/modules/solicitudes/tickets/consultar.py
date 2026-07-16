@@ -9,6 +9,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from .shared import log_accion
 from services.supabase_client import current_user, get_authed_client
 from ui.components import (
     section_header, kpi_row, alert,
@@ -214,10 +215,12 @@ def render():
 
         solicitudes_table(df)
 
-        st.download_button(
+        descargado_excel = st.download_button(
             "⬇️ Descargar Excel",
             data=_to_excel(df),
             file_name="mis_tickets.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="ctk_dl",
         )
+        if descargado_excel:
+            log_accion("exportar_excel", {"filas": len(df)})
