@@ -13,10 +13,22 @@ import re
 from services.supabase_client import current_user
 from ui.components import section_header, alert
 from .shared import (
-    EMPRESAS, MONEDAS, SUCURSALES_POR_EMPRESA, PLATAFORMAS_POR_EMPRESA,
-    TIPOS_CONCEPTO, TASAS_IVA, TASAS_RETENCION, RETENCIONES_ISR,
-    get_supabase_client, get_conceptos, now_utc_iso, get_profile_name,
-    es_plataforma_logismex, calcular_totales_logismex, build_historial_entry,
+    EMPRESAS, 
+    MONEDAS, 
+    SUCURSALES_POR_EMPRESA, 
+    PLATAFORMAS_POR_EMPRESA,
+    TIPOS_CONCEPTO, 
+    TASAS_IVA, 
+    TASAS_RETENCION, 
+    RETENCIONES_ISR,
+    get_supabase_client, 
+    get_conceptos, 
+    now_utc_iso, 
+    get_profile_name,
+    es_plataforma_logismex, 
+    calcular_totales_logismex, 
+    build_historial_entry,
+    log_accion,
 )
 
 
@@ -544,6 +556,7 @@ def render():
             st.error("No se pudo insertar la solicitud en la base de datos.")
             st.stop()
         folio_num = int(res.data[0]["folio"])
+        log_accion("crear_solicitud", {"folio": folio_num})
     except Exception as e:
         st.error(f"Error al guardar: {e}")
         st.stop()
@@ -560,6 +573,7 @@ def render():
                 supabase.table("solicitudes_complementarias").update(
                     {"factura_path": factura_path}
                 ).eq("folio", folio_num).execute()
+                log_accion("subir_evidencia", {"folio": folio_num})
             except Exception as e:
                 st.warning(f"Solicitud guardada, pero no se pudo vincular la factura: {e}")
 
