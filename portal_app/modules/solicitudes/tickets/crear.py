@@ -8,6 +8,7 @@ from .shared import (
     build_mailto,
     now_iso_utc,
     TICKET_NOTIFICATION_EMAILS,
+    log_accion,
 )
 
 EMPRESAS      = ["Picus", "Igloo", "Set Freight", "Lincoln Freight", "Set Logis Plus"]
@@ -126,6 +127,7 @@ def render():
     try:
         created   = add_ticket(payload)
         ticket_id = created.get("id")
+        log_accion("crear_solicitud", {"ticket_id": ticket_id})
     except Exception as e:
         st.error(f"No se pudo crear el ticket: {e}")
         st.stop()
