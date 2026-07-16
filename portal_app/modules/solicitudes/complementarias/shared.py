@@ -13,7 +13,7 @@ from typing import Optional
 import streamlit as st
 
 from services.supabase_client import get_authed_client, get_secret
-
+from services.auditoria import registrar_accion
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CATÁLOGOS BASE
@@ -422,3 +422,8 @@ def append_historial(existing: list | None, new_entry: dict) -> list:
     hist = list(existing or [])
     hist.append(new_entry)
     return hist
+
+
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'complementarias'."""
+    registrar_accion("complementarias", accion, detalle)
