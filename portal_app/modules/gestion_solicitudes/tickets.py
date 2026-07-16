@@ -15,6 +15,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
+from .shared import log_accion
 from services.supabase_client import current_user, get_authed_client
 from ui.components import (
     section_header, kpi_row, alert,
@@ -200,6 +201,7 @@ def _modal_edicion(ticket: dict, gestor: str):
             changes["estatus"] = nueva_fase
 
         if _update_ticket(tid, changes):
+            log_accion("seg-tickets", "editar_solicitud", {"ticket_id": tid, "fase": nueva_fase})
             st.success("✅ Cambios guardados.")
             st.cache_data.clear()
             st.rerun()
@@ -367,12 +369,14 @@ def render():
 
         # Descarga Excel (solo lo filtrado)
         excel_bytes = _to_excel(df)
-        st.download_button(
+        descargado_excel = st.download_button(
             label="⬇️ Descargar Excel",
             data=excel_bytes,
             file_name="tickets.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="gc_tick_dl_excel",
         )
+        if descargado_excel:
+            log_accion("seg-tickets", "exportar_excel", {"filas": len(df)})
     else:
         st.info("No hay resultados con los filtros aplicados.")
