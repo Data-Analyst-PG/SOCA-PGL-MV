@@ -12,11 +12,15 @@ import streamlit as st
 
 from services.supabase_client import current_user
 from ui.components import (
-    section_header, kpi_row, alert,
-    solicitud_card, historial_timeline, status_badge_html,
+    section_header, 
+    kpi_row, alert,
+    solicitud_card, 
+    historial_timeline, 
+    status_badge_html,
     solicitudes_table,
+
 )
-from .shared import get_supabase_client
+from .shared import get_supabase_client, log_accion
 
 ESTATUSES_ACTIVOS = {"Pendiente", "En revisión"}
 
@@ -157,6 +161,7 @@ def _modal_detalle(comp: dict):
                         sb_up.table("solicitudes_complementarias").update(
                             {"factura_path": path_dest}
                         ).eq("folio", int(folio)).execute()
+                        log_accion("subir_evidencia", {"folio": int(folio)})
                         st.success("✅ Factura guardada correctamente.")
                         st.cache_data.clear()
                         st.rerun()
@@ -317,10 +322,12 @@ def render():
         buf = BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Complementarias")
-        st.download_button(
+        descargado_excel = st.download_button(
             "⬇️ Descargar Excel",
             data=buf.getvalue(),
             file_name="mis_complementarias.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="ccomp_dl_excel",
         )
+        if descargado_excel:
+            log_accion("exportar_excel", {"filas": len(df)})
