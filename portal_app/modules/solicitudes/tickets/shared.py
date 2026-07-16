@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import streamlit as st
 
+from services.auditoria import registrar_accion
 from services.tickets_store import (
     create_ticket as _create_ticket,
     list_tickets as _list_tickets,
@@ -118,3 +119,8 @@ def get_secret(key: str, default=None):
         val = os.getenv(key)
 
     return default if val is None else val
+
+
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'complementarias'."""
+    registrar_accion("complementarias", accion, detalle)
