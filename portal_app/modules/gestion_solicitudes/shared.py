@@ -1,6 +1,7 @@
 # portal_app/modules/gestion_solicitudes/shared.py
 # Re-exporta lo necesario desde los servicios reales
 from services.supabase_client import get_authed_client
+from services.auditoria import registrar_accion
 from datetime import datetime, timezone
 
 
@@ -56,3 +57,8 @@ def update_ticket(ticket_id, changes: dict) -> bool:
         return True
     except Exception:
         return False
+
+
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'complementarias'."""
+    registrar_accion("complementarias", accion, detalle)
