@@ -4,6 +4,12 @@ import pandas as pd
 import re
 from io import BytesIO
 import io
+from services.auditoria import registrar_accion
+
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'aud-auxiliares'."""
+    registrar_accion("aud-auxiliares", accion, detalle)
+
 
 # Imports opcionales (para HTML “tipo Excel”)
 try:
@@ -735,13 +741,15 @@ def render():
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             df_out.to_excel(writer, index=False, sheet_name="REPORTE")
 
-        st.download_button(
+        descargado = st.download_button(
             "⬇️ Descargar Excel procesado",
             data=buf.getvalue(),
             file_name="Reporte_procesado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
+        if descargado:
+            log_accion("exportar_excel", {"filas": len(df_out)})
 
     except Exception as e:
         st.error(f"Ocurrió un error procesando: {e}")
