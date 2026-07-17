@@ -6,6 +6,11 @@ from io import BytesIO
 from typing import Dict
 import pandas as pd
 import streamlit as st
+from services.auditoria import registrar_accion
+
+def log_accion(modulo: str, accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría genérico — usado por las herramientas del módulo de auditoría (aud-*)."""
+    registrar_accion(modulo, accion, detalle)
 
 
 def get_empresa_config(nombre_empresa: str):
