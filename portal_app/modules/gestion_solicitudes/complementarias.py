@@ -25,8 +25,7 @@ from ui.components import (
     solicitudes_table, 
     page_banner,
 )
-from .shared import get_complementarias, update_complementaria, now_iso_utc, log_accion
-
+from .shared import get_complementarias, update_complementaria, now_iso_utc, log_accion_complementarias as log_accion
 # ── Catálogos ─────────────────────────────────────────────────────────────────
 ESTATUSES        = ["Pendiente", "En revisión", "Resuelto", "Cancelado"]
 ESTATUSES_ACTIVOS = {"Pendiente", "En revisión"}
@@ -258,7 +257,7 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                 changes["fecha_resuelto"] = now[:10]
 
         if update_complementaria(folio, changes):
-            log_accion("seg-complementarias", "editar_solicitud", {"folio": folio, "estatus": nuevo_est})
+            log_accion("editar_solicitud", {"folio": folio, "estatus": nuevo_est})
             st.success("✅ Cambios guardados.")
             st.cache_data.clear()
             st.rerun()
@@ -421,4 +420,4 @@ def render():
             key="gc_comp_dl_excel",
         )
         if descargado_excel:
-            log_accion("seg-complementarias", "exportar_excel", {"filas": len(df)})
+            log_accion("exportar_excel", {"filas": len(df)})
