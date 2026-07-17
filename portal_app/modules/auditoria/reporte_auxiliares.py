@@ -4,11 +4,7 @@ import pandas as pd
 import re
 from io import BytesIO
 import io
-from services.auditoria import registrar_accion
-
-def log_accion(accion: str, detalle: dict | None = None) -> None:
-    """Wrapper de auditoría — centraliza el nombre del módulo 'aud-auxiliares'."""
-    registrar_accion("aud-auxiliares", accion, detalle)
+from .shared import log_accion
 
 
 # Imports opcionales (para HTML “tipo Excel”)
@@ -749,7 +745,7 @@ def render():
             use_container_width=True,
         )
         if descargado:
-            log_accion("exportar_excel", {"filas": len(df_out)})
+            log_accion("aud-auxiliares", "exportar_excel", {"filas": len(df_out)})
 
     except Exception as e:
         st.error(f"Ocurrió un error procesando: {e}")
