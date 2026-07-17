@@ -7,7 +7,7 @@ import streamlit as st
 from datetime import date
 
 from services.supabase_client import get_authed_client as get_supabase_client
-from .shared import to_excel_bytes_sheets, read_excel_cached, homologar_sucursales_con_gts
+from .shared import to_excel_bytes_sheets, read_excel_cached, homologar_sucursales_con_gts, log_accion
 
 
 TIPOS_DISTRIBUCION = [
@@ -74,12 +74,14 @@ def render():
             alert("success", "Resumen generado.")
             st.dataframe(resumen, use_container_width=True)
 
-            st.download_button(
+            descargado_resumen = st.download_button(
                 "📥 Descargar resumen (Excel)",
                 data=to_excel_bytes_sheets({"Resumen Gastos": resumen}),
                 file_name="resumen_gastos_generales.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+            if descargado_resumen:
+                log_accion("aud-prorrateador", "exportar_excel", {"reporte": "resumen_gg", "filas": len(resumen)})
 
         except Exception as e:
             st.error(f"Error PASO 1: {e}")
@@ -353,15 +355,18 @@ def render():
             resultado = pd.concat([directos_agr, prorr_gg], ignore_index=True)
 
             st.session_state["gg_prorrateo_completo"] = resultado
+            log_accion("aud-prorrateador", "ejecutar_prorrateo", {"filas": len(resultado)})
             alert("success", "✅ Prorrateo completo generado.")
             st.dataframe(resultado.head(200), use_container_width=True)
 
-            st.download_button(
+            descargado_prorrateo = st.download_button(
                 "📥 Descargar prorrateo completo",
                 data=to_excel_bytes_sheets({"Prorrateo": resultado}),
                 file_name="prorrateo_completo.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+            if descargado_prorrateo:
+                log_accion("aud-prorrateador", "exportar_excel", {"reporte": "prorrateo_completo", "filas": len(resultado)})
 
         except Exception as e:
             st.error(f"Error generando prorrateo: {e}")
