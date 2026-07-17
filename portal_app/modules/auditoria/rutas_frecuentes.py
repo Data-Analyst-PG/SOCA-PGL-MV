@@ -7,7 +7,12 @@ import pandas as pd
 import streamlit as st
 
 from ui.components import page_banner, section_header, alert, divider
+from services.auditoria import registrar_accion
 
+def log_accion(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — centraliza el nombre del módulo 'aud-rutas'."""
+    registrar_accion("aud-rutas", accion, detalle)
+    
 # -----------------------------
 # Helpers (igual que tu script)
 # -----------------------------
