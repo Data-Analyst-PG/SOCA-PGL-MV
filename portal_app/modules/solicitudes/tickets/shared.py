@@ -122,5 +122,5 @@ def get_secret(key: str, default=None):
 
 
 def log_accion(accion: str, detalle: dict | None = None) -> None:
-    """Wrapper de auditoría — centraliza el nombre del módulo 'complementarias'."""
-    registrar_accion("complementarias", accion, detalle)
+    """Wrapper de auditoría — centraliza el nombre del módulo 'tickets'."""
+    registrar_accion("tickets", accion, detalle)
