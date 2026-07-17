@@ -59,6 +59,11 @@ def update_ticket(ticket_id, changes: dict) -> bool:
         return False
 
 
-def log_accion(accion: str, detalle: dict | None = None) -> None:
-    """Wrapper de auditoría — centraliza el nombre del módulo 'complementarias'."""
-    registrar_accion("complementarias", accion, detalle)
+def log_accion_complementarias(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — módulo seg-complementarias (gestión/auditor)."""
+    registrar_accion("seg-complementarias", accion, detalle)
+
+
+def log_accion_tickets(accion: str, detalle: dict | None = None) -> None:
+    """Wrapper de auditoría — módulo seg-tickets (gestión/auditor)."""
+    registrar_accion("seg-tickets", accion, detalle)
