@@ -7,11 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.components import page_banner, section_header, alert, divider
-from services.auditoria import registrar_accion
-
-def log_accion(accion: str, detalle: dict | None = None) -> None:
-    """Wrapper de auditoría — centraliza el nombre del módulo 'aud-rutas'."""
-    registrar_accion("aud-rutas", accion, detalle)
+from .shared import log_accion
     
 # -----------------------------
 # Helpers (igual que tu script)
@@ -249,18 +245,21 @@ def render():
                     st.error(f"Error generando el reporte: {e}")
                     st.stop()
 
+            log_accion("aud-rutas", "generar_reporte", {"filas": len(df_report)})
             st.success(f"Listo. Filas generadas: {len(df_report):,}")
 
             section_header("📊", "Reporte")
             st.dataframe(df_report, use_container_width=True)
 
             excel_bytes = to_excel_bytes(df_report, sheet_name="Rutas Comunes")
-            st.download_button(
+            descargado = st.download_button(
                 label="Descargar Excel",
                 data=excel_bytes,
                 file_name="Reporte_Rutas_Comunes.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+            if descargado:
+                log_accion("aud-rutas", "exportar_excel", {"filas": len(df_report)})
 
             with st.expander("Debug: claves válidas (pasaron >N viajes/mes)"):
                 st.dataframe(df_keys, use_container_width=True)
