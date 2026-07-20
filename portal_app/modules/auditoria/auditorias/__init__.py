@@ -11,6 +11,7 @@ import streamlit as st
 
 from services.supabase_client import current_user
 from services.access import check_access
+from services.auditoria import registrar_acceso_submodulo
 from ui.components import page_banner, alert
 
 from . import lincoln
@@ -86,15 +87,31 @@ def render():
         alert("error", "No tienes acceso a ninguna auditoría. Contacta al administrador.")
         return
 
-    # Construir tabs solo con las empresas accesibles
+    # Construir segmented_control solo con las empresas accesibles
     etiquetas = [f"{e['icono']} {e['titulo']}" for e in empresas_visibles]
-    tabs = st.tabs(etiquetas)
+    etiqueta_a_empresa = {f"{e['icono']} {e['titulo']}": e for e in empresas_visibles}
 
-    for tab, empresa in zip(tabs, empresas_visibles):
-        with tab:
-            if not empresa["disponible"]:
-                alert("info",
-                      f"La auditoría de {empresa['titulo']} está en desarrollo. "
-                      "Estará disponible próximamente.")
-            else:
-                empresa["modulo"].render()
+    def _on_cambio_empresa():
+        seleccion = st.session_state["aud_auditorias_empresa"]
+        empresa_sel = etiqueta_a_empresa.get(seleccion)
+        if empresa_sel:
+            registrar_acceso_submodulo("aud-auditorias", empresa_sel["slug"])
+
+    seleccion = st.segmented_control(
+        "Empresa",
+        options=etiquetas,
+        default=etiquetas[0],
+        key="aud_auditorias_empresa",
+        on_change=_on_cambio_empresa,
+    )
+
+    # Si el usuario deselecciona el segmento activo (posible con segmented_control,
+    # a diferencia de st.tabs que siempre tiene una pestaña activa), cae a la primera empresa
+    empresa = etiqueta_a_empresa.get(seleccion) or empresas_visibles[0]
+
+    if not empresa["disponible"]:
+        alert("info",
+              f"La auditoría de {empresa['titulo']} está en desarrollo. "
+              "Estará disponible próximamente.")
+    else:
+        empresa["modulo"].render()
