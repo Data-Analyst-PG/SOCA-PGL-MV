@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 import openpyxl
 
-from .shared import to_excel_bytes_sheets
+from .shared import to_excel_bytes_sheets, log_accion
 
 
 MESES_ES = [
@@ -135,12 +135,14 @@ def render():
         suc_sel = st.selectbox("Ver consolidado de sucursal", sucursales, key="ver_suc_hist")
         st.dataframe(dfs[suc_sel], use_container_width=True)
 
-        st.download_button(
+        descargado = st.download_button(
             "📥 Descargar consolidado (1 hoja por sucursal)",
             data=to_excel_bytes_sheets(dfs),
             file_name="consolidado_historico_por_sucursal.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+        if descargado:
+            log_accion("aud-prorrateador", "exportar_excel", {"reporte": "consolidado_historico", "hojas": len(dfs)})
 
     except Exception as e:
         st.error(f"Error procesando histórico: {e}")
