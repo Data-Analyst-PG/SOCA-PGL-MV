@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 import openpyxl
 
-from .shared import to_excel_bytes_sheets, log_accion
+from ..shared import to_excel_bytes_sheets, log_accion
 
 
 MESES_ES = [
