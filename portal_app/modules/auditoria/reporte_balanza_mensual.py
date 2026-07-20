@@ -4,7 +4,7 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
-
+from .shared import log_accion
 
 # =====================================================
 # UTILIDADES
@@ -427,13 +427,15 @@ def render():
 
         excel_bytes = dataframe_to_excel_bytes(df_final, sheet_name=sheet_name)
 
-        st.download_button(
+        descargado = st.download_button(
             "⬇️ Descargar Excel procesado",
             data=excel_bytes,
             file_name=file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
+        if descargado:
+            log_accion("aud-reporte_balanza_mensual", "exportar_excel", {"tipo": tipo, "filas": len(df_final)})
 
     except Exception as e:
         st.error(f"Ocurrió un error procesando la balanza: {e}")
