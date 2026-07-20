@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from services.supabase_client import get_authed_client as get_supabase_client
-from .shared import to_excel_bytes_sheets, read_excel_cached
+from .shared import to_excel_bytes_sheets, read_excel_cached, log_accion
 
 
 def _find_col(df, candidates):
@@ -105,7 +105,7 @@ def render():
     section_header("▸", "Consolidado final")
     st.dataframe(final[[col_suc, "COMUN INTERNO", "COMUN EXTERNO", "INDIRECTO", "TOTAL"]], use_container_width=True)
 
-    st.download_button(
+    descargado_a = st.download_button(
         "📥 Descargar Excel (Generales/Indirectos/Consolidado)",
         data=to_excel_bytes_sheets({
             "Generales": pivot_comunes[[col_suc, "COMUN INTERNO", "COMUN EXTERNO"]],
@@ -115,6 +115,8 @@ def render():
         file_name="generales_indirectos_consolidado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+    if descargado_a:
+        log_accion("aud-prorrateador", "exportar_excel", {"reporte": "generales_indirectos_consolidado"})
 
     # =======================
     # B) Costo por sucursal (tablitas)
@@ -252,9 +254,11 @@ def render():
             tabla_ge.to_excel(writer, sheet_name=sheet, index=False, startrow=4, startcol=6)
         return buffer.getvalue()
 
-    st.download_button(
+    descargado_b = st.download_button(
         "📥 Descargar Excel de esta sucursal",
         data=exportar_costo_sucursal_excel(tabla_top, tabla_gi, tabla_ge, sucursal_sel),
         file_name=f"costo_por_sucursal_{sucursal_sel}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+    if descargado_b:
+        log_accion("aud-prorrateador", "exportar_excel", {"reporte": "costo_por_sucursal", "sucursal": sucursal_sel})
