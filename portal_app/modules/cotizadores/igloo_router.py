@@ -3,6 +3,7 @@ import streamlit as st
 
 from services.access import check_access, require_access
 from services.supabase_client import current_user
+from services.auditoria import registrar_acceso_submodulo
 
 from .igloo import (
     captura_rutas,
@@ -56,15 +57,26 @@ def render():
         alert("error", "No tienes acceso a ningún módulo del Cotizador Igloo.")
         return
 
-    # ── Renderizar solo las tabs permitidas ─────────────────────────
+    # ── Renderizar solo la sección permitida seleccionada ────────────
     etiquetas = [label for label, _ in tabs_visibles]
     modulos   = [modulo for _, modulo in tabs_visibles]
 
-    tabs_widgets = st.tabs(etiquetas)
+    def _on_cambio_seccion():
+        registrar_acceso_submodulo("cot-igloo", st.session_state["igloo_router_seccion"])
 
-    for i, (tab, modulo) in enumerate(zip(tabs_widgets, modulos)):
-        with tab:
-            # Doble verificación al momento de renderizar
-            if not require_access(user_id, COMPANY, perms_visibles[i]):
-                return
-            modulo.render()
+    seccion = st.segmented_control(
+        "Sección",
+        options=etiquetas,
+        default=etiquetas[0],
+        key="igloo_router_seccion",
+        on_change=_on_cambio_seccion,
+    )
+    seccion = seccion or etiquetas[0]
+
+    idx    = etiquetas.index(seccion)
+    modulo = modulos[idx]
+
+    # Doble verificación al momento de renderizar
+    if not require_access(user_id, COMPANY, perms_visibles[idx]):
+        return
+    modulo.render()
