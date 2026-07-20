@@ -6,8 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from services.supabase_client import get_authed_client as get_supabase_client
-from ..shared import to_excel_bytes_sheets, read_authed_cached, log_accion
-
+from ..shared import to_excel_bytes_sheets, read_excel_cached, log_accion
 
 def _find_col(df, candidates):
     cols = list(df.columns)
