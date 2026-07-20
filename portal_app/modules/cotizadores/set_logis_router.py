@@ -8,6 +8,7 @@ import streamlit as st
 from services.access import check_access, require_access
 from services.supabase_client import current_user
 from ui.components import page_banner, alert
+from services.auditoria import registrar_acceso_submodulo
 
 from .set_logis import (
     captura_rutas,
@@ -53,13 +54,24 @@ def render():
         alert("error", "No tienes acceso a ningún módulo del Cotizador Set Logis.")
         return
 
-    etiquetas = [label for label, _ in tabs_visibles]
+   etiquetas = [label for label, _ in tabs_visibles]
     modulos   = [modulo for _, modulo in tabs_visibles]
 
-    tabs_widgets = st.tabs(etiquetas)
+    def _on_cambio_seccion():
+        registrar_acceso_submodulo("cot-set-logis", st.session_state["sl_router_seccion"])
 
-    for i, (tab, modulo) in enumerate(zip(tabs_widgets, modulos)):
-        with tab:
-            if not require_access(user_id, COMPANY, perms_visibles[i]):
-                return
-            modulo.render()
+    seccion = st.segmented_control(
+        "Sección",
+        options=etiquetas,
+        default=etiquetas[0],
+        key="sl_router_seccion",
+        on_change=_on_cambio_seccion,
+    )
+    seccion = seccion or etiquetas[0]
+
+    idx    = etiquetas.index(seccion)
+    modulo = modulos[idx]
+
+    if not require_access(user_id, COMPANY, perms_visibles[idx]):
+        return
+    modulo.render()
