@@ -5,9 +5,10 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from io import BytesIO
-from supabase import create_client
 
 from ui.components import page_banner, section_header, alert, divider, kpi_row
+from supabase import create_client
+from .shared import log_accion
 
 
 # =====================================================
@@ -552,6 +553,7 @@ def render():
                                         fallidos.append((row['PROVEEDOR'], str(e)))
 
                             if exito:
+                                log_accion("aud-cartera_proveedores", "guardar_catalogo", {"empresa": empresa, "registros": exito})
                                 alert("success", f"✅ {exito} proveedores guardados en el catálogo.")
                             if duplicados:
                                 alert("warn", f"⚠️ {duplicados} ya existían en el catálogo.")
@@ -586,6 +588,7 @@ def render():
                             st.session_state['cartera_procesada'] = cartera_df
                             st.session_state['catalogo_usado']    = catalogo_actualizado
                             st.session_state['empresa_procesada'] = empresa
+                            log_accion("aud-cartera_proveedores", "generar_reporte", {"empresa": empresa, "filas": len(cartera_df)})
                             alert("success", f"✅ ¡Procesado! **{len(cartera_df):,}** registros generados.")
                         except Exception as e:
                             alert("error", f"❌ Error: {str(e)}")
@@ -640,7 +643,7 @@ def render():
                 catalogo_usado = st.session_state.get('catalogo_usado', catalogo_actualizado)
                 excel_bytes    = _exportar_excel(cartera_df, catalogo_usado)
 
-                st.download_button(
+                descargado = st.download_button(
                     label="⬇️ Descargar Excel (CARTERA + CATÁLOGO)",
                     data=excel_bytes,
                     file_name=f"CARTERA_{empresa}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
@@ -648,6 +651,8 @@ def render():
                     use_container_width=True,
                     type="primary",
                 )
+                if descargado:
+                    log_accion("aud-cartera_proveedores", "exportar_excel", {"empresa": empresa, "filas": len(cartera_df)})
 
     # ─────────────────────────────────────────────
     # TAB 2: CATÁLOGOS
@@ -706,6 +711,7 @@ def render():
                                     'proveedor': proveedor.strip(),
                                     'tipo':      tipo,
                                 }).execute()
+                                log_accion("aud-cartera_proveedores", "guardar_catalogo", {"empresa": empresa_cat, "registros": 1})
                                 alert("success", f"✅ **'{proveedor}'** agregado al catálogo.")
                                 st.rerun()
                             except Exception as e:
@@ -762,6 +768,8 @@ def render():
 
                         progress.empty()
                         status.empty()
+
+                        log_accion("aud-cartera_proveedores", "importar_catalogo", {"empresa": empresa_cat, "registros": exito, "duplicados": duplicados})
 
                         kpi_row([
                             {"icono": "✅", "label": "Importados",  "valor": exito,      "sub": "registros nuevos",  "color": "#16a34a"},
