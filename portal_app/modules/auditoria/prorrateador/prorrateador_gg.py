@@ -7,8 +7,7 @@ import streamlit as st
 from datetime import date
 
 from services.supabase_client import get_authed_client as get_supabase_client
-from .shared import to_excel_bytes_sheets, read_excel_cached, homologar_sucursales_con_gts, log_accion
-
+from ..shared import to_excel_bytes_sheets, read_excel_cached, homologar_sucursales_con_gts, log_accion
 
 TIPOS_DISTRIBUCION = [
     "Facturación Dlls", "MC", "Tráficos",
