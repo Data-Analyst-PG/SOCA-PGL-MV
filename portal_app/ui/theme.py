@@ -322,6 +322,28 @@ def aplicar_tema():
     }}
 
 
+
+    /* ═══════════════════════════════════════════════════════════
+       13B. SEGMENTED CONTROL (st.segmented_control)
+       Reemplazo de tabs para submódulos con auditoría de uso.
+       Mismo comportamiento que stNavigation en móvil: una sola
+       fila con scroll horizontal en vez de envolver a varias líneas.
+    ═══════════════════════════════════════════════════════════ */
+    div[data-testid="stSegmentedControl"] [data-baseweb="button-group"] {{
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        scrollbar-width: none !important;
+    }}
+    div[data-testid="stSegmentedControl"] [data-baseweb="button-group"]::-webkit-scrollbar {{
+        display: none !important;
+    }}
+    div[data-testid="stSegmentedControl"] [data-baseweb="button-group"] button {{
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+    }}
+
+    
     /* ═══════════════════════════════════════════════════════════
        14. EXPANDERS (st.expander)
        Título en azul marino y negrita.
