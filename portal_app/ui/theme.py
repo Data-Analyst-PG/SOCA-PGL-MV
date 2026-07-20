@@ -328,17 +328,19 @@ def aplicar_tema():
        Reemplazo de tabs para submódulos con auditoría de uso.
        Mismo comportamiento que stNavigation en móvil: una sola
        fila con scroll horizontal en vez de envolver a varias líneas.
+       Nota: no usa data-testid porque no está confirmado — se ataca
+       directo el contenedor interno real del componente (BaseWeb).
     ═══════════════════════════════════════════════════════════ */
-    div[data-testid="stSegmentedControl"] [data-baseweb="button-group"] {{
+    [data-baseweb="button-group"] {{
         flex-wrap: nowrap !important;
         overflow-x: auto !important;
         -webkit-overflow-scrolling: touch !important;
         scrollbar-width: none !important;
     }}
-    div[data-testid="stSegmentedControl"] [data-baseweb="button-group"]::-webkit-scrollbar {{
+    [data-baseweb="button-group"]::-webkit-scrollbar {{
         display: none !important;
     }}
-    div[data-testid="stSegmentedControl"] [data-baseweb="button-group"] button {{
+    [data-baseweb="button-group"] button {{
         flex-shrink: 0 !important;
         white-space: nowrap !important;
     }}
