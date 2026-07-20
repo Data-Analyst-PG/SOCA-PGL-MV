@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from ui.components import section_header, alert, divider
+from ..shared import log_accion
 # ─────────────────────────────────────────────────────────────
 # CONSTANTES — equivalencias I → C ACTUALIZADAS
 # Según hoja "Nuevo mapeo" de Actualización data.xlsx.
@@ -652,13 +653,18 @@ def render() -> None:
     cm5.metric("🚫 Cancelados", stats["cancelados"])
 
     with cdl:
-        st.download_button(
+        descargado = st.download_button(
             "⬇️ Exportar auditoría Excel",
             data=_to_excel(dfs),
             file_name="auditoria_lincoln.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
+        if descargado:
+            log_accion("aud-lincoln_auditoria", "exportar_excel", {
+                "total": stats["total"],
+                "anomalias": stats["anomalias"],
+            })
 
     divider()
 
