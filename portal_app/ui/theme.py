@@ -326,12 +326,17 @@ def aplicar_tema():
     /* ═══════════════════════════════════════════════════════════
        13B. SEGMENTED CONTROL (st.segmented_control)
        Reemplazo de tabs para submódulos con auditoría de uso.
-       Mismo comportamiento que stNavigation en móvil: una sola
-       fila con scroll horizontal en vez de envolver a varias líneas.
-       Nota: no usa data-testid porque no está confirmado — se ataca
-       directo el contenedor interno real del componente (BaseWeb).
+       Reskin para que se vea IGUAL que stTabs (13): texto plano,
+       sin caja ni fondo, subrayado rojo en la opción activa.
+       + Una sola fila con scroll horizontal en móvil (igual que
+       stNavigation), en vez de envolver a varias líneas.
     ═══════════════════════════════════════════════════════════ */
     [data-baseweb="button-group"] {{
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        gap: 1.5rem !important;
         flex-wrap: nowrap !important;
         overflow-x: auto !important;
         -webkit-overflow-scrolling: touch !important;
@@ -343,6 +348,27 @@ def aplicar_tema():
     [data-baseweb="button-group"] button {{
         flex-shrink: 0 !important;
         white-space: nowrap !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        border-bottom: 3px solid transparent !important;
+        box-shadow: none !important;
+        padding: 0.5rem 0.1rem !important;
+        font-weight: 600 !important;
+        color: {PGL_MUTED} !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+    }}
+    [data-baseweb="button-group"] button:hover {{
+        color: {PGL_NAVY} !important;
+        background: rgba(27,34,102,0.04) !important;
+    }}
+    [data-baseweb="button-group"] button[kind="segmented_controlActive"] {{
+        background: transparent !important;
+        border: none !important;
+        border-bottom: 3px solid {PGL_RED} !important;
+        color: {PGL_NAVY} !important;
+        box-shadow: none !important;
+        font-weight: 700 !important;
     }}
 
     
