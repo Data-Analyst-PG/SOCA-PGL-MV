@@ -20,6 +20,21 @@ def registrar_login():
         pass
 
 
+def registrar_acceso_modulo(modulo: str, titulo: str | None = None):
+    """Se llama una vez por navegación real a un módulo (protegido contra reruns)."""
+    if st.session_state.get("_ultimo_modulo_auditado") == modulo:
+        return
+    try:
+        _cliente().table("auditoria_accesos_modulo").insert({
+            "full_name": st.session_state.get("_auditoria_full_name"),
+            "modulo":    modulo,
+            "empresa":   titulo,
+        }).execute()
+        st.session_state["_ultimo_modulo_auditado"] = modulo
+    except Exception:
+        pass
+
+
 def registrar_acceso_submodulo(modulo_base: str, seccion: str):
     """Se llama desde el on_change de un segmented_control que reemplaza tabs.
     No necesita guard propio: on_change solo se dispara con un cambio real
