@@ -25,6 +25,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from ui.components import page_banner, section_header, alert, divider
+from .shared import log_accion
 
 # ─────────────────────────────────────────────────────────────
 # CONSTANTES
@@ -352,10 +353,15 @@ def render():
     with st.expander("Vista previa — Detalle"):
         st.dataframe(result.detalle, use_container_width=True, hide_index=True)
 
-    st.download_button(
+    descargado = st.download_button(
         "⬇️ Descargar reporte Excel",
         data=out_bytes,
         file_name=f"reporte_sac_ventas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
+    if descargado:
+        log_accion("aud-sac_ventas", "exportar_excel", {
+            "resumen": len(result.resumen),
+            "detalle": len(result.detalle),
+        })
