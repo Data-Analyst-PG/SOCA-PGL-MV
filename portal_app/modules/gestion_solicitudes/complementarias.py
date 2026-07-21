@@ -260,13 +260,24 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
         if update_complementaria(folio, changes):
             log_accion("editar_solicitud", {"folio": folio, "estatus": nuevo_est})
 
-            # ── Notificación: solo cuando el estatus CAMBIA a "En revisión" ────
-            if nuevo_est == "En revisión" and nuevo_est != est:
+            # ── Notificación: en CUALQUIER cambio de estatus ────────────────────
+            hubo_cambio_estatus = nuevo_est != est
+            correo_enviado = None
+            if hubo_cambio_estatus:
+                folio_fmt = f"{int(folio):04d}"
+                _colores_estatus = {
+                    "Pendiente":    ("#DBEAFE", "#1E40AF"),
+                    "En revisión":  ("#FEF3C7", "#92400E"),
+                    "Resuelto":     ("#D1FAE5", "#065F46"),
+                    "Cancelado":    ("#FEE2E2", "#7F1D1D"),
+                }
+                color_bg, color_fg = _colores_estatus.get(nuevo_est, ("#F3F4F6", "#374151"))
                 comentario_correo = comentario.strip() or "Sin comentarios adicionales."
-                enviar_notificacion(
+
+                resultado_correo = enviar_notificacion(
                     modulo="complementarias",
                     evento="estatus_actualizado",
-                    folio=folio,
+                    folio=folio_fmt,
                     clave_unica=nuevo_est,
                     datos={
                         "solicitante": comp.get("solicitante", ""),
@@ -274,14 +285,22 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                         "numero_trafico": comp.get("numero_trafico", ""),
                         "tipo": comp.get("tipo_complementaria", ""),
                         "auditor": nuevo_aud,
+                        "estatus": nuevo_est,
                         "comentario": comentario_correo,
+                        "color_bg": color_bg,
+                        "color_fg": color_fg,
                     },
                     tipo_solicitud=comp.get("tipo_complementaria"),
                     empresa=comp.get("empresa"),
                     correo_solicitante=comp.get("correo"),
                 )
+                correo_enviado = resultado_correo.get("ok", False)
 
-            st.success("✅ Cambios guardados.")
+            st.session_state["gc_comp_success_payload"] = {
+                "folio": folio,
+                "hubo_cambio_estatus": hubo_cambio_estatus,
+                "correo_enviado": correo_enviado,
+            }
             st.cache_data.clear()
             st.rerun()
 
@@ -315,6 +334,27 @@ def render():
     ])
 
     st.divider()
+
+    # ── Diálogo de confirmación tras guardar ────────────────────────────────
+    if st.session_state.get("gc_comp_success_payload"):
+        payload = st.session_state["gc_comp_success_payload"]
+
+        @st.dialog("✅ Cambios guardados")
+        def _dlg_guardado():
+            st.success(f"Los cambios del folio **#{int(payload['folio']):04d}** se guardaron correctamente.")
+            if payload["hubo_cambio_estatus"]:
+                if payload["correo_enviado"]:
+                    st.info("📧 Se envió la notificación por correo automáticamente.")
+                else:
+                    st.warning(
+                        "⚠️ Los cambios se guardaron, pero la notificación por correo "
+                        "no pudo enviarse."
+                    )
+            if st.button("OK", type="primary", key="gc_comp_success_ok"):
+                st.session_state.pop("gc_comp_success_payload", None)
+                st.rerun()
+
+        _dlg_guardado()
 
     # ── Abrir modal si hay selección ──────────────────────────────────────────
     if "gc_comp_modal_folio" in st.session_state:
