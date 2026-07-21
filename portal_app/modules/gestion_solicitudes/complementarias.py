@@ -26,6 +26,7 @@ from ui.components import (
     page_banner,
 )
 from .shared import get_complementarias, update_complementaria, now_iso_utc, log_accion_complementarias as log_accion
+from services.notificaciones import enviar_notificacion
 # ── Catálogos ─────────────────────────────────────────────────────────────────
 ESTATUSES        = ["Pendiente", "En revisión", "Resuelto", "Cancelado"]
 ESTATUSES_ACTIVOS = {"Pendiente", "En revisión"}
@@ -258,6 +259,27 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
 
         if update_complementaria(folio, changes):
             log_accion("editar_solicitud", {"folio": folio, "estatus": nuevo_est})
+
+            # ── Notificación: solo cuando el estatus CAMBIA a "En revisión" ────
+            if nuevo_est == "En revisión" and nuevo_est != est:
+                comentario_correo = comentario.strip() or "Sin comentarios adicionales."
+                enviar_notificacion(
+                    modulo="complementarias",
+                    evento="en_revision",
+                    folio=folio,
+                    datos={
+                        "solicitante": comp.get("solicitante", ""),
+                        "empresa": comp.get("empresa", ""),
+                        "numero_trafico": comp.get("numero_trafico", ""),
+                        "tipo": comp.get("tipo_complementaria", ""),
+                        "auditor": nuevo_aud,
+                        "comentario": comentario_correo,
+                    },
+                    tipo_solicitud=comp.get("tipo_complementaria"),
+                    empresa=comp.get("empresa"),
+                    correo_solicitante=comp.get("correo"),
+                )
+
             st.success("✅ Cambios guardados.")
             st.cache_data.clear()
             st.rerun()
