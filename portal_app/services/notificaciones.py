@@ -135,12 +135,15 @@ def obtener_destinatarios(
 # ═══════════════════════════════════════════════════════════════════════════════
 # ENVÍO CON RESEND
 # ═══════════════════════════════════════════════════════════════════════════════
-def enviar_con_resend(to: list, cc: list, bcc: list, asunto: str, html: str, texto: str) -> dict:
-    """Envía el correo. Regresa {"ok": bool, "resend_id": str|None, "error": str|None}."""
+def enviar_con_resend(
+    to: list, cc: list, bcc: list, asunto: str, html: str, texto: str,
+    in_reply_to: Optional[str] = None, references: Optional[list] = None,
+) -> dict:
+    """Envía el correo. Regresa {"ok": bool, "resend_id": str|None, "message_id": str|None, "error": str|None}."""
     try:
         resend.api_key = st.secrets["RESEND_API_KEY_V1"]
     except Exception:
-        return {"ok": False, "resend_id": None, "error": "RESEND_API_KEY_V1 no configurada en secrets."}
+        return {"ok": False, "resend_id": None, "message_id": None, "error": "RESEND_API_KEY_V1 no configurada en secrets."}
 
     payload = {
         "from": REMITENTE,
@@ -155,12 +158,31 @@ def enviar_con_resend(to: list, cc: list, bcc: list, asunto: str, html: str, tex
     if bcc:
         payload["bcc"] = bcc
 
+    # ── Headers de hilo (Fase 5) ────────────────────────────────────────────
+    if in_reply_to or references:
+        headers = {}
+        if in_reply_to:
+            headers["In-Reply-To"] = in_reply_to
+        if references:
+            headers["References"] = " ".join(references)
+        payload["headers"] = headers
+
     try:
         respuesta = resend.Emails.send(payload)
         resend_id = respuesta.get("id") if isinstance(respuesta, dict) else None
-        return {"ok": True, "resend_id": resend_id, "error": None}
     except Exception as e:
-        return {"ok": False, "resend_id": None, "error": str(e)}
+        return {"ok": False, "resend_id": None, "message_id": None, "error": str(e)}
+
+    # ── Recuperar el Message-ID real (segunda llamada, no bloqueante) ───────
+    message_id = None
+    if resend_id:
+        try:
+            detalle = resend.Emails.get(resend_id)
+            message_id = detalle.get("message_id") if isinstance(detalle, dict) else None
+        except Exception:
+            pass
+
+    return {"ok": True, "resend_id": resend_id, "message_id": message_id, "error": None}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -187,11 +209,32 @@ def _ya_enviado(idempotency_key: str) -> bool:
         return False
 
 
+def obtener_hilo(modulo: str, folio: str) -> list[str]:
+    """Regresa los Message-ID de todos los correos ya enviados para este
+    folio, en orden cronológico — para armar In-Reply-To / References."""
+    try:
+        supabase = get_authed_client()
+        res = (
+            supabase.table("historial_notificaciones")
+            .select("message_id")
+            .eq("modulo", modulo)
+            .eq("folio", str(folio))
+            .eq("estado", "enviado")
+            .not_.is_("message_id", "null")
+            .order("fecha_creacion", desc=False)
+            .execute()
+        )
+        return [r["message_id"] for r in (res.data or []) if r.get("message_id")]
+    except Exception:
+        return []
+
+
 def registrar_historial(
     modulo: str, folio: str, evento: str, asunto: str,
     to: list, cc: list, bcc: list,
     estado: str, resend_id: Optional[str], error: Optional[str],
     datos_evento: dict, idempotency_key: str,
+    message_id: Optional[str] = None,
 ) -> None:
     try:
         supabase = get_authed_client()
@@ -205,6 +248,7 @@ def registrar_historial(
             "destinatarios_cc": cc,
             "destinatarios_bcc": bcc,
             "resend_id": resend_id,
+            "message_id": message_id,
             "estado": estado,
             "error": error,
             "datos_evento": datos_evento,
@@ -280,13 +324,21 @@ def enviar_notificacion(
     html   = renderizar_plantilla(plantilla.get("cuerpo_html", ""), datos_render)
     texto  = renderizar_plantilla(plantilla.get("cuerpo_texto", ""), datos_render)
 
-    resultado = enviar_con_resend(to, cc, bcc, asunto, html, texto)
+    hilo_previo = obtener_hilo(modulo, folio)
+    in_reply_to = hilo_previo[-1] if hilo_previo else None
+
+    resultado = enviar_con_resend(
+        to, cc, bcc, asunto, html, texto,
+        in_reply_to=in_reply_to,
+        references=hilo_previo if hilo_previo else None,
+    )
 
     registrar_historial(
         modulo, folio, evento, asunto, to, cc, bcc,
         "enviado" if resultado["ok"] else "error",
         resultado["resend_id"], resultado["error"],
         datos, idem_key,
+        message_id=resultado.get("message_id"),
     )
 
     return {"ok": resultado["ok"], "ya_enviado": False, "error": resultado["error"]}
