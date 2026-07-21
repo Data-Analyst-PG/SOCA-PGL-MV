@@ -167,9 +167,18 @@ def enviar_con_resend(
             headers["References"] = " ".join(references)
         payload["headers"] = headers
 
+    def _campo(obj, nombre):
+        """Lee un campo tanto si la respuesta es dict como si es un objeto
+        (el SDK de Resend ha cambiado de formato entre versiones)."""
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return obj.get(nombre)
+        return getattr(obj, nombre, None)
+
     try:
         respuesta = resend.Emails.send(payload)
-        resend_id = respuesta.get("id") if isinstance(respuesta, dict) else None
+        resend_id = _campo(respuesta, "id")
     except Exception as e:
         return {"ok": False, "resend_id": None, "message_id": None, "error": str(e)}
 
@@ -178,7 +187,7 @@ def enviar_con_resend(
     if resend_id:
         try:
             detalle = resend.Emails.get(resend_id)
-            message_id = detalle.get("message_id") if isinstance(detalle, dict) else None
+            message_id = _campo(detalle, "message_id")
         except Exception:
             pass
 
