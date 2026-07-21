@@ -184,15 +184,16 @@ def enviar_con_resend(
 
     # ── Recuperar el Message-ID real (segunda llamada, no bloqueante) ───────
     message_id = None
+    debug_msg = None
     if resend_id:
         try:
             detalle = resend.Emails.get(resend_id)
             message_id = _campo(detalle, "message_id")
             if not message_id:
-                st.warning(f"🔧 DEBUG — tipo: {type(detalle)} | contenido: {detalle!r}")
+                debug_msg = f"tipo: {type(detalle)} | contenido: {detalle!r}"
         except Exception as e:
-            st.warning(f"🔧 DEBUG — no se pudo leer message_id: {e}")
-    return {"ok": True, "resend_id": resend_id, "message_id": message_id, "error": None}
+            debug_msg = f"error al leer message_id: {e}"
+    return {"ok": True, "resend_id": resend_id, "message_id": message_id, "debug_msg": debug_msg, "error": None}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -353,4 +354,7 @@ def enviar_notificacion(
         message_id=resultado.get("message_id"),
     )
 
-    return {"ok": resultado["ok"], "ya_enviado": False, "error": resultado["error"]}
+    return {
+        "ok": resultado["ok"], "ya_enviado": False, "error": resultado["error"],
+        "debug_msg": resultado.get("debug_msg"),
+    }
