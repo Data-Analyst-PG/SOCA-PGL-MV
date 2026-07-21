@@ -10,7 +10,8 @@ import streamlit as st
 import urllib.parse
 import re
 
-from services.supabase_client import current_user
+from services.supabase_client import current_user, get_authed_client, get_secret
+from services.notificaciones import enviar_notificacion
 from ui.components import section_header, alert
 from .shared import (
     EMPRESAS, 
@@ -360,10 +361,13 @@ def render():
         @st.dialog("✅ Solicitud registrada correctamente")
         def _dlg_success():
             st.success(f"Solicitud **#{payload['folio']}** registrada correctamente.")
-            st.warning("⚠️ **Recuerda adjuntar la factura correspondiente** en el correo de notificación.")
-            st.markdown(f"👉 **Enviar notificación:** [Abrir correo]({payload['mailto']})")
-            st.caption("O copia este mensaje manualmente:")
-            st.code(payload["mensaje_manual"], language="text")
+            if payload.get("correo_enviado"):
+                st.info("📧 Se envió la notificación por correo automáticamente.")
+            else:
+                st.warning(
+                    "⚠️ La solicitud se guardó correctamente, pero la notificación por correo "
+                    "no pudo enviarse. El equipo puede consultarla directamente en la app."
+                )
             if st.button("OK", type="primary"):
                 reset_form_complementaria()
                 st.rerun()
@@ -577,38 +581,32 @@ def render():
             except Exception as e:
                 st.warning(f"Solicitud guardada, pero no se pudo vincular la factura: {e}")
 
-    # ── Mailto ────────────────────────────────────────────────────────────────
-    destinatarios = (
-        ["julieta.reyna@palosgarza.com", "e-invoicing@palosgarza.com"]
-        if tipo_complementaria == "Desconclusión"
-        else ["auditoria.operaciones@palosgarza.com"]
+    # ── Notificación automática por correo ────────────────────────────────────
+    datos_notificacion = {
+        "solicitante": solicitante.strip(),
+        "empresa": empresa,
+        "sucursal": sucursal or "N/A",
+        "plataforma": plataforma,
+        "tipo": tipo_complementaria,
+        "motivo": motivo_solicitud.strip(),
+        "numero_trafico": numero_trafico_clean,
+        "estatus": "Pendiente",
+        "fecha_captura": datetime.now().strftime("%d/%m/%Y"),
+    }
+
+    resultado_correo = enviar_notificacion(
+        modulo="complementarias",
+        evento="solicitud_creada",
+        folio=folio_formateado,
+        datos=datos_notificacion,
+        tipo_solicitud=tipo_complementaria,
+        empresa=empresa,
+        correo_solicitante=correo_usuario,
     )
-    subject = f"Complementaria #{folio_formateado} | {empresa} | Tráfico {numero_trafico_clean}"
-    body = (
-        f"Fecha: {datetime.now().strftime('%d/%m/%Y')}\n"
-        f"Folio: #{folio_formateado}\nTráfico: {numero_trafico_clean}\n"
-        f"Solicitó: {solicitante.strip()}\nCorreo: {correo_usuario}\n"
-        f"Empresa: {empresa}\nSucursal: {sucursal or 'N/A'}\n"
-        f"Plataforma: {plataforma}\nTipo: {tipo_complementaria}\n"
-    )
-    if not es_desconclusion:
-        body += (
-            f"\nConcepto nuevo: {nuevo['tipo']}"
-            + (f" → {nuevo['concepto']}" if nuevo.get("concepto") else "")
-            + f"\nImporte nuevo: ${nuevo['importe']:,.2f} {nuevo.get('moneda','')}\n"
-        )
-        if nuevo.get("tasa_iva"):
-            body += (
-                f"Tasa IVA: {nuevo['tasa_iva']}\n"
-                f"Tasa Retención: {nuevo.get('tasa_retencion','N/A')}\n"
-                f"Retención ISR: {nuevo.get('retencion_isr','N/A')}\n"
-                f"Total calculado: ${nuevo.get('total',0):,.2f}\n"
-            )
 
     st.session_state.comp_success_payload = {
         "folio": folio_formateado,
-        "mailto": build_mailto(destinatarios, subject, body),
-        "mensaje_manual": f"Mi folio de complementaria es el '#{folio_formateado}', favor de atender mi solicitud",
+        "correo_enviado": resultado_correo["ok"],
     }
     st.session_state.comp_confirm_ok = False
     st.rerun()
