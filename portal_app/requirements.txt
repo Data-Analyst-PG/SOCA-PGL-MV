@@ -17,4 +17,4 @@ streamlit-autorefresh
 pydeck
 gspread
 google-auth
-resend
+resend==2.19.0
