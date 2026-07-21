@@ -257,7 +257,7 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
     )
 
     captura_resuelto = None
-    if nuevo_est == "Resuelto":
+    if nuevo_est == "Resuelto" and tipo != "Desconclusión":
         captura_resuelto = st.file_uploader(
             "📸 Captura de confirmación (opcional)",
             type=["png", "jpg", "jpeg", "pdf"],
