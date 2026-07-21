@@ -265,8 +265,9 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                 comentario_correo = comentario.strip() or "Sin comentarios adicionales."
                 enviar_notificacion(
                     modulo="complementarias",
-                    evento="en_revision",
+                    evento="estatus_actualizado",
                     folio=folio,
+                    clave_unica=nuevo_est,
                     datos={
                         "solicitante": comp.get("solicitante", ""),
                         "empresa": comp.get("empresa", ""),
