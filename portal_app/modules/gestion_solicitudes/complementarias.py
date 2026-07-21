@@ -300,6 +300,7 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                 "folio": folio,
                 "hubo_cambio_estatus": hubo_cambio_estatus,
                 "correo_enviado": correo_enviado,
+                "debug_msg": resultado_correo.get("debug_msg") if hubo_cambio_estatus else None,
             }
             st.cache_data.clear()
             st.rerun()
@@ -350,6 +351,8 @@ def render():
                         "⚠️ Los cambios se guardaron, pero la notificación por correo "
                         "no pudo enviarse."
                     )
+                if payload.get("debug_msg"):
+                    st.code(f"DEBUG message_id: {payload['debug_msg']}", language="text")
             if st.button("OK", type="primary", key="gc_comp_success_ok"):
                 st.session_state.pop("gc_comp_success_payload", None)
                 st.rerun()
