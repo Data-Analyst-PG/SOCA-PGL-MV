@@ -22,6 +22,24 @@ REMITENTE = "Notificaciones PG Data Analyst <notificaciones@pgdataanalyst.com>"
 LINK_APP  = "https://soca-pgl-mv-nxs7ubwktrszpsbg5z8ynj-pr0d1nter2026v2.streamlit.app"
 
 
+def _campo(obj, nombre):
+    """Lee un campo tanto si la respuesta es dict como si es un objeto
+    (el SDK de Resend ha cambiado de formato entre versiones)."""
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(nombre)
+    return getattr(obj, nombre, None)
+
+
+def _set_resend_api_key() -> bool:
+    try:
+        resend.api_key = st.secrets["RESEND_API_KEY_V1"]
+        return True
+    except Exception:
+        return False
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # UTILIDADES DE CORREOS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -139,11 +157,15 @@ def enviar_con_resend(
     to: list, cc: list, bcc: list, asunto: str, html: str, texto: str,
     in_reply_to: Optional[str] = None, references: Optional[list] = None,
 ) -> dict:
-    """Envía el correo. Regresa {"ok": bool, "resend_id": str|None, "message_id": str|None, "error": str|None}."""
-    try:
-        resend.api_key = st.secrets["RESEND_API_KEY_V1"]
-    except Exception:
-        return {"ok": False, "resend_id": None, "message_id": None, "error": "RESEND_API_KEY_V1 no configurada en secrets."}
+    """Envía el correo. Regresa {"ok": bool, "resend_id": str|None, "error": str|None}.
+
+    Nota: NO intenta leer el message_id aquí — justo después de enviar, Resend
+    todavía tiene el correo en estado "queued" y el message_id real se asigna
+    unos segundos después. Se recupera más tarde, de forma diferida, en
+    obtener_hilo() la próxima vez que se necesite armar el hilo.
+    """
+    if not _set_resend_api_key():
+        return {"ok": False, "resend_id": None, "error": "RESEND_API_KEY_V1 no configurada en secrets."}
 
     payload = {
         "from": REMITENTE,
@@ -167,33 +189,12 @@ def enviar_con_resend(
             headers["References"] = " ".join(references)
         payload["headers"] = headers
 
-    def _campo(obj, nombre):
-        """Lee un campo tanto si la respuesta es dict como si es un objeto
-        (el SDK de Resend ha cambiado de formato entre versiones)."""
-        if obj is None:
-            return None
-        if isinstance(obj, dict):
-            return obj.get(nombre)
-        return getattr(obj, nombre, None)
-
     try:
         respuesta = resend.Emails.send(payload)
         resend_id = _campo(respuesta, "id")
+        return {"ok": True, "resend_id": resend_id, "error": None}
     except Exception as e:
-        return {"ok": False, "resend_id": None, "message_id": None, "error": str(e)}
-
-    # ── Recuperar el Message-ID real (segunda llamada, no bloqueante) ───────
-    message_id = None
-    debug_msg = None
-    if resend_id:
-        try:
-            detalle = resend.Emails.get(resend_id)
-            message_id = _campo(detalle, "message_id")
-            if not message_id:
-                debug_msg = f"tipo: {type(detalle)} | contenido: {detalle!r}"
-        except Exception as e:
-            debug_msg = f"error al leer message_id: {e}"
-    return {"ok": True, "resend_id": resend_id, "message_id": message_id, "debug_msg": debug_msg, "error": None}
+        return {"ok": False, "resend_id": None, "error": str(e)}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -223,22 +224,51 @@ def _ya_enviado(idempotency_key: str) -> bool:
 
 def obtener_hilo(modulo: str, folio: str) -> list[str]:
     """Regresa los Message-ID de todos los correos ya enviados para este
-    folio, en orden cronológico — para armar In-Reply-To / References."""
+    folio, en orden cronológico — para armar In-Reply-To / References.
+
+    Si algún correo previo todavía no tiene message_id guardado (porque se
+    mandó hace muy poco y Resend aún no se lo asignaba), lo busca ahora
+    directo en Resend y lo guarda en Supabase para no tener que pedirlo otra vez.
+    """
     try:
         supabase = get_authed_client()
         res = (
             supabase.table("historial_notificaciones")
-            .select("message_id")
+            .select("id,resend_id,message_id")
             .eq("modulo", modulo)
             .eq("folio", str(folio))
             .eq("estado", "enviado")
-            .not_.is_("message_id", "null")
             .order("fecha_creacion", desc=False)
             .execute()
         )
-        return [r["message_id"] for r in (res.data or []) if r.get("message_id")]
+        filas = res.data or []
     except Exception:
         return []
+
+    resultado = []
+    api_key_lista = False
+
+    for fila in filas:
+        mid = fila.get("message_id")
+
+        if not mid and fila.get("resend_id"):
+            if not api_key_lista:
+                api_key_lista = _set_resend_api_key()
+            if api_key_lista:
+                try:
+                    detalle = resend.Emails.get(fila["resend_id"])
+                    mid = _campo(detalle, "message_id")
+                    if mid:
+                        supabase.table("historial_notificaciones").update(
+                            {"message_id": mid}
+                        ).eq("id", fila["id"]).execute()
+                except Exception:
+                    pass
+
+        if mid:
+            resultado.append(mid)
+
+    return resultado
 
 
 def registrar_historial(
@@ -246,7 +276,6 @@ def registrar_historial(
     to: list, cc: list, bcc: list,
     estado: str, resend_id: Optional[str], error: Optional[str],
     datos_evento: dict, idempotency_key: str,
-    message_id: Optional[str] = None,
 ) -> None:
     try:
         supabase = get_authed_client()
@@ -260,7 +289,6 @@ def registrar_historial(
             "destinatarios_cc": cc,
             "destinatarios_bcc": bcc,
             "resend_id": resend_id,
-            "message_id": message_id,
             "estado": estado,
             "error": error,
             "datos_evento": datos_evento,
@@ -295,6 +323,10 @@ def enviar_notificacion(
     correo_solicitante: correo del usuario que generó el evento — se agrega
         dinámicamente al "to" (no vive en la tabla de destinatarios porque
         cambia con cada solicitud).
+
+    clave_unica: opcional — para que un mismo folio+evento pueda repetirse
+        (ej. el estatus regresa a un valor ya usado) sin que la protección
+        anti-duplicados lo bloquee.
 
     Regresa {"ok": bool, "ya_enviado": bool, "error": str|None} — nunca lanza excepción.
     """
@@ -351,10 +383,6 @@ def enviar_notificacion(
         "enviado" if resultado["ok"] else "error",
         resultado["resend_id"], resultado["error"],
         datos, idem_key,
-        message_id=resultado.get("message_id"),
     )
 
-    return {
-        "ok": resultado["ok"], "ya_enviado": False, "error": resultado["error"],
-        "debug_msg": resultado.get("debug_msg"),
-    }
+    return {"ok": resultado["ok"], "ya_enviado": False, "error": resultado["error"]}
