@@ -49,7 +49,46 @@ COLS_TABLA = [
     ("comentarios_auditor",    "Comentarios auditor"),
 ]
 
+# ── Adjuntar captura de conrimación ───────────────────────────────────────────
+def _preparar_adjunto_captura(archivo, folio_fmt: str) -> dict | None:
+    """Prepara la captura de 'Resuelto' para adjuntarse al correo — NO se
+    guarda en Supabase Storage. Comprime la imagen si excede 5 MB."""
+    try:
+        extension = archivo.name.rsplit(".", 1)[-1].lower()
 
+        if extension == "pdf":
+            file_bytes = archivo.read()
+            nombre = f"confirmacion_{folio_fmt}.pdf"
+            return {"filename": nombre, "content_bytes": file_bytes}
+
+        from PIL import Image
+        from io import BytesIO
+
+        img = Image.open(archivo).convert("RGB")
+
+        # Primer intento: ancho máx 1200px, calidad 70
+        max_width = 1200
+        if img.width > max_width:
+            ratio = max_width / img.width
+            img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG", quality=70, optimize=True)
+        file_bytes = buffer.getvalue()
+
+        # Si sigue pesando más de 5 MB, segunda pasada más agresiva
+        if len(file_bytes) > 5 * 1024 * 1024:
+            if img.width > 800:
+                ratio = 800 / img.width
+                img = img.resize((800, int(img.height * ratio)), Image.LANCZOS)
+            buffer = BytesIO()
+            img.save(buffer, format="JPEG", quality=50, optimize=True)
+            file_bytes = buffer.getvalue()
+
+        nombre = f"confirmacion_{folio_fmt}.jpg"
+        return {"filename": nombre, "content_bytes": file_bytes}
+    except Exception:
+        return None
+        
 # ── Excel ─────────────────────────────────────────────────────────────────────
 def _to_excel(df: pd.DataFrame) -> bytes:
     buf = BytesIO()
@@ -217,6 +256,15 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
         key=f"gc_comp_com_{folio}",
     )
 
+    captura_resuelto = None
+    if nuevo_est == "Resuelto":
+        captura_resuelto = st.file_uploader(
+            "📸 Captura de confirmación (opcional)",
+            type=["png", "jpg", "jpeg", "pdf"],
+            key=f"gc_comp_captura_{folio}",
+            help="Se adjunta al correo de notificación — no se guarda en el sistema.",
+        )
+
     col_b1, col_b2 = st.columns([1, 3])
     with col_b1:
         guardar = st.button("💾 Guardar", type="primary", key=f"gc_comp_save_{folio}")
@@ -274,6 +322,10 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                 color_bg, color_fg = _colores_estatus.get(nuevo_est, ("#F3F4F6", "#374151"))
                 comentario_correo = comentario.strip() or "Sin comentarios adicionales."
 
+                adjunto_captura = None
+                if nuevo_est == "Resuelto" and captura_resuelto is not None:
+                    adjunto_captura = _preparar_adjunto_captura(captura_resuelto, folio_fmt)
+
                 resultado_correo = enviar_notificacion(
                     modulo="complementarias",
                     evento="estatus_actualizado",
@@ -293,6 +345,7 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                     tipo_solicitud=comp.get("tipo_complementaria"),
                     empresa=comp.get("empresa"),
                     correo_solicitante=comp.get("correo"),
+                    adjunto=adjunto_captura,
                 )
                 correo_enviado = resultado_correo.get("ok", False)
 
