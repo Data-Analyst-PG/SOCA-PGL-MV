@@ -278,7 +278,7 @@ def _modal_edicion(comp: dict, gestor: str, solo_lectura: bool = False):
                     modulo="complementarias",
                     evento="estatus_actualizado",
                     folio=folio_fmt,
-                    clave_unica=nuevo_est,
+                    clave_unica=f"{nuevo_est}_{now}",
                     datos={
                         "solicitante": comp.get("solicitante", ""),
                         "empresa": comp.get("empresa", ""),
