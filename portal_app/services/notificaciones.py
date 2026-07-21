@@ -3,7 +3,7 @@
 # Servicio centralizado de notificaciones por correo para SOCA.
 # Cualquier módulo (Complementarias, Tickets, Viáticos, etc.) llama solo a
 # enviar_notificacion(...) — este archivo se encarga de plantilla, destinatarios,
-# envío con Resend, historial y manejo de errores.
+# envío con Resend, historial, adjuntos y manejo de errores.
 #
 # Principio: el registro en Supabase SIEMPRE es más importante que el correo.
 # Esta función nunca debe lanzar una excepción hacia quien la llama.
@@ -151,11 +151,31 @@ def obtener_destinatarios(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ADJUNTOS
+# ═══════════════════════════════════════════════════════════════════════════════
+def _construir_adjunto(adjunto: Optional[dict]) -> Optional[list]:
+    """Convierte {"filename": str, "content_bytes": bytes} al formato que
+    espera el SDK de Resend en Python: {"filename": str, "content": list(bytes)}.
+    Regresa None si no hay adjunto o si el archivo pesa más de 35 MB
+    (límite práctico de Resend para adjuntos)."""
+    if not adjunto:
+        return None
+    contenido = adjunto.get("content_bytes")
+    nombre = adjunto.get("filename")
+    if not contenido or not nombre:
+        return None
+    if len(contenido) > 35 * 1024 * 1024:
+        return None
+    return [{"filename": nombre, "content": list(contenido)}]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ENVÍO CON RESEND
 # ═══════════════════════════════════════════════════════════════════════════════
 def enviar_con_resend(
     to: list, cc: list, bcc: list, asunto: str, html: str, texto: str,
     in_reply_to: Optional[str] = None, references: Optional[list] = None,
+    attachments: Optional[list] = None,
 ) -> dict:
     """Envía el correo. Regresa {"ok": bool, "resend_id": str|None, "error": str|None}.
 
@@ -179,6 +199,8 @@ def enviar_con_resend(
         payload["cc"] = cc
     if bcc:
         payload["bcc"] = bcc
+    if attachments:
+        payload["attachments"] = attachments
 
     # ── Headers de hilo (Fase 5) ────────────────────────────────────────────
     if in_reply_to or references:
@@ -311,6 +333,7 @@ def enviar_notificacion(
     empresa: Optional[str] = None,
     correo_solicitante: Optional[str] = None,
     clave_unica: Optional[str] = None,
+    adjunto: Optional[dict] = None,
 ) -> dict:
     """
     Punto de entrada único para todos los módulos.
@@ -327,6 +350,9 @@ def enviar_notificacion(
     clave_unica: opcional — para que un mismo folio+evento pueda repetirse
         (ej. el estatus regresa a un valor ya usado) sin que la protección
         anti-duplicados lo bloquee.
+
+    adjunto: opcional — {"filename": "factura.pdf", "content_bytes": <bytes>}
+        para adjuntar un archivo (ej. la factura) al correo.
 
     Regresa {"ok": bool, "ya_enviado": bool, "error": str|None} — nunca lanza excepción.
     """
@@ -371,11 +397,13 @@ def enviar_notificacion(
 
     hilo_previo = obtener_hilo(modulo, folio)
     in_reply_to = hilo_previo[-1] if hilo_previo else None
+    attachments = _construir_adjunto(adjunto)
 
     resultado = enviar_con_resend(
         to, cc, bcc, asunto, html, texto,
         in_reply_to=in_reply_to,
         references=hilo_previo if hilo_previo else None,
+        attachments=attachments,
     )
 
     registrar_historial(
