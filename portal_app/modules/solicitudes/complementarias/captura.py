@@ -33,8 +33,9 @@ from .shared import (
 )
 
 
-def subir_factura_storage(supabase, archivo, folio: str) -> str | None:
-    """Sube el archivo al bucket. Las imágenes se comprimen antes de subir."""
+def subir_factura_storage(supabase, archivo, folio: str) -> tuple[str | None, bytes | None, str | None]:
+    """Sube el archivo al bucket. Las imágenes se comprimen antes de subir.
+    Regresa (path, file_bytes, nombre_archivo) para poder adjuntarlo al correo."""
     try:
         from PIL import Image
         extension = archivo.name.rsplit(".", 1)[-1].lower()
@@ -72,10 +73,11 @@ def subir_factura_storage(supabase, archivo, folio: str) -> str | None:
             file=file_bytes,
             file_options={"content-type": content_type, "upsert": "true"},
         )
-        return path
+        nombre_archivo = f"factura_{folio}.{extension}"
+        return path, file_bytes, nombre_archivo
     except Exception as e:
         st.warning(f"No se pudo subir la factura: {e}")
-        return None
+        return None, None, None
         
 
 def build_mailto(to_emails: list, subject: str, body: str) -> str:
@@ -570,8 +572,10 @@ def render():
     # ── Subir factura si se adjuntó ───────────────────────────────────────────
     factura_file = st.session_state.get("comp_factura_upload")
     factura_path = None
+    factura_bytes = None
+    factura_nombre = None
     if factura_file:
-        factura_path = subir_factura_storage(supabase, factura_file, folio_formateado)
+        factura_path, factura_bytes, factura_nombre = subir_factura_storage(supabase, factura_file, folio_formateado)
         if factura_path:
             try:
                 supabase.table("solicitudes_complementarias").update(
@@ -594,6 +598,10 @@ def render():
         "fecha_captura": datetime.now().strftime("%d/%m/%Y"),
     }
 
+    adjunto_factura = None
+    if factura_bytes and factura_nombre:
+        adjunto_factura = {"filename": factura_nombre, "content_bytes": factura_bytes}
+
     resultado_correo = enviar_notificacion(
         modulo="complementarias",
         evento="solicitud_creada",
@@ -602,8 +610,8 @@ def render():
         tipo_solicitud=tipo_complementaria,
         empresa=empresa,
         correo_solicitante=correo_usuario,
+        adjunto=adjunto_factura,
     )
-
     st.session_state.comp_success_payload = {
         "folio": folio_formateado,
         "correo_enviado": resultado_correo["ok"],
