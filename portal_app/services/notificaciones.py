@@ -138,9 +138,9 @@ def obtener_destinatarios(
 def enviar_con_resend(to: list, cc: list, bcc: list, asunto: str, html: str, texto: str) -> dict:
     """Envía el correo. Regresa {"ok": bool, "resend_id": str|None, "error": str|None}."""
     try:
-        resend.api_key = st.secrets["RESEND_API_KEY"]
+        resend.api_key = st.secrets["RESEND_API_KEY_V1"]
     except Exception:
-        return {"ok": False, "resend_id": None, "error": "RESEND_API_KEY no configurada en secrets."}
+        return {"ok": False, "resend_id": None, "error": "RESEND_API_KEY_V1 no configurada en secrets."}
 
     payload = {
         "from": REMITENTE,
