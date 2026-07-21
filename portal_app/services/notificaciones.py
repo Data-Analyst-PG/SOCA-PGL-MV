@@ -188,8 +188,9 @@ def enviar_con_resend(
 # ═══════════════════════════════════════════════════════════════════════════════
 # HISTORIAL
 # ═══════════════════════════════════════════════════════════════════════════════
-def _idempotency_key(modulo: str, folio: str, evento: str, version: int = 1) -> str:
-    return f"{modulo}:{folio}:{evento}:v{version}"
+def _idempotency_key(modulo: str, folio: str, evento: str, version: int = 1, sufijo: Optional[str] = None) -> str:
+    extra = f":{sufijo}" if sufijo else ""
+    return f"{modulo}:{folio}:{evento}:v{version}{extra}"
 
 
 def _ya_enviado(idempotency_key: str) -> bool:
@@ -270,6 +271,7 @@ def enviar_notificacion(
     tipo_solicitud: Optional[str] = None,
     empresa: Optional[str] = None,
     correo_solicitante: Optional[str] = None,
+    clave_unica: Optional[str] = None,
 ) -> dict:
     """
     Punto de entrada único para todos los módulos.
@@ -285,7 +287,7 @@ def enviar_notificacion(
 
     Regresa {"ok": bool, "ya_enviado": bool, "error": str|None} — nunca lanza excepción.
     """
-    idem_key = _idempotency_key(modulo, folio, evento)
+    idem_key = _idempotency_key(modulo, folio, evento, sufijo=clave_unica)
 
     if _ya_enviado(idem_key):
         return {"ok": True, "ya_enviado": True, "error": None}
