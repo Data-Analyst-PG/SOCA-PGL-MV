@@ -188,8 +188,8 @@ def enviar_con_resend(
         try:
             detalle = resend.Emails.get(resend_id)
             message_id = _campo(detalle, "message_id")
-        except Exception:
-            pass
+        except Exception as e:
+            st.warning(f"🔧 DEBUG — no se pudo leer message_id: {e}")
 
     return {"ok": True, "resend_id": resend_id, "message_id": message_id, "error": None}
 
