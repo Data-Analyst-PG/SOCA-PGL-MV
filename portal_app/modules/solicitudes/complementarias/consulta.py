@@ -21,6 +21,7 @@ from ui.components import (
 
 )
 from .shared import get_supabase_client, log_accion
+from services.notificaciones import enviar_notificacion
 
 ESTATUSES_ACTIVOS = {"Pendiente", "En revisión"}
 
@@ -162,7 +163,25 @@ def _modal_detalle(comp: dict):
                             {"factura_path": path_dest}
                         ).eq("folio", int(folio)).execute()
                         log_accion("subir_evidencia", {"folio": int(folio)})
-                        st.success("✅ Factura guardada correctamente.")
+
+                        nombre_adjunto = f"factura_{folio_fmt_fc}.{ext if ext == 'pdf' else 'jpg'}"
+                        enviar_notificacion(
+                            modulo="complementarias",
+                            evento="factura_agregada",
+                            folio=folio_fmt_fc,
+                            datos={
+                                "solicitante": comp.get("solicitante", ""),
+                                "empresa": comp.get("empresa", ""),
+                                "numero_trafico": comp.get("numero_trafico", ""),
+                                "tipo": comp.get("tipo_complementaria", ""),
+                            },
+                            tipo_solicitud=comp.get("tipo_complementaria"),
+                            empresa=comp.get("empresa"),
+                            correo_solicitante=comp.get("correo"),
+                            adjunto={"filename": nombre_adjunto, "content_bytes": file_bytes},
+                        )
+
+                        st.success("✅ Factura guardada correctamente. Se notificó por correo con el adjunto.")
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
