@@ -37,13 +37,18 @@ def _obtener_reglas_alcance(user_id: str) -> list[dict]:
     try:
         supabase = get_authed_client()
         res = (
-            supabase.table("complementarias_alcance")
-            .select("empresa,tipo_complementaria")
+            supabase.table("alcance_usuario")
+            .select("empresa,tipo")
             .eq("user_id", user_id)
+            .eq("modulo", "complementarias")
             .eq("activo", True)
             .execute()
         )
-        return res.data or []
+        # Homologar nombre de columna: tipo → tipo_complementaria
+        return [
+            {"empresa": r["empresa"], "tipo_complementaria": r["tipo"]}
+            for r in (res.data or [])
+        ]
     except Exception:
         return []
 
