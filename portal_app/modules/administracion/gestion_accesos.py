@@ -11,7 +11,7 @@
 import pandas as pd
 import streamlit as st
 
-from services.supabase_client import get_supabase_client, get_authed_client
+from services.supabase_client import get_service_client, get_authed_client
 from services.auditoria import registrar_accion
 from ui.components import section_header, alert, divider
 
@@ -33,7 +33,7 @@ def _cargar_catalogo() -> pd.DataFrame:
 def render():
     section_header("🔐", "Gestión de Accesos", "Activar/desactivar usuarios y otorgar/revocar permisos")
 
-    supabase = get_supabase_client()  # service-role interno
+    supabase = get_service_client()  # bypassa RLS — módulo ya protegido por permiso de admin
 
     # =================================
     # CATÁLOGO DE PERMISOS
@@ -157,3 +157,66 @@ def render():
         st.json(current_access)
     else:
         alert("info", "Este usuario no tiene permisos definidos.")
+
+    divider()
+
+    # =================================
+    # ALCANCE POR EMPRESA / SUCURSAL
+    # =================================
+    section_header("▸", "Alcance", "En qué empresa/sucursal puede actuar dentro de módulos que lo requieren (Complementarias, Tickets)")
+    st.caption("Sin ninguna regla = ve todo, sin restricción (ej. Auditoría, que da servicio a todas las empresas).")
+
+    try:
+        res_alc = (
+            supabase.table("alcance_usuario")
+            .select("id, modulo, empresa, sucursal, tipo, activo")
+            .eq("user_id", selected_user_id)
+            .order("modulo")
+            .execute()
+        )
+        reglas_actuales = res_alc.data or []
+    except Exception as e:
+        alert("error", f"No se pudo cargar el alcance: {e}")
+        reglas_actuales = []
+
+    if reglas_actuales:
+        for regla in reglas_actuales:
+            c_mod, c_emp, c_suc, c_tipo, c_del = st.columns([2, 2, 2, 2, 1])
+            c_mod.write(f"**{regla['modulo']}**")
+            c_emp.write(regla["empresa"] or "_Todas_")
+            c_suc.write(regla["sucursal"] or "_Todas_")
+            c_tipo.write(regla["tipo"] or "_Todos_")
+            if c_del.button("🗑️", key=f"del_alcance_{regla['id']}"):
+                supabase.table("alcance_usuario").delete().eq("id", regla["id"]).execute()
+                registrar_accion("administracion", "editar_acceso_usuario", {
+                    "usuario_afectado": selected_row["full_name"],
+                    "alcance_eliminado": regla,
+                })
+                st.rerun()
+    else:
+        alert("info", "Sin reglas de alcance — este usuario ve todo en los módulos que tengan alcance.")
+
+    with st.expander("➕ Agregar regla de alcance", expanded=False):
+        with st.form(f"form_alcance_{selected_user_id}", clear_on_submit=True):
+            col_m, col_e, col_s, col_t = st.columns(4)
+            nuevo_modulo = col_m.selectbox("Módulo", ["complementarias", "tickets"], key="alc_modulo")
+            nueva_empresa = col_e.text_input("Empresa (vacío = todas)", key="alc_empresa")
+            nueva_sucursal = col_s.text_input("Sucursal (vacío = todas)", key="alc_sucursal")
+            nuevo_tipo = col_t.text_input("Tipo (vacío = todos, solo Complementarias)", key="alc_tipo")
+
+            agregar_alcance = st.form_submit_button("Agregar regla", type="primary")
+
+        if agregar_alcance:
+            supabase.table("alcance_usuario").insert({
+                "user_id": selected_user_id,
+                "modulo": nuevo_modulo,
+                "empresa": nueva_empresa.strip() or None,
+                "sucursal": nueva_sucursal.strip() or None,
+                "tipo": nuevo_tipo.strip() or None,
+            }).execute()
+            registrar_accion("administracion", "editar_acceso_usuario", {
+                "usuario_afectado": selected_row["full_name"],
+                "alcance_agregado": {"modulo": nuevo_modulo, "empresa": nueva_empresa, "sucursal": nueva_sucursal, "tipo": nuevo_tipo},
+            })
+            st.success("Regla de alcance agregada.")
+            st.rerun()
