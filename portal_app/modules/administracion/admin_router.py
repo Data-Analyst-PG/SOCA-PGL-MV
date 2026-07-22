@@ -19,6 +19,7 @@ from ui.components import page_banner, alert
 
 from . import gestion_accesos
 from . import auditoria_uso
+from . import catalogo_permisos
 
 SECCIONES = [
     {
@@ -27,6 +28,13 @@ SECCIONES = [
         "icono":   "🔐",
         "permiso": "auditoria:admin_manager",
         "modulo":  gestion_accesos,
+    },
+    {
+        "slug":    "catalogo_permisos",
+        "titulo":  "Catálogo de Permisos",
+        "icono":   "🗂️",
+        "permiso": "administracion:catalogo_permisos",
+        "modulo":  catalogo_permisos,
     },
     {
         "slug":    "auditoria_uso",
