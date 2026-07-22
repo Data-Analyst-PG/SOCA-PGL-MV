@@ -4,7 +4,7 @@
 # Mejoras vs versión anterior:
 #   ✅ Refresh automático silencioso antes de que el token expire
 #   ✅ Detección de token expirado en cada request — redirige a login sin error
-#   ✅ Sin service_role key en ningún momento
+#   ✅ service_role key solo para módulos protegidos por permiso de admin (get_service_client)
 #   ✅ Compatibilidad total con código existente (aliases conservados)
 # ─────────────────────────────────────────────────────────────────────────────
 import os
@@ -223,3 +223,24 @@ def set_session_from_url_params() -> None:
     Se conserva para no romper imports existentes.
     """
     pass
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLIENTE SERVICE-ROLE (solo para módulos protegidos por permiso de admin)
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_resource
+def get_service_client() -> Client:
+    """
+    Cliente con la service_role key — bypassa RLS por completo.
+    SOLO usar dentro de módulos ya protegidos por permiso de admin
+    (ej. modules/administracion/*). Nunca exponer a queries de usuarios
+    normales ni a módulos sin gate de permiso.
+    """
+    url = _get_secret("SUPABASE_URL")
+    service_key = _get_secret("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not service_key:
+        raise RuntimeError(
+            "Falta SUPABASE_SERVICE_ROLE_KEY en secrets. "
+            "Agrégala en Streamlit Cloud → Settings → Secrets "
+            "(Supabase Dashboard → Project Settings → API → service_role key)."
+        )
+    return create_client(url, service_key)
