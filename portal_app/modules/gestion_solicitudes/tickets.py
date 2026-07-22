@@ -205,7 +205,9 @@ def _modal_edicion(ticket: dict, gestor: str):
             log_accion("editar_solicitud", {"ticket_id": tid, "fase": nueva_fase})
 
             # ── Notificación: en CUALQUIER cambio de fase ───────────────────────
-            if nueva_fase != est:
+            hubo_cambio_fase = nueva_fase != est
+            correo_enviado = None
+            if hubo_cambio_fase:
                 folio_fmt = f"{int(tid):04d}"
                 _colores_fase = {
                     "Nuevo":         ("#EFF6FF", "#1D4ED8"),
@@ -220,7 +222,7 @@ def _modal_edicion(ticket: dict, gestor: str):
                 color_bg, color_fg = _colores_fase.get(nueva_fase, ("#F9FAFB", "#6B7280"))
                 comentario_correo = comentario.strip() or "Sin comentarios adicionales."
 
-                enviar_notificacion(
+                resultado_correo = enviar_notificacion(
                     modulo="tickets",
                     evento="estatus_actualizado",
                     folio=folio_fmt,
@@ -238,8 +240,15 @@ def _modal_edicion(ticket: dict, gestor: str):
                     },
                     correo_solicitante=ticket.get("correo"),
                 )
+                correo_enviado = resultado_correo.get("ok", False)
 
-            st.success("✅ Cambios guardados.")
+            st.session_state["gc_tk_success_payload"] = {
+                "folio": tid,
+                "hubo_cambio_fase": hubo_cambio_fase,
+                "correo_enviado": correo_enviado,
+            }
+            st.cache_data.clear()
+            st.rerun()
             st.cache_data.clear()
             st.rerun()
 
@@ -297,6 +306,27 @@ def render():
     ])
 
     st.divider()
+
+    # ── Diálogo de confirmación tras guardar ────────────────────────────────
+    if st.session_state.get("gc_tk_success_payload"):
+        payload = st.session_state["gc_tk_success_payload"]
+
+        @st.dialog("✅ Cambios guardados")
+        def _dlg_tk_guardado():
+            st.success(f"Los cambios del ticket **#{int(payload['folio']):04d}** se guardaron correctamente.")
+            if payload["hubo_cambio_fase"]:
+                if payload["correo_enviado"]:
+                    st.info("📧 Se envió la notificación por correo automáticamente.")
+                else:
+                    st.warning(
+                        "⚠️ Los cambios se guardaron, pero la notificación por correo "
+                        "no pudo enviarse."
+                    )
+            if st.button("OK", type="primary", key="gc_tk_success_ok"):
+                st.session_state.pop("gc_tk_success_payload", None)
+                st.rerun()
+
+        _dlg_tk_guardado()
 
     # ── Abrir modal si hay ticket seleccionado ────────────────────────────────
     if "gc_modal_id" in st.session_state:
