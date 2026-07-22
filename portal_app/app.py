@@ -89,7 +89,6 @@ def construir_navegacion() -> dict:
         ("auditoria:sac_ventas",             "pages/pg_aud_sac_ventas.py",             "📈 SAC Ventas",            "aud-sac-ventas"),
         ("auditoria:cartera_proveedores",    "pages/pg_aud_cartera_proveedores.py",    "🫱🏽‍🫲🏼 Cartera Proveedores", "aud-cartera-proveedores"),
         ("auditoria:reporte_balanza_mensual","pages/pg_aud_reporte_balanza_mensual.py","📚 Reporte Balanza",       "aud-reporte-balanza"),
-        ("auditoria:admin_manager",          "pages/pg_aud_admin.py",                  "🛠️ Admin Manager",         "aud-admin"),
     ]
     for perm, path, titulo, url in _AUD:
         if _tiene(perm) and _existe(path):
@@ -135,9 +134,9 @@ def construir_navegacion() -> dict:
         secciones["Ventas"] = ventas_pages
 
     
-    if _tiene("operaciones:bono_rendimiento") and _existe("pages/pg_operaciones.py"):
-        secciones["Operaciones"] = [
-            st.Page("pages/pg_operaciones.py", title="⚙️ Operaciones", url_path="operaciones"),
+    if _tiene("auditoria:admin_manager", "administracion:auditoria_uso") and _existe("pages/pg_administracion.py"):
+        secciones["Administración"] = [
+            st.Page("pages/pg_administracion.py", title="🛠️ Administración", url_path="administracion"),
         ]
 
     if _tiene("pruebas:acceso") and _existe("pages/pg_pruebas.py"):
