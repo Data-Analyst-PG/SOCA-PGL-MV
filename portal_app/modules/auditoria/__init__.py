@@ -7,7 +7,6 @@ from . import (
     seguimiento_sac_ventas,
     cartera_proveedores,
     reporte_balanza_mensual,
-    admin_manager,
     auditorias,          # ← nuevo router de auditorías por empresa
 )
 
@@ -20,4 +19,3 @@ def auditorias_page():             auditorias.render()       # ← reemplaza lin
 def seguimientosacventas_page():   seguimiento_sac_ventas.render()
 def carteraproveedores_page():     cartera_proveedores.render()
 def reportebalanzamensual_page():  reporte_balanza_mensual.render()
-def admin_manager_page():          admin_manager.render()
