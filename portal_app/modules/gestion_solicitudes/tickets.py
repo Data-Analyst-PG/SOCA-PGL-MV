@@ -17,6 +17,7 @@ import streamlit as st
 
 from .shared import log_accion_tickets as log_accion
 from services.supabase_client import current_user, get_authed_client
+from services.notificaciones import enviar_notificacion
 from ui.components import (
     section_header, kpi_row, alert,
     solicitud_card, historial_timeline, status_badge_html, solicitudes_table, page_banner,
@@ -202,6 +203,42 @@ def _modal_edicion(ticket: dict, gestor: str):
 
         if _update_ticket(tid, changes):
             log_accion("editar_solicitud", {"ticket_id": tid, "fase": nueva_fase})
+
+            # ── Notificación: en CUALQUIER cambio de fase ───────────────────────
+            if nueva_fase != est:
+                folio_fmt = f"{int(tid):04d}"
+                _colores_fase = {
+                    "Nuevo":         ("#EFF6FF", "#1D4ED8"),
+                    "Capacitación":  ("#F5F3FF", "#7C3AED"),
+                    "Planteamiento": ("#ECFEFF", "#0891B2"),
+                    "Desarrollo":    ("#FFFBEB", "#D97706"),
+                    "Pruebas":       ("#FFF7ED", "#EA580C"),
+                    "Entrega":       ("#ECFDF5", "#059669"),
+                    "Concluido":     ("#F0FDF4", "#16A34A"),
+                    "Cancelado":     ("#FEF2F2", "#DC2626"),
+                }
+                color_bg, color_fg = _colores_fase.get(nueva_fase, ("#F9FAFB", "#6B7280"))
+                comentario_correo = comentario.strip() or "Sin comentarios adicionales."
+
+                enviar_notificacion(
+                    modulo="tickets",
+                    evento="estatus_actualizado",
+                    folio=folio_fmt,
+                    clave_unica=f"{nueva_fase}_{now}",
+                    datos={
+                        "titulo": ticket.get("titulo", ""),
+                        "solicitante": ticket.get("solicitante", ""),
+                        "empresa": ticket.get("empresa", ""),
+                        "categoria": ticket.get("categoria", ""),
+                        "asignado": nuevo_asig,
+                        "estatus": nueva_fase,
+                        "comentario": comentario_correo,
+                        "color_bg": color_bg,
+                        "color_fg": color_fg,
+                    },
+                    correo_solicitante=ticket.get("correo"),
+                )
+
             st.success("✅ Cambios guardados.")
             st.cache_data.clear()
             st.rerun()
