@@ -12,11 +12,11 @@ from .shared import (
     log_accion,
 )
 
-EMPRESAS      = ["Picus", "Igloo", "Set Freight", "Lincoln Freight", "Set Logis Plus"]
-CATEGORIAS    = ["Cotizadores", "Complementarias", "SPGC", "App Eq. Matto",
-                 "Tickets", "Nuevo Desarrollo"]
-DEPARTAMENTOS = ["Operaciones", "Contabilidad", "Auditoria", "Matto",
-                 "Safety", "Monitoreo", "Fac & Cob", "Liquidaciones", "Control de Diesel", "Otro"]
+EMPRESAS      = ["Picus", "Igloo", "Set Freight", "Lincoln Freight", "Set Logis Plus", "Todas", "Otro"]
+CATEGORIAS    = ["Cotizadores", "Complementarias/Desconclusiones", "SOCA", "App Eq. Matto",
+                 "Tickets", "Nuevo Desarrollo", "Bono Diesel", "Mod. Auditoria", "Solicitudes", "Seguimiento"]
+DEPARTAMENTOS = ["Operaciones", "Contabilidad", "Auditoria", "Control de Unidades", "Control de equipo", "Mtto",
+                 "Safety", "Monitoreo", "Fac & Cob", "Liquidaciones", "Control de Diesel", "After Hours", "Otro"]
 PRIORIDADES   = ["Normal", "Alta", "Urgente"]
 
 
