@@ -3,6 +3,7 @@ import streamlit as st
 
 from services.supabase_client import current_user, get_authed_client
 from ui.components import section_header, alert
+from services.notificaciones import enviar_notificacion
 from .shared import (
     add_ticket,
     build_mailto,
@@ -132,28 +133,27 @@ def render():
         st.error(f"No se pudo crear el ticket: {e}")
         st.stop()
 
-    # ── Notificación mailto ───────────────────────────────────────────────────
-    try:
-        subject = f"[Ticket #{int(ticket_id):04d}] {titulo.strip()}"
-    except Exception:
-        subject = f"[Ticket] {titulo.strip()}"
+    # ── Notificación automática por correo ────────────────────────────────────
+    folio_fmt = f"{int(ticket_id):04d}"
 
-    body = (
-        f"Se creó un nuevo ticket.\n\n"
-        f"Ticket: #{int(ticket_id):04d}\n"
-        f"Fecha: {now}\n"
-        f"Solicitante: {payload['solicitante']}\n"
-        f"Correo: {payload['correo']}\n"
-        f"Empresa: {payload['empresa']}\n"
-        f"Categoría: {payload['categoria']}\n"
-        f"Departamento: {payload['departamento']}\n"
-        f"Prioridad: {payload['prioridad']}\n"
-        f"Estatus: {payload['estatus']}\n\n"
-        f"Título:\n{payload['titulo']}\n\n"
-        f"Descripción:\n{payload['descripcion']}\n"
+    resultado_correo = enviar_notificacion(
+        modulo="tickets",
+        evento="ticket_creado",
+        folio=folio_fmt,
+        datos={
+            "solicitante": payload["solicitante"],
+            "empresa": payload["empresa"],
+            "categoria": payload["categoria"],
+            "departamento": payload["departamento"],
+            "prioridad": payload["prioridad"],
+            "titulo": payload["titulo"],
+            "descripcion": payload["descripcion"],
+        },
+        correo_solicitante=payload["correo"],
     )
 
-    mailto = build_mailto(TICKET_NOTIFICATION_EMAILS, subject, body)
-
-    st.success(f"✅ Ticket **#{int(ticket_id):04d}** creado exitosamente.")
-    st.markdown(f"👉 [Enviar notificación por correo]({mailto})")
+    st.success(f"✅ Ticket **#{folio_fmt}** creado exitosamente.")
+    if resultado_correo.get("ok"):
+        st.info("📧 Se envió la notificación por correo automáticamente.")
+    else:
+        st.warning("⚠️ El ticket se guardó, pero la notificación por correo no pudo enviarse.")
