@@ -27,6 +27,50 @@ from ui.components import (
 )
 from .shared import get_complementarias, update_complementaria, now_iso_utc, log_accion_complementarias as log_accion
 from services.notificaciones import enviar_notificacion
+from services.access import check_access
+from services.supabase_client import get_authed_client
+
+
+def _obtener_reglas_alcance(user_id: str) -> list[dict]:
+    """Reglas de alcance activas para este usuario. Lista vacía = sin alcance
+    asignado (no debería ver nada, salvo que tenga acceso total)."""
+    try:
+        supabase = get_authed_client()
+        res = (
+            supabase.table("complementarias_alcance")
+            .select("empresa,tipo_complementaria")
+            .eq("user_id", user_id)
+            .eq("activo", True)
+            .execute()
+        )
+        return res.data or []
+    except Exception:
+        return []
+
+
+def _filtrar_por_alcance(comps: list[dict], user_id: str) -> list[dict]:
+    """Filtra la lista de complementarias según el alcance del usuario.
+    Acceso total (complementarias:ver_todo) → ve todo, sin filtrar."""
+    if check_access(user_id, None, "complementarias:ver_todo"):
+        return comps
+
+    reglas = _obtener_reglas_alcance(user_id)
+    if not reglas:
+        return []  # sin reglas asignadas = no ve nada (default seguro)
+
+    permitidos = []
+    for c in comps:
+        emp  = c.get("empresa")
+        tipo = c.get("tipo_complementaria")
+        for r in reglas:
+            r_emp  = r.get("empresa")
+            r_tipo = r.get("tipo_complementaria")
+            if (r_emp is None or r_emp == emp) and (r_tipo is None or r_tipo == tipo):
+                permitidos.append(c)
+                break
+    return permitidos
+
+
 # ── Catálogos ─────────────────────────────────────────────────────────────────
 ESTATUSES        = ["Pendiente", "En revisión", "Resuelto", "Cancelado"]
 ESTATUSES_ACTIVOS = {"Pendiente", "En revisión"}
@@ -365,12 +409,15 @@ def render():
 
     perfil = st.session_state.get("user_profile") or {}
     from services.supabase_client import current_user
-    u      = current_user() or {}
-    gestor = perfil.get("full_name") or u.get("email", "Auditor")
+    u       = current_user() or {}
+    gestor  = perfil.get("full_name") or u.get("email", "Auditor")
+    user_id = u.get("id") or u.get("sub") or ""
 
     comps = get_complementarias()
+    comps = _filtrar_por_alcance(comps, user_id)
+
     if not comps:
-        alert("info", "No hay solicitudes registradas.")
+        alert("info", "No hay solicitudes que te correspondan revisar por el momento.")
         return
 
     # ── ① KPIs ───────────────────────────────────────────────────────────────
