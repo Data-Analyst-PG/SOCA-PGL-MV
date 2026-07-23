@@ -96,15 +96,6 @@ def guardar_datos_generales(valores: dict) -> None:
     _guardar_dg("igloo", valores)
 
 
-def guardar_datos_generales(valores: dict) -> None:
-    """Guarda el diccionario de datos generales como CSV."""
-    df = pd.DataFrame(
-        [{"Parametro": k, "Valor": valores[k]} for k in valores],
-        columns=["Parametro", "Valor"],
-    )
-    df.to_csv(_datos_generales_path(), index=False)
-
-
 # ─────────────────────────────────────────────
 # Tipos de ruta válidos
 # ─────────────────────────────────────────────
