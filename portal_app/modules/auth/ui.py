@@ -155,7 +155,6 @@ def _render_forgot_inline() -> None:
         '<div class="login-footer">\u00bfProblemas? Contacta al equipo de An\u00e1lisis de Datos.</div>',
         unsafe_allow_html=True,
     )
-    )
 
 def _render_set_password_from_token(email: str, token_hash: str) -> None:
     _inject_login_css()
