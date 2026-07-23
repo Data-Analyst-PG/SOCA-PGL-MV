@@ -33,6 +33,22 @@ def _cargar_areas() -> pd.DataFrame:
     return pd.DataFrame(res.data or [])
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cargar_sucursales() -> pd.DataFrame:
+    sb = get_authed_client()
+    res = (
+        sb.table("sucursales")
+        .select("id, name, is_active, companies(name)")
+        .eq("is_active", True)
+        .execute()
+    )
+    df = pd.DataFrame(res.data or [])
+    if not df.empty:
+        df["empresa"] = df["companies"].apply(lambda c: (c or {}).get("name", ""))
+        df["etiqueta"] = df["empresa"] + " — " + df["name"]
+        df = df.sort_values("etiqueta")
+    return df
+
 ROLES = ["user", "data_analyst", "admin"]
 
 
@@ -56,8 +72,10 @@ def render():
     catalogo = _cargar_catalogo()
     companies = _cargar_companies()
     areas = _cargar_areas()
+    sucursales = _cargar_sucursales()
     opciones_empresa = ["Sin asignar"] + (companies["name"].tolist() if not companies.empty else [])
     opciones_area = ["Sin asignar"] + (areas["name"].tolist() if not areas.empty else [])
+    opciones_sucursal = ["Sin asignar"] + (sucursales["etiqueta"].tolist() if not sucursales.empty else [])
 
     with st.form("form_crear_usuario", clear_on_submit=False):
         col1, col2 = st.columns(2)
@@ -72,6 +90,9 @@ def render():
         empresa = col5.selectbox("Empresa (opcional)", opciones_empresa)
         role    = col6.selectbox("Rol del sistema", ROLES, index=0,
                                  help="'admin' salta todos los checks de permiso — asignar con cuidado.")
+
+        sucursal_sel = st.selectbox("Sucursal (opcional)", opciones_sucursal,
+                                    help="Lista completa de todas las empresas — verifica que coincida con la Empresa elegida arriba.")
 
         st.markdown("**Permisos iniciales**")
         marcados = {}
@@ -125,11 +146,18 @@ def render():
             if not match_area.empty:
                 area_id = match_area.iloc[0]["id"]
 
+        sucursal_id = None
+        if sucursal_sel != "Sin asignar" and not sucursales.empty:
+            match_suc = sucursales[sucursales["etiqueta"] == sucursal_sel]
+            if not match_suc.empty:
+                sucursal_id = match_suc.iloc[0]["id"]
+
         try:
             supabase.table("profiles").update({
                 "full_name": full_name,
                 "area_id": area_id,
                 "area_name": area_sel if area_sel != "Sin asignar" else None,
+                "sucursal_id": sucursal_id,
                 "job_title": job_title or None,
                 "role": role,
                 "is_active": True,
