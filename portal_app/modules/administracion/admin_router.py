@@ -21,6 +21,7 @@ from . import gestion_accesos
 from . import auditoria_uso
 from . import catalogo_permisos
 from . import crear_usuario
+from . import catalogos  
 
 SECCIONES = [
     {
@@ -50,6 +51,13 @@ SECCIONES = [
         "icono":   "📊",
         "permiso": "administracion:auditoria_uso",
         "modulo":  auditoria_uso,
+    },
+    {
+        "slug":    "catalogos",
+        "titulo":  "Catálogos",
+        "icono":   "📚",
+        "permiso": "administracion:catalogos",
+        "modulo":  catalogos,
     },
 ]
 
