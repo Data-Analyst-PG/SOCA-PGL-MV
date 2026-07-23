@@ -20,6 +20,7 @@ from ui.components import page_banner, alert
 from . import gestion_accesos
 from . import auditoria_uso
 from . import catalogo_permisos
+from . import crear_usuario
 
 SECCIONES = [
     {
@@ -28,6 +29,13 @@ SECCIONES = [
         "icono":   "🔐",
         "permiso": "auditoria:admin_manager",
         "modulo":  gestion_accesos,
+    },
+    {
+        "slug":    "crear_usuario",
+        "titulo":  "Crear Usuario",
+        "icono":   "➕",
+        "permiso": "administracion:crear_usuario",
+        "modulo":  crear_usuario,
     },
     {
         "slug":    "catalogo_permisos",
