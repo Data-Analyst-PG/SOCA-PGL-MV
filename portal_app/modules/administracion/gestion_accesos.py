@@ -163,8 +163,19 @@ def render():
     # =================================
     # ALCANCE POR EMPRESA / SUCURSAL
     # =================================
-    section_header("▸", "Alcance", "En qué empresa/sucursal puede actuar dentro de módulos que lo requieren (Complementarias, Tickets)")
-    st.caption("Sin ninguna regla = ve todo, sin restricción (ej. Auditoría, que da servicio a todas las empresas).")
+    section_header("▸", "Alcance", "En qué empresa/sucursal/tipo puede actuar dentro de módulos que lo requieren (Complementarias, Tickets)")
+    st.caption(
+        "⚠️ Sin ninguna regla, el usuario NO ve nada en estos módulos — es el default seguro. "
+        "Para usuarios que dan servicio a TODAS las empresas (ej. Auditoría, Análisis de Datos, "
+        "Facturación y Cobranza), asígnales el permiso 'Complementarias — Ver todo' en la sección "
+        "de Permisos de arriba, en vez de dejar el Alcance vacío."
+    )
+    st.caption(
+        "Para usuarios con alcance limitado (ej. Liquidaciones → solo Lincoln y Set Logis; "
+        "Safety Mexicano → solo Picus e Igloo), agrega una regla por cada empresa que deban ver. "
+        "Si además solo deben ver cierto tipo de solicitud (ej. solo Desconclusiones), especifícalo "
+        "en 'Tipo' — si lo dejas vacío, ven todos los tipos dentro de esa empresa."
+    )
 
     try:
         res_alc = (
