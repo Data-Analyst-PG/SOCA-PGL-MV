@@ -65,10 +65,15 @@ def _logo_html() -> str:
 def render_login_page() -> None:
     _inject_login_css()
 
+    auth_token = st.query_params.get("auth_token")
+    auth_email = st.query_params.get("auth_email")
+    if auth_token and auth_email:
+        _render_set_password_from_token(auth_email, auth_token)
+        return
+
     if st.session_state.get("mostrar_forgot"):
         _render_forgot_inline()
         return
-
     logo = _logo_html()
     st.markdown(f"""
     <div class="login-card">
@@ -117,7 +122,7 @@ def _render_forgot_inline() -> None:
     <div class="login-card">
         {logo}
         <div class="login-title">&#x1F510; Recuperar contrase&#xF1;a</div>
-        <div class="login-subtitle">Te enviaremos un c&#xF3;digo a tu correo</div>
+        <div class="login-subtitle">Te enviaremos un enlace a tu correo</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -127,35 +132,49 @@ def _render_forgot_inline() -> None:
 
     col1, col2 = st.columns(2)
     with col1:
-        send_code = st.button("\U0001f4e8 Enviar c\u00f3digo", key="btn_send_code", use_container_width=True)
+        send_link = st.button("\U0001f4e8 Enviar enlace", key="btn_send_code", use_container_width=True)
     with col2:
         back_btn = st.button("\u2190 Volver", key="btn_back_forgot", use_container_width=True)
 
-    if send_code:
+    if send_link:
         if not reset_email:
             st.warning("Ingresa tu correo primero.")
         else:
+            from services.auth_admin import enviar_link_password
             try:
-                sb = get_supabase_anon_client()
-                sb.auth.reset_password_for_email(reset_email.strip())
+                enviar_link_password(reset_email.strip(), reset_email.strip(), es_bienvenida=False)
             except Exception:
                 pass
-            st.success("Si el correo existe, recibir\u00e1s el c\u00f3digo en breve.")
+            st.success("Si el correo existe, recibir\u00e1s un enlace en breve. Rev\u00edsalo y da clic para continuar.")
 
-    st.divider()
-    st.markdown("**Paso 2 \u2014 Ingresa el c\u00f3digo y tu nueva contrase\u00f1a**")
+    if back_btn:
+        st.session_state.pop("mostrar_forgot", None)
+        st.rerun()
 
-    recovery_code    = st.text_input("C\u00f3digo de recuperaci\u00f3n", placeholder="Ej: 482910", key="recovery_code")
-    new_password     = st.text_input("Nueva contrase\u00f1a", type="password", key="new_password_reset")
-    confirm_password = st.text_input("Confirmar contrase\u00f1a", type="password", key="confirm_password_reset")
+    st.markdown(
+        '<div class="login-footer">\u00bfProblemas? Contacta al equipo de An\u00e1lisis de Datos.</div>',
+        unsafe_allow_html=True,
+    )
+    )
 
-    if st.button("\u2705 Actualizar contrase\u00f1a", key="btn_update_pass", use_container_width=True):
-        if not reset_email:
-            st.error("Falta el correo electr\u00f3nico.")
-        elif not recovery_code:
-            st.error("Ingresa el c\u00f3digo de recuperaci\u00f3n.")
-        elif not new_password:
-            st.error("Ingresa una nueva contrase\u00f1a.")
+def _render_set_password_from_token(email: str, token_hash: str) -> None:
+    _inject_login_css()
+    logo = _logo_html()
+
+    st.markdown(f"""
+    <div class="login-card">
+        {logo}
+        <div class="login-title">&#x1F511; Establece tu contrase&#xF1;a</div>
+        <div class="login-subtitle">{email}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    new_password     = st.text_input("Nueva contrase\u00f1a", type="password", key="np_token")
+    confirm_password = st.text_input("Confirmar contrase\u00f1a", type="password", key="cp_token")
+
+    if st.button("\u2705 Guardar contrase\u00f1a", key="btn_save_token", use_container_width=True):
+        if not new_password:
+            st.error("Ingresa una contrase\u00f1a.")
         elif new_password != confirm_password:
             st.error("Las contrase\u00f1as no coinciden.")
         elif len(new_password) < 8:
@@ -163,26 +182,19 @@ def _render_forgot_inline() -> None:
         else:
             try:
                 sb = get_supabase_anon_client()
-                sb.auth.verify_otp({
-                    "email": reset_email.strip(),
-                    "token": recovery_code.strip(),
-                    "type": "recovery",
-                })
+                sb.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
                 sb.auth.update_user({"password": new_password})
                 sb.auth.sign_out()
-                st.success("\u2705 Contrase\u00f1a actualizada. Ya puedes iniciar sesi\u00f3n.")
+                st.success("\u2705 Contrase\u00f1a guardada. Redirigiendo...")
+                st.query_params.clear()
                 st.session_state.pop("mostrar_forgot", None)
                 st.rerun()
             except Exception as e:
                 err = str(e).lower()
                 if "expired" in err or "invalid" in err:
-                    st.error("El c\u00f3digo es inv\u00e1lido o ya expir\u00f3. Solicita uno nuevo.")
+                    st.error("El enlace es inv\u00e1lido o ya expir\u00f3. Solicita uno nuevo desde 'Olvid\u00e9 mi contrase\u00f1a'.")
                 else:
                     st.error(f"No se pudo actualizar: {e}")
-
-    if back_btn:
-        st.session_state.pop("mostrar_forgot", None)
-        st.rerun()
 
     st.markdown(
         '<div class="login-footer">\u00bfProblemas? Contacta al equipo de An\u00e1lisis de Datos.</div>',
