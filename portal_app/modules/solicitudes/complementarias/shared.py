@@ -14,41 +14,26 @@ import streamlit as st
 
 from services.supabase_client import get_authed_client, get_secret
 from services.auditoria import registrar_accion
+from services.catalogos import cargar_empresas, cargar_sucursales_por_empresa
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CATÁLOGOS BASE
 # ═══════════════════════════════════════════════════════════════════════════════
-
-EMPRESAS = ["Set Freight", "Lincoln Freight", "Set Logis Plus", "Picus", "Igloo"]
-MONEDAS  = ["MXN", "USD"]
+MONEDAS = ["MXN", "USD"]
 
 
 def _title_case(s: str) -> str:
     return " ".join(w.capitalize() for w in str(s).strip().split())
 
 
-SUCURSALES_POR_EMPRESA = {
-    "Lincoln Freight": [],
-    "Picus": ["Carrier RL", "Carrier RC", "Plus NLD", "Plus QRO", "Logistica"],
-    "Igloo": ["Carrier", "Plus", "Logistica"],
-    "Set Freight": [
-        _title_case(x)
-        for x in [
-            "CARGAR", "CHICAGO", "CONSOLIDADO", "CONSOLIDADO QUERETARO",
-            "DALLAS", "GUADALAJARA", "LEON", "LINCOLN LOGISTICS",
-            "LUIS MONCAYO", "MG HAULERS", "MONTERREY", "NUEVO LAREDO",
-            "QUERETARO", "RAMOS ARIZPE", "ROLANDO ALFARO", "SLP LOGISTICS",
-        ]
-    ],
-    "Set Logis Plus": [
-        _title_case(x)
-        for x in [
-            "BASICOS GJ", "AG FLEET (ROLANDO)", "AURA TRANSPORT",
-            "JOEDAN TRANSPORT", "EFRAIN GARCIA",
-        ]
-    ],
-}
+def get_empresas() -> list[str]:
+    """Reemplaza la constante EMPRESAS — ahora lee del catálogo real."""
+    return cargar_empresas()
 
+
+def get_sucursales_por_empresa() -> dict[str, list[str]]:
+    """Reemplaza SUCURSALES_POR_EMPRESA — ahora lee del catálogo real."""
+    return cargar_sucursales_por_empresa()
 
 # ─── Plataformas actualizadas ────────────────────────────────────────────────
 # Lincoln  → ya solo Star 2.0 Lincoln (el Star USA anterior queda solo consulta)
@@ -56,7 +41,7 @@ SUCURSALES_POR_EMPRESA = {
 # Set Freight → Star 2.0 Set Freight + Star 2.0 Logismex
 # Picus / Igloo → Star 2.0 PGL + Star 2.0 Logismex
 PLATAFORMAS_POR_EMPRESA = {
-    "Lincoln Freight": ["STAR 2.0 LINCOLN"],
+    "Lincoln": ["STAR 2.0 LINCOLN"],
     "Set Logis Plus":  ["STAR 2.0 SET LOGIS"],
     "Set Freight": [
         "STAR 2.0 SET FREIGHT",
