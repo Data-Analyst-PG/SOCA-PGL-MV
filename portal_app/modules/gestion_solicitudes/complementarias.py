@@ -38,7 +38,7 @@ def _obtener_reglas_alcance(user_id: str) -> list[dict]:
         supabase = get_authed_client()
         res = (
             supabase.table("alcance_usuario")
-            .select("empresa,tipo")
+            .select("empresa,sucursal,tipo")
             .eq("user_id", user_id)
             .eq("modulo", "complementarias")
             .eq("activo", True)
@@ -46,7 +46,7 @@ def _obtener_reglas_alcance(user_id: str) -> list[dict]:
         )
         # Homologar nombre de columna: tipo → tipo_complementaria
         return [
-            {"empresa": r["empresa"], "tipo_complementaria": r["tipo"]}
+            {"empresa": r["empresa"], "sucursal": r["sucursal"], "tipo_complementaria": r["tipo"]}
             for r in (res.data or [])
         ]
     except Exception:
@@ -65,16 +65,21 @@ def _filtrar_por_alcance(comps: list[dict], user_id: str) -> list[dict]:
 
     permitidos = []
     for c in comps:
-        emp  = c.get("empresa")
+        emp = c.get("empresa")
+        suc = c.get("sucursal")
         tipo = c.get("tipo_complementaria")
         for r in reglas:
             r_emp  = r.get("empresa")
+            r_suc  = r.get("sucursal")
             r_tipo = r.get("tipo_complementaria")
-            if (r_emp is None or r_emp == emp) and (r_tipo is None or r_tipo == tipo):
+            if (
+                (r_emp is None or r_emp == emp)
+                and (r_suc is None or r_suc == suc)
+                and (r_tipo is None or r_tipo == tipo)
+            ):
                 permitidos.append(c)
                 break
     return permitidos
-
 
 # ── Catálogos ─────────────────────────────────────────────────────────────────
 ESTATUSES        = ["Pendiente", "En revisión", "Resuelto", "Cancelado"]
