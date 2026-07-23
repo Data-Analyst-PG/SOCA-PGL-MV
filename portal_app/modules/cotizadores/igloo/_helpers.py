@@ -76,56 +76,24 @@ DEFAULTS = {
 }
 
 
-def _project_root() -> str:
-    """Sube 3 niveles desde igloo/ hasta portal_app/."""
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-
-
-def _datos_generales_path() -> str:
-    base = os.path.join(_project_root(), ".data")
-    os.makedirs(base, exist_ok=True)
-    return os.path.join(base, "datos_generales_igloo.csv")
+from services.datos_generales import (
+    cargar_datos_generales as _cargar_dg,
+    guardar_datos_generales as _guardar_dg,
+)
 
 
 def cargar_datos_generales() -> dict:
     """
-    Lee el CSV de datos generales y lo fusiona con DEFAULTS.
-    Si Banxico está disponible, sobreescribe el tipo de cambio USD
-    con el valor FIX del día (cacheado 24h).
+    Datos generales de Igloo — persistidos en Supabase
+    (tabla datos_generales_cotizadores). El Tipo de cambio USD se
+    sobreescribe con el valor FIX de Banxico del día (cacheado 24h)
+    cuando está disponible.
     """
-    path = _datos_generales_path()
-    if os.path.exists(path):
-        try:
-            df = pd.read_csv(path)
-            if {"Parametro", "Valor"}.issubset(df.columns):
-                vals = {}
-                for _, row in df.iterrows():
-                    p = str(row["Parametro"])
-                    v = row["Valor"]
-                    try:
-                        v = float(v)
-                    except Exception:
-                        pass
-                    vals[p] = v
-                resultado = {**DEFAULTS, **vals}
-            else:
-                resultado = DEFAULTS.copy()
-        except Exception:
-            resultado = DEFAULTS.copy()
-    else:
-        resultado = DEFAULTS.copy()
+    return _cargar_dg("igloo", DEFAULTS, tc_key="Tipo de cambio USD")
 
-    # Sobrescribir TC con Banxico si está disponible (cache 24h)
-    try:
-        from services.banxico import get_tipo_cambio_fix
-        token = st.secrets.get("TOKEN_BMX", "")
-        tc = get_tipo_cambio_fix(token) if token else None
-        if tc:
-            resultado["Tipo de cambio USD"] = tc
-    except Exception:
-        pass  # Si falla, conserva el valor del CSV sin romper nada
 
-    return resultado
+def guardar_datos_generales(valores: dict) -> None:
+    _guardar_dg("igloo", valores)
 
 
 def guardar_datos_generales(valores: dict) -> None:
