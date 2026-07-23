@@ -4,6 +4,7 @@ import streamlit as st
 from services.supabase_client import current_user, get_authed_client
 from ui.components import section_header, alert
 from services.notificaciones import enviar_notificacion
+from services.catalogos import cargar_empresas
 from .shared import (
     add_ticket,
     build_mailto,
@@ -12,12 +13,17 @@ from .shared import (
     log_accion,
 )
 
-EMPRESAS      = ["Picus", "Igloo", "Set Freight", "Lincoln Freight", "Set Logis Plus", "Todas", "Otro"]
 CATEGORIAS    = ["Cotizadores", "Complementarias/Desconclusiones", "SOCA", "App Eq. Matto",
                  "Tickets", "Nuevo Desarrollo", "Bono Diesel", "Mod. Auditoria", "Solicitudes", "Seguimiento"]
 DEPARTAMENTOS = ["Operaciones", "Contabilidad", "Auditoria", "Control de Unidades", "Control de equipo", "Mtto",
                  "Safety", "Monitoreo", "Fac & Cob", "Liquidaciones", "Control de Diesel", "After Hours", "Otro"]
 PRIORIDADES   = ["Normal", "Alta", "Urgente"]
+
+
+def _opciones_empresa() -> list[str]:
+    """Empresas del catálogo real + las dos opciones especiales que no son
+    empresas propiamente dichas (aplican a Tickets únicamente)."""
+    return cargar_empresas() + ["Todas", "Otro"]
 
 
 def _get_profile_name(user_id: str) -> str:
@@ -40,6 +46,23 @@ def _get_profile_name(user_id: str) -> str:
 def render():
     section_header("🎫", "Crear Ticket",
                    "Envía una solicitud al equipo de Análisis de Datos")
+
+    # ── Ventana emergente de confirmación tras crear ────────────────────────
+    if st.session_state.get("tk_success_payload"):
+        payload = st.session_state["tk_success_payload"]
+
+        @st.dialog("✅ Ticket creado")
+        def _dlg_tk_creado():
+            st.success(f"Tu ticket **#{payload['folio']}** se creó exitosamente.")
+            if payload["correo_enviado"]:
+                st.info("📧 Se envió la notificación por correo automáticamente.")
+            else:
+                st.warning("⚠️ El ticket se guardó, pero la notificación por correo no pudo enviarse.")
+            if st.button("OK", type="primary", key="tk_success_ok", use_container_width=True):
+                st.session_state.pop("tk_success_payload", None)
+                st.rerun()
+
+        _dlg_tk_creado()
 
     u = current_user()
     if not u:
@@ -67,7 +90,7 @@ def render():
                 help="Detectado automáticamente desde tu cuenta.",
             )
         with colC:
-            empresa = st.selectbox("Empresa*", EMPRESAS, index=0)
+            empresa = st.selectbox("Empresa*", _opciones_empresa(), index=0)
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -152,8 +175,8 @@ def render():
         correo_solicitante=payload["correo"],
     )
 
-    st.success(f"✅ Ticket **#{folio_fmt}** creado exitosamente.")
-    if resultado_correo.get("ok"):
-        st.info("📧 Se envió la notificación por correo automáticamente.")
-    else:
-        st.warning("⚠️ El ticket se guardó, pero la notificación por correo no pudo enviarse.")
+    st.session_state["tk_success_payload"] = {
+        "folio": folio_fmt,
+        "correo_enviado": resultado_correo.get("ok", False),
+    }
+    st.rerun()
