@@ -14,9 +14,7 @@ from services.supabase_client import current_user, get_authed_client, get_secret
 from services.notificaciones import enviar_notificacion
 from ui.components import section_header, alert
 from .shared import (
-    EMPRESAS, 
     MONEDAS, 
-    SUCURSALES_POR_EMPRESA, 
     PLATAFORMAS_POR_EMPRESA,
     TIPOS_CONCEPTO, 
     TASAS_IVA, 
@@ -30,6 +28,8 @@ from .shared import (
     calcular_totales_logismex, 
     build_historial_entry,
     log_accion,
+    get_empresas,
+    get_sucursales_por_empresa,
 )
 
 
@@ -225,6 +225,9 @@ def render():
                    "Captura la solicitud de cargo complementario o desconclusión")
 
     st.text_input("Fecha", value=datetime.now().strftime("%d/%m/%Y"), disabled=True)
+
+    EMPRESAS = get_empresas()
+    SUCURSALES_POR_EMPRESA = get_sucursales_por_empresa()
 
     c1, c2, c3 = st.columns(3)
     with c1:
