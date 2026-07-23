@@ -17,6 +17,7 @@ import streamlit as st
 
 from .shared import log_accion_tickets as log_accion
 from services.supabase_client import current_user, get_authed_client
+from services.access import check_access
 from services.notificaciones import enviar_notificacion
 from ui.components import (
     section_header, kpi_row, alert,
@@ -87,6 +88,42 @@ def _update_ticket(ticket_id: int, changes: dict) -> bool:
     except Exception as e:
         st.error(f"Error al guardar: {e}")
         return False
+
+
+def _obtener_reglas_alcance_tickets(user_id: str) -> list[dict]:
+    """Reglas de alcance activas para este usuario en Tickets. Lista vacía =
+    sin alcance asignado (no debería ver nada, salvo que tenga acceso total)."""
+    try:
+        supabase = get_authed_client()
+        res = (
+            supabase.table("alcance_usuario")
+            .select("empresa")
+            .eq("user_id", user_id)
+            .eq("modulo", "tickets")
+            .eq("activo", True)
+            .execute()
+        )
+        return res.data or []
+    except Exception:
+        return []
+
+
+def _filtrar_por_alcance_tickets(tickets: list[dict], user_id: str) -> list[dict]:
+    """Filtra la lista de tickets según el alcance del usuario.
+    Acceso total (tickets:ver_todo) → ve todo, sin filtrar."""
+    if check_access(user_id, None, "tickets:ver_todo"):
+        return tickets
+
+    reglas = _obtener_reglas_alcance_tickets(user_id)
+    if not reglas:
+        return []  # sin reglas asignadas = no ve nada (default seguro)
+
+    # Una regla con empresa=None significa "todas las empresas"
+    if any(r.get("empresa") is None for r in reglas):
+        return tickets
+
+    empresas_permitidas = {r["empresa"] for r in reglas if r.get("empresa")}
+    return [t for t in tickets if t.get("empresa") in empresas_permitidas]
 
 
 def _to_excel(df: pd.DataFrame) -> bytes:
@@ -286,11 +323,14 @@ def render():
                    "Administra fases, asignaciones y comentarios")
 
     gestor  = _gestor_nombre()
+    u       = current_user() or {}
+    user_id = u.get("id") or u.get("sub") or ""
+
     tickets = _get_tickets()
+    tickets = _filtrar_por_alcance_tickets(tickets, user_id)
 
     if not tickets:
-        alert("info", "No hay tickets registrados.")
-        return
+        alert("info", "No hay tickets que te correspondan revisar por el momento.")
 
     # ── ① KPIs ───────────────────────────────────────────────────────────────
     conteo = Counter(t.get("estatus", "Nuevo") for t in tickets)
