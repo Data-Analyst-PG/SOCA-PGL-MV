@@ -37,8 +37,7 @@ from ._helpers import (
     generar_nuevo_id, 
     get_profile_name,  
     normalizar_texto,
-    now_iso, 
-    _datos_generales_path,
+    now_iso,
     cargar_pool_ubicaciones_igloo, 
     buscar_ubicacion_igloo,
     obtener_config_tipo_ruta, 
@@ -88,7 +87,6 @@ def _panel_datos_generales(valores: dict) -> dict:
         if st.button("💾 Guardar Parámetros", key="igloo_save_gen"):
             guardar_datos_generales(valores)
             alert("success", "✅ Parámetros guardados correctamente.")
-        st.caption(f"Archivo: `{_datos_generales_path()}`")
     return valores
 
 
