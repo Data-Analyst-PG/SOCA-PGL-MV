@@ -20,6 +20,19 @@ def _cargar_companies() -> pd.DataFrame:
     return pd.DataFrame(res.data or [])
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cargar_areas() -> pd.DataFrame:
+    sb = get_authed_client()
+    res = (
+        sb.table("areas")
+        .select("id, name")
+        .eq("is_active", True)
+        .order("name")
+        .execute()
+    )
+    return pd.DataFrame(res.data or [])
+
+
 ROLES = ["user", "data_analyst", "admin"]
 
 
@@ -42,7 +55,9 @@ def render():
 
     catalogo = _cargar_catalogo()
     companies = _cargar_companies()
+    areas = _cargar_areas()
     opciones_empresa = ["Sin asignar"] + (companies["name"].tolist() if not companies.empty else [])
+    opciones_area = ["Sin asignar"] + (areas["name"].tolist() if not areas.empty else [])
 
     with st.form("form_crear_usuario", clear_on_submit=False):
         col1, col2 = st.columns(2)
@@ -50,7 +65,7 @@ def render():
         email     = col2.text_input("Correo*", placeholder="usuario@palosgarza.com")
 
         col3, col4 = st.columns(2)
-        area_name = col3.text_input("Área", placeholder="ej. Auditoría, Operaciones")
+        area_sel = col3.selectbox("Área", opciones_area)
         job_title = col4.text_input("Puesto", placeholder="ej. Auditor, Gestor")
 
         col5, col6 = st.columns(2)
@@ -104,10 +119,17 @@ def render():
             if not match.empty:
                 company_id = match.iloc[0]["id"]
 
+        area_id = None
+        if area_sel != "Sin asignar" and not areas.empty:
+            match_area = areas[areas["name"] == area_sel]
+            if not match_area.empty:
+                area_id = match_area.iloc[0]["id"]
+
         try:
             supabase.table("profiles").update({
                 "full_name": full_name,
-                "area_name": area_name or None,
+                "area_id": area_id,
+                "area_name": area_sel if area_sel != "Sin asignar" else None,
                 "job_title": job_title or None,
                 "role": role,
                 "is_active": True,
