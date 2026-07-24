@@ -93,65 +93,22 @@ def tiene_cruce(tipo_ruta: str) -> bool:
 
 
 # ─────────────────────────────────────────────
-# Rutas de archivos
+# Carga / guarda datos generales — persistidos en Supabase
+# (tabla datos_generales_cotizadores). Tipo de cambio USD se
+# sobrescribe con Banxico FIX (cacheado 24h) cuando está disponible.
 # ─────────────────────────────────────────────
-def _project_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+from services.datos_generales import (
+    cargar_datos_generales as _cargar_dg,
+    guardar_datos_generales as _guardar_dg,
+)
 
 
-def _datos_generales_path() -> str:
-    base = os.path.join(_project_root(), ".data")
-    os.makedirs(base, exist_ok=True)
-    return os.path.join(base, "datos_generales_picus.csv")
-
-
-# ─────────────────────────────────────────────
-# Carga / guarda datos generales (CSV + Banxico FIX cacheado 24h)
-# ─────────────────────────────────────────────
 def cargar_datos_generales() -> dict:
-    """
-    Lee el CSV de datos generales y lo fusiona con DEFAULTS.
-    Si Banxico está disponible, sobreescribe "Tipo de cambio USD"
-    con el valor FIX del día (cacheado 24h en services.banxico).
-    """
-    path = _datos_generales_path()
-    if os.path.exists(path):
-        try:
-            df = pd.read_csv(path)
-            if {"Parametro", "Valor"}.issubset(df.columns):
-                d   = df.set_index("Parametro")["Valor"].to_dict()
-                out = DEFAULTS.copy()
-                for k, v in d.items():
-                    try:
-                        out[k] = float(v)
-                    except Exception:
-                        out[k] = v
-                for k, v in DEFAULTS.items():
-                    if k not in out:
-                        out[k] = v
-            else:
-                out = DEFAULTS.copy()
-        except Exception:
-            out = DEFAULTS.copy()
-    else:
-        out = DEFAULTS.copy()
-
-    # TC FIX de Banxico (cache 24h) — misma clave que Igloo: "Tipo de cambio USD"
-    try:
-        from services.banxico import get_tipo_cambio_fix
-        token = st.secrets.get("TOKEN_BMX", "")
-        tc = get_tipo_cambio_fix(token) if token else None
-        if tc:
-            out["Tipo de cambio USD"] = tc
-    except Exception:
-        pass
-
-    return out
+    return _cargar_dg("picus", DEFAULTS, tc_key="Tipo de cambio USD")
 
 
 def guardar_datos_generales(valores: dict) -> None:
-    df = pd.DataFrame(list(valores.items()), columns=["Parametro", "Valor"])
-    df.to_csv(_datos_generales_path(), index=False)
+    _guardar_dg("picus", valores)
 
 
 # ─────────────────────────────────────────────
