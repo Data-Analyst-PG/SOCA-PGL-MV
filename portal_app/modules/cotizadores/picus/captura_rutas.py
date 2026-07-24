@@ -37,7 +37,6 @@ from ._helpers import (
     generar_id_ruta,  
     get_profile_name, normalizar,
     now_iso, 
-    _datos_generales_path,
     cargar_pool_ubicaciones_picus, 
     buscar_ubicacion_picus,
     obtener_config_tipo_ruta, 
@@ -84,13 +83,9 @@ def _panel_datos_generales(valores: dict) -> dict:
                 step=0.1,
                 key=f"pic_param_{key}",
             )
-        pc1, pc2 = st.columns([1, 3])
-        with pc1:
-            if st.button("💾 Guardar parámetros", key="pic_guardar_params"):
-                guardar_datos_generales(valores)
-                alert("success", "✅ Parámetros guardados correctamente.")
-        with pc2:
-            st.caption(f"Archivo: `{_datos_generales_path()}`")
+        if st.button("💾 Guardar parámetros", key="pic_guardar_params"):
+            guardar_datos_generales(valores)
+            alert("success", "✅ Parámetros guardados correctamente.")
     return valores
 
 
